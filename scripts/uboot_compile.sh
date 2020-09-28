@@ -19,7 +19,7 @@ UBOOT=$ROOT/u-boot
 TOOLS=$ROOT/toolchain/gcc-linaro-aarch/gcc-linaro/bin/arm-linux-gnueabihf-
 
 BUILD=$ROOT/output
-CORES=$((`cat /proc/cpuinfo | grep processor | wc -l` - 1))
+CORES=$((`cat /proc/cpuinfo | grep processor | wc -l`))
 
 # Perpar souce code
 if [ ! -d $UBOOT ]; then

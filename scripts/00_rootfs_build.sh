@@ -334,10 +334,11 @@ apt-get clean
 EOF
 		chmod +x "$DEST/second-phase"
 		do_chroot /second-phase
-		cat > "$DEST/etc/network/interfaces.d/eth0" <<EOF
-auto eth0
-iface eth0 inet dhcp
-EOF
+		
+		#cat > "$DEST/etc/network/interfaces.d/eth0" <<EOF
+#auto eth0
+#iface eth0 inet dhcp
+#EOF
 		cat > "$DEST/etc/hostname" <<EOF
 Orangepi
 EOF
@@ -359,7 +360,7 @@ EOF
 		add_disp_udev_rules
 		add_asound_state
 		sed -i 's|After=rc.local.service|#\0|;' "$DEST/lib/systemd/system/serial-getty@.service"
-		ln "$DEST/lib/systemd/systemd" "$DEST/sbin/init"
+		do_chroot ln -s /usr/lib/systemd/systemd  /sbin/init
 		rm -f "$DEST/second-phase"
 		rm -f "$DEST/etc/resolv.conf"
 		rm -f "$DEST"/etc/ssh/ssh_host_*
