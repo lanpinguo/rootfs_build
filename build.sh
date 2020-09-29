@@ -173,6 +173,7 @@ OPTION=$(whiptail --title "OrangePi Build System" \
 	"9"   "Update Uboot" \
 	"10"  "Update SDK to Github" \
 	"11"  "Update SDK from Github" \
+	"12"  "Update Rootfs only" \
 	3>&1 1>&2 2>&3)
 
 if [ $OPTION = "0" -o $OPTION = "1" ]; then
@@ -328,6 +329,70 @@ elif [ $OPTION = "11" ]; then
 	echo -e "\e[1;31m Updating SDK from Github \e[0m"
 	git push origin
 	exit 0
+elif [ $OPTION = "12" ]; then
+	sudo echo ""
+	clear
+	TMP=$OPTION
+	TMP_DISTRO=""
+	MENUSTR="Distro Options"
+	OPTION=$(whiptail --title "OrangePi Build System" \
+		--menu "$MENUSTR" 20 60 5 --cancel-button Finish --ok-button Select \
+		"0"   "ArchLinux" \
+		"1"   "Ubuntu Xenial" \
+		"2"	  "Debian Sid" \
+		"3"   "Debian Jessie" \
+		"4"   "CentOS" \
+		"5"   "Ubuntu Groovy" \
+		3>&1 1>&2 2>&3)
+
+	if [ ! -d $ROOT/output/lib ]; then
+		if [ -f $ROOT/output/lib ]; then
+			rm $ROOT/output/lib
+		fi
+		mkdir $ROOT/output/lib
+		export BUILD_MODULE=1
+		cd $SCRIPTS
+		./kernel_compile.sh
+		cd -
+	fi
+
+	if [ $OPTION = "0" ]; then
+		TMP_DISTRO="arch"
+	elif [ $OPTION = "1" ]; then
+		TMP_DISTRO="xenial"	
+	elif [ $OPTION = "2" ]; then
+		TMP_DISTRO="sid"
+	elif [ $OPTION = "3" ]; then
+		TMP_DISTRO="jessie"
+	elif [ $OPTION = "4" ]; then
+		TMP_DISTRO="centos"
+	elif [ $OPTION = "5" ]; then
+		TMP_DISTRO="groovy"
+	fi
+	cd $SCRIPTS
+	DISTRO=$TMP_DISTRO
+	if [ -d $ROOT/output/${DISTRO}_rootfs ]; then
+		sudo cp -raf $ROOT/output/${DISTRO}_rootfs $ROOT/output/tmp
+		if [ -d $ROOT/output/rootfs ]; then
+			sudo rm -rf $ROOT/output/rootfs
+		fi
+		sudo mv $ROOT/output/tmp $ROOT/output/rootfs
+#			whiptail --title "OrangePi Build System" --msgbox "Rootfs has build" \
+#				10 40 0	--ok-button Continue
+		sudo ./rootfs_update.sh $DISTRO
+		sudo ./01_rootfs_build.sh $DISTRO
+		sudo ./02_rootfs_build.sh $DISTRO
+		sudo ./03_rootfs_build.sh $DISTRO
+	else
+		sudo ./00_rootfs_build.sh $DISTRO
+		sudo ./01_rootfs_build.sh $DISTRO
+		sudo ./02_rootfs_build.sh $DISTRO
+		sudo ./03_rootfs_build.sh $DISTRO
+	fi
+	whiptail --title "OrangePi Build System" --msgbox "Rootfs has build" \
+		10 40 0	--ok-button Continue
+	exit 0
+
 else
 	whiptail --title "OrangePi Build System" \
 		--msgbox "Pls select correct option" 10 50 0
