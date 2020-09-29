@@ -319,6 +319,7 @@ apt-get -y update
 apt-get -y install dosfstools curl xz-utils iw rfkill wpasupplicant openssh-server alsa-utils $EXTRADEBS
 apt-get -y install systemd
 apt-get -y install makedev
+apt-get -y install udev
 apt-get -y install libpyside2-py3-5.15
 apt-get -y install samba samba-common
 apt-get -y remove --purge ureadahead
