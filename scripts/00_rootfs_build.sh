@@ -358,8 +358,8 @@ EOF
 		add_mackeeper_service
 		add_corekeeper_service
 		add_ssh_keygen_service
-		add_disp_udev_rules
-		add_asound_state
+		#add_disp_udev_rules
+		#add_asound_state
 		sed -i 's|After=rc.local.service|#\0|;' "$DEST/lib/systemd/system/serial-getty@.service"
 		do_chroot ln -s /usr/lib/systemd/systemd  /sbin/init
 		rm -f "$DEST/second-phase"
