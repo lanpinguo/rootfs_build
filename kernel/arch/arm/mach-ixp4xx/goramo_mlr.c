@@ -1,21 +1,25 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * Goramo MultiLink router platform code
  * Copyright (C) 2006-2009 Krzysztof Halasa <khc@pm.waw.pl>
  */
 
 #include <linux/delay.h>
+#include <linux/gpio.h>
 #include <linux/hdlc.h>
-#include <linux/i2c-gpio.h>
 #include <linux/io.h>
 #include <linux/irq.h>
 #include <linux/kernel.h>
 #include <linux/pci.h>
+#include <linux/platform_data/wan_ixp4xx_hss.h>
 #include <linux/serial_8250.h>
 #include <asm/mach-types.h>
 #include <asm/mach/arch.h>
 #include <asm/mach/flash.h>
 #include <asm/mach/pci.h>
 #include <asm/system_info.h>
+
+#include "irqs.h"
 
 #define SLOT_ETHA		0x0B	/* IDSEL = AD21 */
 #define SLOT_ETHB		0x0C	/* IDSEL = AD20 */
@@ -77,21 +81,27 @@
 static u32 hw_bits = 0xFFFFFFFD;    /* assume all hardware present */;
 static u8 control_value;
 
+/*
+ * FIXME: this is reimplementing I2C bit-bangining. Move this
+ * over to using driver/i2c/busses/i2c-gpio.c like all other boards
+ * and register proper I2C device(s) on the bus for this. (See
+ * other IXP4xx boards for examples.)
+ */
 static void set_scl(u8 value)
 {
-	gpio_line_set(GPIO_SCL, !!value);
+	gpio_set_value(GPIO_SCL, !!value);
 	udelay(3);
 }
 
 static void set_sda(u8 value)
 {
-	gpio_line_set(GPIO_SDA, !!value);
+	gpio_set_value(GPIO_SDA, !!value);
 	udelay(3);
 }
 
 static void set_str(u8 value)
 {
-	gpio_line_set(GPIO_STR, !!value);
+	gpio_set_value(GPIO_STR, !!value);
 	udelay(3);
 }
 
@@ -108,8 +118,8 @@ static void output_control(void)
 {
 	int i;
 
-	gpio_line_config(GPIO_SCL, IXP4XX_GPIO_OUT);
-	gpio_line_config(GPIO_SDA, IXP4XX_GPIO_OUT);
+	gpio_direction_output(GPIO_SCL, 1);
+	gpio_direction_output(GPIO_SDA, 1);
 
 	for (i = 0; i < 8; i++) {
 		set_scl(0);
@@ -151,8 +161,8 @@ static int hss_set_clock(int port, unsigned int clock_type)
 
 static irqreturn_t hss_dcd_irq(int irq, void *pdev)
 {
-	int i, port = (irq == IXP4XX_GPIO_IRQ(GPIO_HSS1_DCD_N));
-	gpio_line_get(port ? GPIO_HSS1_DCD_N : GPIO_HSS0_DCD_N, &i);
+	int port = (irq == IXP4XX_GPIO_IRQ(GPIO_HSS1_DCD_N));
+	int i = gpio_get_value(port ? GPIO_HSS1_DCD_N : GPIO_HSS0_DCD_N);
 	set_carrier_cb_tab[port](pdev, !i);
 	return IRQ_HANDLED;
 }
@@ -168,7 +178,7 @@ static int hss_open(int port, void *pdev,
 	else
 		irq = IXP4XX_GPIO_IRQ(GPIO_HSS1_DCD_N);
 
-	gpio_line_get(port ? GPIO_HSS1_DCD_N : GPIO_HSS0_DCD_N, &i);
+	i = gpio_get_value(port ? GPIO_HSS1_DCD_N : GPIO_HSS0_DCD_N);
 	set_carrier_cb(pdev, !i);
 
 	set_carrier_cb_tab[!!port] = set_carrier_cb;
@@ -181,7 +191,7 @@ static int hss_open(int port, void *pdev,
 
 	set_control(port ? CONTROL_HSS1_DTR_N : CONTROL_HSS0_DTR_N, 0);
 	output_control();
-	gpio_line_set(port ? GPIO_HSS1_RTS_N : GPIO_HSS0_RTS_N, 0);
+	gpio_set_value(port ? GPIO_HSS1_RTS_N : GPIO_HSS0_RTS_N, 0);
 	return 0;
 }
 
@@ -193,7 +203,7 @@ static void hss_close(int port, void *pdev)
 
 	set_control(port ? CONTROL_HSS1_DTR_N : CONTROL_HSS0_DTR_N, 1);
 	output_control();
-	gpio_line_set(port ? GPIO_HSS1_RTS_N : GPIO_HSS0_RTS_N, 1);
+	gpio_set_value(port ? GPIO_HSS1_RTS_N : GPIO_HSS0_RTS_N, 1);
 }
 
 
@@ -214,20 +224,6 @@ static struct platform_device device_flash = {
 	.num_resources	= 1,
 	.resource	= &flash_resource,
 };
-
-
-/* I^2C interface */
-static struct i2c_gpio_platform_data i2c_data = {
-	.sda_pin	= GPIO_SDA,
-	.scl_pin	= GPIO_SCL,
-};
-
-static struct platform_device device_i2c = {
-	.name		= "i2c-gpio",
-	.id		= 0,
-	.dev		= { .platform_data = &i2c_data },
-};
-
 
 /* IXP425 2 UART ports */
 static struct resource uart_resources[] = {
@@ -277,6 +273,22 @@ static struct platform_device device_uarts = {
 
 
 /* Built-in 10/100 Ethernet MAC interfaces */
+static struct resource eth_npeb_resources[] = {
+	{
+		.start		= IXP4XX_EthB_BASE_PHYS,
+		.end		= IXP4XX_EthB_BASE_PHYS + 0x0fff,
+		.flags		= IORESOURCE_MEM,
+	},
+};
+
+static struct resource eth_npec_resources[] = {
+	{
+		.start		= IXP4XX_EthC_BASE_PHYS,
+		.end		= IXP4XX_EthC_BASE_PHYS + 0x0fff,
+		.flags		= IORESOURCE_MEM,
+	},
+};
+
 static struct eth_plat_info eth_plat[] = {
 	{
 		.phy		= 0,
@@ -294,10 +306,14 @@ static struct platform_device device_eth_tab[] = {
 		.name			= "ixp4xx_eth",
 		.id			= IXP4XX_ETH_NPEB,
 		.dev.platform_data	= eth_plat,
+		.num_resources		= ARRAY_SIZE(eth_npeb_resources),
+		.resource		= eth_npeb_resources,
 	}, {
 		.name			= "ixp4xx_eth",
 		.id			= IXP4XX_ETH_NPEC,
 		.dev.platform_data	= eth_plat + 1,
+		.num_resources		= ARRAY_SIZE(eth_npec_resources),
+		.resource		= eth_npec_resources,
 	}
 };
 
@@ -410,16 +426,24 @@ static void __init gmlr_init(void)
 	if (hw_bits & CFG_HW_HAS_HSS1)
 		device_tab[devices++] = &device_hss_tab[1]; /* max index 5 */
 
-	if (hw_bits & CFG_HW_HAS_EEPROM)
-		device_tab[devices++] = &device_i2c; /* max index 6 */
+	hss_plat[0].timer_freq = ixp4xx_timer_freq;
+	hss_plat[1].timer_freq = ixp4xx_timer_freq;
 
-	gpio_line_config(GPIO_SCL, IXP4XX_GPIO_OUT);
-	gpio_line_config(GPIO_SDA, IXP4XX_GPIO_OUT);
-	gpio_line_config(GPIO_STR, IXP4XX_GPIO_OUT);
-	gpio_line_config(GPIO_HSS0_RTS_N, IXP4XX_GPIO_OUT);
-	gpio_line_config(GPIO_HSS1_RTS_N, IXP4XX_GPIO_OUT);
-	gpio_line_config(GPIO_HSS0_DCD_N, IXP4XX_GPIO_IN);
-	gpio_line_config(GPIO_HSS1_DCD_N, IXP4XX_GPIO_IN);
+	gpio_request(GPIO_SCL, "SCL/clock");
+	gpio_request(GPIO_SDA, "SDA/data");
+	gpio_request(GPIO_STR, "strobe");
+	gpio_request(GPIO_HSS0_RTS_N, "HSS0 RTS");
+	gpio_request(GPIO_HSS1_RTS_N, "HSS1 RTS");
+	gpio_request(GPIO_HSS0_DCD_N, "HSS0 DCD");
+	gpio_request(GPIO_HSS1_DCD_N, "HSS1 DCD");
+
+	gpio_direction_output(GPIO_SCL, 1);
+	gpio_direction_output(GPIO_SDA, 1);
+	gpio_direction_output(GPIO_STR, 0);
+	gpio_direction_output(GPIO_HSS0_RTS_N, 1);
+	gpio_direction_output(GPIO_HSS1_RTS_N, 1);
+	gpio_direction_input(GPIO_HSS0_DCD_N);
+	gpio_direction_input(GPIO_HSS1_DCD_N);
 	irq_set_irq_type(IXP4XX_GPIO_IRQ(GPIO_HSS0_DCD_N), IRQ_TYPE_EDGE_BOTH);
 	irq_set_irq_type(IXP4XX_GPIO_IRQ(GPIO_HSS1_DCD_N), IRQ_TYPE_EDGE_BOTH);
 

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef PAGE_FLAGS_LAYOUT_H
 #define PAGE_FLAGS_LAYOUT_H
 
@@ -17,6 +18,8 @@
 #define ZONES_SHIFT 1
 #elif MAX_NR_ZONES <= 4
 #define ZONES_SHIFT 2
+#elif MAX_NR_ZONES <= 8
+#define ZONES_SHIFT 3
 #else
 #error ZONES_SHIFT -- too many zones configured adjust calculation
 #endif
@@ -29,6 +32,7 @@
 
 #endif /* CONFIG_SPARSEMEM */
 
+#ifndef BUILD_VDSO32_64
 /*
  * page->flags layout:
  *
@@ -38,10 +42,10 @@
  * The last is when there is insufficient space in page->flags and a separate
  * lookup is necessary.
  *
- * No sparsemem or sparsemem vmemmap: |       NODE     | ZONE |          ... | FLAGS |
- *         " plus space for last_nid: |       NODE     | ZONE | LAST_NID ... | FLAGS |
- * classic sparse with space for node:| SECTION | NODE | ZONE |          ... | FLAGS |
- *         " plus space for last_nid: | SECTION | NODE | ZONE | LAST_NID ... | FLAGS |
+ * No sparsemem or sparsemem vmemmap: |       NODE     | ZONE |             ... | FLAGS |
+ *      " plus space for last_cpupid: |       NODE     | ZONE | LAST_CPUPID ... | FLAGS |
+ * classic sparse with space for node:| SECTION | NODE | ZONE |             ... | FLAGS |
+ *      " plus space for last_cpupid: | SECTION | NODE | ZONE | LAST_CPUPID ... | FLAGS |
  * classic sparse no space for node:  | SECTION |     ZONE    | ... | FLAGS |
  */
 #if defined(CONFIG_SPARSEMEM) && !defined(CONFIG_SPARSEMEM_VMEMMAP)
@@ -62,27 +66,48 @@
 #endif
 
 #ifdef CONFIG_NUMA_BALANCING
-#define LAST_NID_SHIFT NODES_SHIFT
+#define LAST__PID_SHIFT 8
+#define LAST__PID_MASK  ((1 << LAST__PID_SHIFT)-1)
+
+#define LAST__CPU_SHIFT NR_CPUS_BITS
+#define LAST__CPU_MASK  ((1 << LAST__CPU_SHIFT)-1)
+
+#define LAST_CPUPID_SHIFT (LAST__PID_SHIFT+LAST__CPU_SHIFT)
 #else
-#define LAST_NID_SHIFT 0
+#define LAST_CPUPID_SHIFT 0
 #endif
 
-#if SECTIONS_WIDTH+ZONES_WIDTH+NODES_SHIFT+LAST_NID_SHIFT <= BITS_PER_LONG - NR_PAGEFLAGS
-#define LAST_NID_WIDTH LAST_NID_SHIFT
+#ifdef CONFIG_KASAN_SW_TAGS
+#define KASAN_TAG_WIDTH 8
 #else
-#define LAST_NID_WIDTH 0
+#define KASAN_TAG_WIDTH 0
+#endif
+
+#if SECTIONS_WIDTH+ZONES_WIDTH+NODES_SHIFT+LAST_CPUPID_SHIFT+KASAN_TAG_WIDTH \
+	<= BITS_PER_LONG - NR_PAGEFLAGS
+#define LAST_CPUPID_WIDTH LAST_CPUPID_SHIFT
+#else
+#define LAST_CPUPID_WIDTH 0
+#endif
+
+#if SECTIONS_WIDTH+NODES_WIDTH+ZONES_WIDTH+LAST_CPUPID_WIDTH+KASAN_TAG_WIDTH \
+	> BITS_PER_LONG - NR_PAGEFLAGS
+#error "Not enough bits in page flags"
 #endif
 
 /*
  * We are going to use the flags for the page to node mapping if its in
  * there.  This includes the case where there is no node, so it is implicit.
+ * Note that this #define MUST have a value so that it can be tested with
+ * the IS_ENABLED() macro.
  */
 #if !(NODES_WIDTH > 0 || NODES_SHIFT == 0)
-#define NODE_NOT_IN_PAGE_FLAGS
+#define NODE_NOT_IN_PAGE_FLAGS 1
 #endif
 
-#if defined(CONFIG_NUMA_BALANCING) && LAST_NID_WIDTH == 0
-#define LAST_NID_NOT_IN_PAGE_FLAGS
+#if defined(CONFIG_NUMA_BALANCING) && LAST_CPUPID_WIDTH == 0
+#define LAST_CPUPID_NOT_IN_PAGE_FLAGS
 #endif
 
+#endif
 #endif /* _LINUX_PAGE_FLAGS_LAYOUT */

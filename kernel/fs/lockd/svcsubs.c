@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * linux/fs/lockd/svcsubs.c
  *
@@ -14,12 +15,11 @@
 #include <linux/mutex.h>
 #include <linux/sunrpc/svc.h>
 #include <linux/sunrpc/addr.h>
-#include <linux/nfsd/nfsfh.h>
-#include <linux/nfsd/export.h>
 #include <linux/lockd/lockd.h>
 #include <linux/lockd/share.h>
 #include <linux/module.h>
 #include <linux/mount.h>
+#include <uapi/linux/nfs2.h>
 
 #define NLMDBG_FACILITY		NLMDBG_SVCSUBS
 
@@ -32,7 +32,7 @@
 static struct hlist_head	nlm_files[FILE_NRHASH];
 static DEFINE_MUTEX(nlm_file_mutex);
 
-#ifdef NFSD_DEBUG
+#ifdef CONFIG_SUNRPC_DEBUG
 static inline void nlm_debug_print_fh(char *msg, struct nfs_fh *f)
 {
 	u32 *fhp = (u32*)f->data;
@@ -45,7 +45,7 @@ static inline void nlm_debug_print_fh(char *msg, struct nfs_fh *f)
 
 static inline void nlm_debug_print_file(char *msg, struct nlm_file *file)
 {
-	struct inode *inode = file_inode(file->f_file);
+	struct inode *inode = locks_inode(file->f_file);
 
 	dprintk("lockd: %s %s/%ld\n",
 		msg, inode->i_sb->s_id, inode->i_ino);
@@ -165,23 +165,26 @@ nlm_traverse_locks(struct nlm_host *host, struct nlm_file *file,
 {
 	struct inode	 *inode = nlmsvc_file_inode(file);
 	struct file_lock *fl;
+	struct file_lock_context *flctx = inode->i_flctx;
 	struct nlm_host	 *lockhost;
 
+	if (!flctx || list_empty_careful(&flctx->flc_posix))
+		return 0;
 again:
 	file->f_locks = 0;
-	lock_flocks(); /* protects i_flock list */
-	for (fl = inode->i_flock; fl; fl = fl->fl_next) {
+	spin_lock(&flctx->flc_lock);
+	list_for_each_entry(fl, &flctx->flc_posix, fl_list) {
 		if (fl->fl_lmops != &nlmsvc_lock_operations)
 			continue;
 
 		/* update current lock count */
 		file->f_locks++;
 
-		lockhost = (struct nlm_host *) fl->fl_owner;
+		lockhost = ((struct nlm_lockowner *)fl->fl_owner)->host;
 		if (match(lockhost, host)) {
 			struct file_lock lock = *fl;
 
-			unlock_flocks();
+			spin_unlock(&flctx->flc_lock);
 			lock.fl_type  = F_UNLCK;
 			lock.fl_start = 0;
 			lock.fl_end   = OFFSET_MAX;
@@ -193,7 +196,7 @@ again:
 			goto again;
 		}
 	}
-	unlock_flocks();
+	spin_unlock(&flctx->flc_lock);
 
 	return 0;
 }
@@ -224,18 +227,21 @@ nlm_file_inuse(struct nlm_file *file)
 {
 	struct inode	 *inode = nlmsvc_file_inode(file);
 	struct file_lock *fl;
+	struct file_lock_context *flctx = inode->i_flctx;
 
 	if (file->f_count || !list_empty(&file->f_blocks) || file->f_shares)
 		return 1;
 
-	lock_flocks();
-	for (fl = inode->i_flock; fl; fl = fl->fl_next) {
-		if (fl->fl_lmops == &nlmsvc_lock_operations) {
-			unlock_flocks();
-			return 1;
+	if (flctx && !list_empty_careful(&flctx->flc_posix)) {
+		spin_lock(&flctx->flc_lock);
+		list_for_each_entry(fl, &flctx->flc_posix, fl_list) {
+			if (fl->fl_lmops == &nlmsvc_lock_operations) {
+				spin_unlock(&flctx->flc_lock);
+				return 1;
+			}
 		}
+		spin_unlock(&flctx->flc_lock);
 	}
-	unlock_flocks();
 	file->f_locks = 0;
 	return 0;
 }
@@ -365,7 +371,7 @@ nlmsvc_mark_resources(struct net *net)
 {
 	struct nlm_host hint;
 
-	dprintk("lockd: nlmsvc_mark_resources for net %p\n", net);
+	dprintk("lockd: %s for net %x\n", __func__, net ? net->ns.inum : 0);
 	hint.net = net;
 	nlm_traverse_files(&hint, nlmsvc_mark_host, NULL);
 }
@@ -409,7 +415,7 @@ nlmsvc_match_sb(void *datap, struct nlm_file *file)
 {
 	struct super_block *sb = datap;
 
-	return sb == file->f_file->f_path.dentry->d_sb;
+	return sb == locks_inode(file->f_file)->i_sb;
 }
 
 /**

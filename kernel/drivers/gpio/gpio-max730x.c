@@ -1,11 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /**
  * Copyright (C) 2006 Juergen Beisert, Pengutronix
  * Copyright (C) 2008 Guennadi Liakhovetski, Pengutronix
  * Copyright (C) 2009 Wolfram Sang, Pengutronix
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  *
  * The Maxim MAX7300/1 device is an I2C/SPI driven GPIO expander. There are
  * 28 GPIOs. 8 of them can trigger an interrupt. See datasheet for more
@@ -35,7 +32,7 @@
 #include <linux/platform_device.h>
 #include <linux/mutex.h>
 #include <linux/spi/max7301.h>
-#include <linux/gpio.h>
+#include <linux/gpio/driver.h>
 #include <linux/slab.h>
 
 /*
@@ -120,7 +117,7 @@ static int max7301_direction_output(struct gpio_chip *chip, unsigned offset,
 
 static int max7301_get(struct gpio_chip *chip, unsigned offset)
 {
-	struct max7301 *ts = container_of(chip, struct max7301, chip);
+	struct max7301 *ts = gpiochip_get_data(chip);
 	int config, level = -EINVAL;
 
 	/* First 4 pins are unused in the controller */
@@ -148,7 +145,7 @@ static int max7301_get(struct gpio_chip *chip, unsigned offset)
 
 static void max7301_set(struct gpio_chip *chip, unsigned offset, int value)
 {
-	struct max7301 *ts = container_of(chip, struct max7301, chip);
+	struct max7301 *ts = gpiochip_get_data(chip);
 
 	/* First 4 pins are unused in the controller */
 	offset += 4;
@@ -166,7 +163,7 @@ int __max730x_probe(struct max7301 *ts)
 	struct max7301_platform_data *pdata;
 	int i, ret;
 
-	pdata = dev->platform_data;
+	pdata = dev_get_platdata(dev);
 
 	mutex_init(&ts->lock);
 	dev_set_drvdata(dev, ts);
@@ -188,8 +185,8 @@ int __max730x_probe(struct max7301 *ts)
 	ts->chip.set = max7301_set;
 
 	ts->chip.ngpio = PIN_NUMBER;
-	ts->chip.can_sleep = 1;
-	ts->chip.dev = dev;
+	ts->chip.can_sleep = true;
+	ts->chip.parent = dev;
 	ts->chip.owner = THIS_MODULE;
 
 	/*
@@ -213,14 +210,11 @@ int __max730x_probe(struct max7301 *ts)
 		}
 	}
 
-	ret = gpiochip_add(&ts->chip);
-	if (ret)
-		goto exit_destroy;
-
-	return ret;
+	ret = gpiochip_add_data(&ts->chip, ts);
+	if (!ret)
+		return ret;
 
 exit_destroy:
-	dev_set_drvdata(dev, NULL);
 	mutex_destroy(&ts->lock);
 	return ret;
 }
@@ -229,24 +223,15 @@ EXPORT_SYMBOL_GPL(__max730x_probe);
 int __max730x_remove(struct device *dev)
 {
 	struct max7301 *ts = dev_get_drvdata(dev);
-	int ret;
 
 	if (ts == NULL)
 		return -ENODEV;
 
-	dev_set_drvdata(dev, NULL);
-
 	/* Power down the chip and disable IRQ output */
 	ts->write(dev, 0x04, 0x00);
-
-	ret = gpiochip_remove(&ts->chip);
-	if (!ret) {
-		mutex_destroy(&ts->lock);
-		kfree(ts);
-	} else
-		dev_err(dev, "Failed to remove GPIO controller: %d\n", ret);
-
-	return ret;
+	gpiochip_remove(&ts->chip);
+	mutex_destroy(&ts->lock);
+	return 0;
 }
 EXPORT_SYMBOL_GPL(__max730x_remove);
 

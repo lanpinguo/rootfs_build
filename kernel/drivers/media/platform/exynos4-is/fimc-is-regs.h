@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Samsung EXYNOS4x12 FIMC-IS (Imaging Subsystem) driver
  *
@@ -5,10 +6,6 @@
  *
  * Authors: Sylwester Nawrocki <s.nawrocki@samsung.com>
  *          Younghwan Joo <yhwan.joo@samsung.com>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 #ifndef FIMC_IS_REG_H_
 #define FIMC_IS_REG_H_
@@ -145,9 +142,9 @@ void fimc_is_fw_clear_irq2(struct fimc_is *is);
 int fimc_is_hw_get_params(struct fimc_is *is, unsigned int num);
 
 void fimc_is_hw_set_intgr0_gd0(struct fimc_is *is);
-int fimc_is_hw_wait_intsr0_intsd0(struct fimc_is *is);
 int fimc_is_hw_wait_intmsr0_intmsd0(struct fimc_is *is);
 void fimc_is_hw_set_sensor_num(struct fimc_is *is);
+void fimc_is_hw_set_isp_buf_mask(struct fimc_is *is, unsigned int mask);
 void fimc_is_hw_stream_on(struct fimc_is *is);
 void fimc_is_hw_stream_off(struct fimc_is *is);
 int fimc_is_hw_set_param(struct fimc_is *is);

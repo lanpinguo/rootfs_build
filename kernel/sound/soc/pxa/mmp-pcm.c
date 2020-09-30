@@ -1,13 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * linux/sound/soc/pxa/mmp-pcm.c
  *
  * Copyright (C) 2011 Marvell International Ltd.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
  */
 #include <linux/module.h>
 #include <linux/init.h>
@@ -17,12 +12,15 @@
 #include <linux/dmaengine.h>
 #include <linux/platform_data/dma-mmp_tdma.h>
 #include <linux/platform_data/mmp_audio.h>
+
 #include <sound/pxa2xx-lib.h>
 #include <sound/core.h>
 #include <sound/pcm.h>
 #include <sound/pcm_params.h>
 #include <sound/soc.h>
 #include <sound/dmaengine_pcm.h>
+
+#define DRV_NAME "mmp-pcm"
 
 struct mmp_dma_data {
 	int ssp_id;
@@ -33,16 +31,12 @@ struct mmp_dma_data {
 		SNDRV_PCM_INFO_MMAP_VALID |	\
 		SNDRV_PCM_INFO_INTERLEAVED |	\
 		SNDRV_PCM_INFO_PAUSE |		\
-		SNDRV_PCM_INFO_RESUME)
-
-#define MMP_PCM_FORMATS (SNDRV_PCM_FMTBIT_S16_LE | \
-			 SNDRV_PCM_FMTBIT_S24_LE | \
-			 SNDRV_PCM_FMTBIT_S32_LE)
+		SNDRV_PCM_INFO_RESUME |		\
+		SNDRV_PCM_INFO_NO_PERIOD_WAKEUP)
 
 static struct snd_pcm_hardware mmp_pcm_hardware[] = {
 	{
 		.info			= MMP_PCM_INFO,
-		.formats		= MMP_PCM_FORMATS,
 		.period_bytes_min	= 1024,
 		.period_bytes_max	= 2048,
 		.periods_min		= 2,
@@ -52,7 +46,6 @@ static struct snd_pcm_hardware mmp_pcm_hardware[] = {
 	},
 	{
 		.info			= MMP_PCM_INFO,
-		.formats		= MMP_PCM_FORMATS,
 		.period_bytes_min	= 1024,
 		.period_bytes_max	= 2048,
 		.periods_min		= 2,
@@ -62,30 +55,19 @@ static struct snd_pcm_hardware mmp_pcm_hardware[] = {
 	},
 };
 
-static int mmp_pcm_hw_params(struct snd_pcm_substream *substream,
-			      struct snd_pcm_hw_params *params)
+static int mmp_pcm_hw_params(struct snd_soc_component *component,
+			     struct snd_pcm_substream *substream,
+			     struct snd_pcm_hw_params *params)
 {
 	struct dma_chan *chan = snd_dmaengine_pcm_get_chan(substream);
-	struct snd_soc_pcm_runtime *rtd = substream->private_data;
-	struct pxa2xx_pcm_dma_params *dma_params;
 	struct dma_slave_config slave_config;
 	int ret;
 
-	dma_params = snd_soc_dai_get_dma_data(rtd->cpu_dai, substream);
-	if (!dma_params)
-		return 0;
-
-	ret = snd_hwparams_to_dma_slave_config(substream, params, &slave_config);
+	ret =
+	    snd_dmaengine_pcm_prepare_slave_config(substream, params,
+						   &slave_config);
 	if (ret)
 		return ret;
-
-	if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK) {
-		slave_config.dst_addr     = dma_params->dev_addr;
-		slave_config.dst_maxburst = 4;
-	} else {
-		slave_config.src_addr	  = dma_params->dev_addr;
-		slave_config.src_maxburst = 4;
-	}
 
 	ret = dmaengine_slave_config(chan, &slave_config);
 	if (ret)
@@ -94,6 +76,18 @@ static int mmp_pcm_hw_params(struct snd_pcm_substream *substream,
 	snd_pcm_set_runtime_buffer(substream, &substream->dma_buffer);
 
 	return 0;
+}
+
+static int mmp_pcm_trigger(struct snd_soc_component *component,
+			   struct snd_pcm_substream *substream, int cmd)
+{
+	return snd_dmaengine_pcm_trigger(substream, cmd);
+}
+
+static snd_pcm_uframes_t mmp_pcm_pointer(struct snd_soc_component *component,
+					 struct snd_pcm_substream *substream)
+{
+	return snd_dmaengine_pcm_pointer(substream);
 }
 
 static bool filter(struct dma_chan *chan, void *param)
@@ -113,11 +107,12 @@ static bool filter(struct dma_chan *chan, void *param)
 	return found;
 }
 
-static int mmp_pcm_open(struct snd_pcm_substream *substream)
+static int mmp_pcm_open(struct snd_soc_component *component,
+			struct snd_pcm_substream *substream)
 {
-	struct snd_soc_pcm_runtime *rtd = substream->private_data;
-	struct platform_device *pdev = to_platform_device(rtd->platform->dev);
-	struct snd_soc_dai *cpu_dai = rtd->cpu_dai;
+	struct snd_soc_pcm_runtime *rtd = asoc_substream_to_rtd(substream);
+	struct platform_device *pdev = to_platform_device(component->dev);
+	struct snd_soc_dai *cpu_dai = asoc_rtd_to_cpu(rtd, 0);
 	struct mmp_dma_data dma_data;
 	struct resource *r;
 
@@ -135,8 +130,15 @@ static int mmp_pcm_open(struct snd_pcm_substream *substream)
 		    &dma_data);
 }
 
-static int mmp_pcm_mmap(struct snd_pcm_substream *substream,
-			 struct vm_area_struct *vma)
+static int mmp_pcm_close(struct snd_soc_component *component,
+			 struct snd_pcm_substream *substream)
+{
+	return snd_dmaengine_pcm_close_release_chan(substream);
+}
+
+static int mmp_pcm_mmap(struct snd_soc_component *component,
+			struct snd_pcm_substream *substream,
+			struct vm_area_struct *vma)
 {
 	struct snd_pcm_runtime *runtime = substream->runtime;
 	unsigned long off = vma->vm_pgoff;
@@ -147,17 +149,8 @@ static int mmp_pcm_mmap(struct snd_pcm_substream *substream,
 		vma->vm_end - vma->vm_start, vma->vm_page_prot);
 }
 
-struct snd_pcm_ops mmp_pcm_ops = {
-	.open		= mmp_pcm_open,
-	.close		= snd_dmaengine_pcm_close_release_chan,
-	.ioctl		= snd_pcm_lib_ioctl,
-	.hw_params	= mmp_pcm_hw_params,
-	.trigger	= snd_dmaengine_pcm_trigger,
-	.pointer	= snd_dmaengine_pcm_pointer,
-	.mmap		= mmp_pcm_mmap,
-};
-
-static void mmp_pcm_free_dma_buffers(struct snd_pcm *pcm)
+static void mmp_pcm_free_dma_buffers(struct snd_soc_component *component,
+				     struct snd_pcm *pcm)
 {
 	struct snd_pcm_substream *substream;
 	struct snd_dma_buffer *buf;
@@ -182,7 +175,6 @@ static void mmp_pcm_free_dma_buffers(struct snd_pcm *pcm)
 		buf->area = NULL;
 	}
 
-	return;
 }
 
 static int mmp_pcm_preallocate_dma_buffer(struct snd_pcm_substream *substream,
@@ -200,15 +192,15 @@ static int mmp_pcm_preallocate_dma_buffer(struct snd_pcm_substream *substream,
 	if (!gpool)
 		return -ENOMEM;
 
-	buf->area = (unsigned char *)gen_pool_alloc(gpool, size);
+	buf->area = gen_pool_dma_alloc(gpool, size, &buf->addr);
 	if (!buf->area)
 		return -ENOMEM;
-	buf->addr = gen_pool_virt_to_phys(gpool, (unsigned long)buf->area);
 	buf->bytes = size;
 	return 0;
 }
 
-int mmp_pcm_new(struct snd_soc_pcm_runtime *rtd)
+static int mmp_pcm_new(struct snd_soc_component *component,
+		       struct snd_soc_pcm_runtime *rtd)
 {
 	struct snd_pcm_substream *substream;
 	struct snd_pcm *pcm = rtd->pcm;
@@ -225,14 +217,20 @@ int mmp_pcm_new(struct snd_soc_pcm_runtime *rtd)
 	return 0;
 
 err:
-	mmp_pcm_free_dma_buffers(pcm);
+	mmp_pcm_free_dma_buffers(component, pcm);
 	return ret;
 }
 
-struct snd_soc_platform_driver mmp_soc_platform = {
-	.ops		= &mmp_pcm_ops,
-	.pcm_new	= mmp_pcm_new,
-	.pcm_free	= mmp_pcm_free_dma_buffers,
+static const struct snd_soc_component_driver mmp_soc_component = {
+	.name		= DRV_NAME,
+	.open		= mmp_pcm_open,
+	.close		= mmp_pcm_close,
+	.hw_params	= mmp_pcm_hw_params,
+	.trigger	= mmp_pcm_trigger,
+	.pointer	= mmp_pcm_pointer,
+	.mmap		= mmp_pcm_mmap,
+	.pcm_construct	= mmp_pcm_new,
+	.pcm_destruct	= mmp_pcm_free_dma_buffers,
 };
 
 static int mmp_pcm_probe(struct platform_device *pdev)
@@ -249,23 +247,16 @@ static int mmp_pcm_probe(struct platform_device *pdev)
 		mmp_pcm_hardware[SNDRV_PCM_STREAM_CAPTURE].period_bytes_max =
 						pdata->period_max_capture;
 	}
-	return snd_soc_register_platform(&pdev->dev, &mmp_soc_platform);
-}
-
-static int mmp_pcm_remove(struct platform_device *pdev)
-{
-	snd_soc_unregister_platform(&pdev->dev);
-	return 0;
+	return devm_snd_soc_register_component(&pdev->dev, &mmp_soc_component,
+					       NULL, 0);
 }
 
 static struct platform_driver mmp_pcm_driver = {
 	.driver = {
 		.name = "mmp-pcm-audio",
-		.owner = THIS_MODULE,
 	},
 
 	.probe = mmp_pcm_probe,
-	.remove = mmp_pcm_remove,
 };
 
 module_platform_driver(mmp_pcm_driver);
@@ -273,3 +264,4 @@ module_platform_driver(mmp_pcm_driver);
 MODULE_AUTHOR("Leo Yan <leoy@marvell.com>");
 MODULE_DESCRIPTION("MMP Soc Audio DMA module");
 MODULE_LICENSE("GPL");
+MODULE_ALIAS("platform:mmp-pcm-audio");

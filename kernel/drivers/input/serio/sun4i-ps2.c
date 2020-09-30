@@ -1,18 +1,10 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  *	Driver for Allwinner A10 PS2 host controller
  *
  *	Author: Vishnu Patekar <vishnupatekar0510@gmail.com>
  *		Aaron.maoye <leafy.myeh@newbietech.com>
- *
- * This file is provided under a dual BSD/GPL license.  When using or
- * redistributing this file, you may do so under either license.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.	 See the
- * GNU General Public License for more details.
- *
- ********************************************************************************/
+ */
 
 #include <linux/module.h>
 #include <linux/serio.h>

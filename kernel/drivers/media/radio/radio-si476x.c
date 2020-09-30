@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * drivers/media/radio/radio-si476x.c -- V4L2 driver for SI476X chips
  *
@@ -5,16 +6,6 @@
  * Copyright (C) 2013 Andrey Smirnov
  *
  * Author: Andrey Smirnov <andrew.smirnov@gmail.com>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; version 2 of the License.
- *
- * This program is distributed in the hope that it will be useful, but
- * WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * General Public License for more details.
- *
  */
 
 #include <linux/module.h>
@@ -31,7 +22,7 @@
 #include <media/v4l2-event.h>
 #include <media/v4l2-device.h>
 
-#include <media/si476x.h>
+#include <media/drv-intf/si476x.h>
 #include <linux/mfd/si476x-core.h>
 
 #define FM_FREQ_RANGE_LOW   64000000
@@ -114,7 +105,8 @@ static inline enum phase_diversity_modes_idx
 si476x_phase_diversity_mode_to_idx(enum si476x_phase_diversity_mode mode)
 {
 	switch (mode) {
-	default:		/* FALLTHROUGH */
+	default:
+		fallthrough;
 	case SI476X_PHDIV_DISABLED:
 		return SI476X_IDX_PHDIV_DISABLED;
 	case SI476X_PHDIV_PRIMARY_COMBINING:
@@ -158,7 +150,7 @@ enum si476x_ctrl_idx {
 };
 static struct v4l2_ctrl_config si476x_ctrls[] = {
 
-	/**
+	/*
 	 * SI476X during its station seeking(or tuning) process uses several
 	 * parameters to detrmine if "the station" is valid:
 	 *
@@ -197,7 +189,7 @@ static struct v4l2_ctrl_config si476x_ctrls[] = {
 		.step	= 2,
 	},
 
-	/**
+	/*
 	 * #V4L2_CID_SI476X_HARMONICS_COUNT -- number of harmonics
 	 * built-in power-line noise supression filter is to reject
 	 * during AM-mode operation.
@@ -213,7 +205,7 @@ static struct v4l2_ctrl_config si476x_ctrls[] = {
 		.step	= 1,
 	},
 
-	/**
+	/*
 	 * #V4L2_CID_SI476X_DIVERSITY_MODE -- configuration which
 	 * two tuners working in diversity mode are to work in.
 	 *
@@ -237,7 +229,7 @@ static struct v4l2_ctrl_config si476x_ctrls[] = {
 		.max	= ARRAY_SIZE(phase_diversity_modes) - 1,
 	},
 
-	/**
+	/*
 	 * #V4L2_CID_SI476X_INTERCHIP_LINK -- inter-chip link in
 	 * diversity mode indicator. Allows user to determine if two
 	 * chips working in diversity mode have established a link
@@ -268,8 +260,8 @@ struct si476x_radio;
  *
  * @tune_freq: Tune chip to a specific frequency
  * @seek_start: Star station seeking
- * @rsq_status: Get Recieved Signal Quality(RSQ) status
- * @rds_blckcnt: Get recived RDS blocks count
+ * @rsq_status: Get Received Signal Quality(RSQ) status
+ * @rds_blckcnt: Get received RDS blocks count
  * @phase_diversity: Change phase diversity mode of the tuner
  * @phase_div_status: Get phase diversity mode status
  * @acf_status: Get the status of Automatically Controlled
@@ -296,11 +288,15 @@ struct si476x_radio_ops {
 /**
  * struct si476x_radio - radio device
  *
- * @core: Pointer to underlying core device
+ * @v4l2dev: Pointer to V4L2 device created by V4L2 subsystem
  * @videodev: Pointer to video device created by V4L2 subsystem
+ * @ctrl_handler: V4L2 controls handler
+ * @core: Pointer to underlying core device
  * @ops: Vtable of functions. See struct si476x_radio_ops for details
- * @kref: Reference counter
- * @core_lock: An r/w semaphore to brebvent the deletion of underlying
+ * @debugfs: pointer to &strucd dentry for debugfs
+ * @audmode: audio mode, as defined for the rxsubchans field
+ *	     at videodev2.h
+ *
  * core structure is the radio device is being used
  */
 struct si476x_radio {
@@ -336,24 +332,11 @@ static int si476x_radio_querycap(struct file *file, void *priv,
 {
 	struct si476x_radio *radio = video_drvdata(file);
 
-	strlcpy(capability->driver, radio->v4l2dev.name,
+	strscpy(capability->driver, radio->v4l2dev.name,
 		sizeof(capability->driver));
-	strlcpy(capability->card,   DRIVER_CARD, sizeof(capability->card));
+	strscpy(capability->card,   DRIVER_CARD, sizeof(capability->card));
 	snprintf(capability->bus_info, sizeof(capability->bus_info),
 		 "platform:%s", radio->v4l2dev.name);
-
-	capability->device_caps = V4L2_CAP_TUNER
-		| V4L2_CAP_RADIO
-		| V4L2_CAP_HW_FREQ_SEEK;
-
-	si476x_core_lock(radio->core);
-	if (!si476x_core_is_a_secondary_tuner(radio->core))
-		capability->device_caps |= V4L2_CAP_RDS_CAPTURE
-			| V4L2_CAP_READWRITE;
-	si476x_core_unlock(radio->core);
-
-	capability->capabilities = capability->device_caps
-		| V4L2_CAP_DEVICE_CAPS;
 	return 0;
 }
 
@@ -424,15 +407,15 @@ static int si476x_radio_g_tuner(struct file *file, void *priv,
 	si476x_core_lock(radio->core);
 
 	if (si476x_core_is_a_secondary_tuner(radio->core)) {
-		strlcpy(tuner->name, "FM (secondary)", sizeof(tuner->name));
+		strscpy(tuner->name, "FM (secondary)", sizeof(tuner->name));
 		tuner->rxsubchans = 0;
 		tuner->rangelow = si476x_bands[SI476X_BAND_FM].rangelow;
 	} else if (si476x_core_has_am(radio->core)) {
 		if (si476x_core_is_a_primary_tuner(radio->core))
-			strlcpy(tuner->name, "AM/FM (primary)",
+			strscpy(tuner->name, "AM/FM (primary)",
 				sizeof(tuner->name));
 		else
-			strlcpy(tuner->name, "AM/FM", sizeof(tuner->name));
+			strscpy(tuner->name, "AM/FM", sizeof(tuner->name));
 
 		tuner->rxsubchans = V4L2_TUNER_SUB_MONO | V4L2_TUNER_SUB_STEREO
 			| V4L2_TUNER_SUB_RDS;
@@ -442,7 +425,7 @@ static int si476x_radio_g_tuner(struct file *file, void *priv,
 
 		tuner->rangelow = si476x_bands[SI476X_BAND_AM].rangelow;
 	} else {
-		strlcpy(tuner->name, "FM", sizeof(tuner->name));
+		strscpy(tuner->name, "FM", sizeof(tuner->name));
 		tuner->rxsubchans = V4L2_TUNER_SUB_RDS;
 		tuner->capability |= V4L2_TUNER_CAP_RDS
 			| V4L2_TUNER_CAP_RDS_BLOCK_IO
@@ -568,8 +551,8 @@ static int si476x_radio_do_post_powerup_init(struct si476x_radio *radio,
 	err = regcache_sync_region(radio->core->regmap,
 				   SI476X_PROP_DIGITAL_IO_INPUT_SAMPLE_RATE,
 				   SI476X_PROP_DIGITAL_IO_OUTPUT_FORMAT);
-		if (err < 0)
-			return err;
+	if (err < 0)
+		return err;
 
 	err = regcache_sync_region(radio->core->regmap,
 				   SI476X_PROP_AUDIO_DEEMPHASIS,
@@ -755,7 +738,7 @@ static int si476x_radio_s_hw_freq_seek(struct file *file, void *priv,
 {
 	int err;
 	enum si476x_func func;
-	u32 rangelow, rangehigh;
+	u32 rangelow = seek->rangelow, rangehigh = seek->rangehigh;
 	struct si476x_radio *radio = video_drvdata(file);
 
 	if (file->f_flags & O_NONBLOCK)
@@ -767,23 +750,21 @@ static int si476x_radio_s_hw_freq_seek(struct file *file, void *priv,
 
 	si476x_core_lock(radio->core);
 
-	if (!seek->rangelow) {
+	if (!rangelow) {
 		err = regmap_read(radio->core->regmap,
 				  SI476X_PROP_SEEK_BAND_BOTTOM,
 				  &rangelow);
-		if (!err)
-			rangelow = si476x_to_v4l2(radio->core, rangelow);
-		else
+		if (err)
 			goto unlock;
+		rangelow = si476x_to_v4l2(radio->core, rangelow);
 	}
-	if (!seek->rangehigh) {
+	if (!rangehigh) {
 		err = regmap_read(radio->core->regmap,
 				  SI476X_PROP_SEEK_BAND_TOP,
 				  &rangehigh);
-		if (!err)
-			rangehigh = si476x_to_v4l2(radio->core, rangehigh);
-		else
+		if (err)
 			goto unlock;
+		rangehigh = si476x_to_v4l2(radio->core, rangehigh);
 	}
 
 	if (rangelow > rangehigh) {
@@ -1018,16 +999,6 @@ static int si476x_radio_s_ctrl(struct v4l2_ctrl *ctrl)
 	return retval;
 }
 
-static int si476x_radio_g_chip_ident(struct file *file, void *fh,
-				     struct v4l2_dbg_chip_ident *chip)
-{
-	if (chip->match.type == V4L2_CHIP_MATCH_HOST &&
-	    v4l2_chip_match_host(&chip->match))
-		return 0;
-	return -EINVAL;
-}
-
-
 #ifdef CONFIG_VIDEO_ADV_DEBUG
 static int si476x_radio_g_register(struct file *file, void *fh,
 				   struct v4l2_dbg_register *reg)
@@ -1159,22 +1130,22 @@ static ssize_t si476x_radio_fops_read(struct file *file, char __user *buf,
 	return rval;
 }
 
-static unsigned int si476x_radio_fops_poll(struct file *file,
+static __poll_t si476x_radio_fops_poll(struct file *file,
 				struct poll_table_struct *pts)
 {
 	struct si476x_radio *radio = video_drvdata(file);
-	unsigned long req_events = poll_requested_events(pts);
-	unsigned int err = v4l2_ctrl_poll(file, pts);
+	__poll_t req_events = poll_requested_events(pts);
+	__poll_t err = v4l2_ctrl_poll(file, pts);
 
-	if (req_events & (POLLIN | POLLRDNORM)) {
+	if (req_events & (EPOLLIN | EPOLLRDNORM)) {
 		if (atomic_read(&radio->core->is_alive))
 			poll_wait(file, &radio->core->rds_read_queue, pts);
 
 		if (!atomic_read(&radio->core->is_alive))
-			err = POLLHUP;
+			err = EPOLLHUP;
 
 		if (!kfifo_is_empty(&radio->core->rds_fifo))
-			err = POLLIN | POLLRDNORM;
+			err = EPOLLIN | EPOLLRDNORM;
 	}
 
 	return err;
@@ -1203,7 +1174,6 @@ static const struct v4l2_ioctl_ops si4761_ioctl_ops = {
 	.vidioc_subscribe_event		= v4l2_ctrl_subscribe_event,
 	.vidioc_unsubscribe_event	= v4l2_event_unsubscribe,
 
-	.vidioc_g_chip_ident		= si476x_radio_g_chip_ident,
 #ifdef CONFIG_VIDEO_ADV_DEBUG
 	.vidioc_g_register		= si476x_radio_g_register,
 	.vidioc_s_register		= si476x_radio_s_register,
@@ -1477,11 +1447,18 @@ static int si476x_radio_probe(struct platform_device *pdev)
 
 	radio->videodev.v4l2_dev  = &radio->v4l2dev;
 	radio->videodev.ioctl_ops = &si4761_ioctl_ops;
+	radio->videodev.device_caps = V4L2_CAP_TUNER | V4L2_CAP_RADIO |
+				      V4L2_CAP_HW_FREQ_SEEK;
+
+	si476x_core_lock(radio->core);
+	if (!si476x_core_is_a_secondary_tuner(radio->core))
+		radio->videodev.device_caps |= V4L2_CAP_RDS_CAPTURE |
+					       V4L2_CAP_READWRITE;
+	si476x_core_unlock(radio->core);
 
 	video_set_drvdata(&radio->videodev, radio);
 	platform_set_drvdata(pdev, radio);
 
-	set_bit(V4L2_FL_USE_FH_PRIO, &radio->videodev.flags);
 
 	radio->v4l2dev.ctrl_handler = &radio->ctrl_handler;
 	v4l2_ctrl_handler_init(&radio->ctrl_handler,
@@ -1542,11 +1519,11 @@ static int si476x_radio_probe(struct platform_device *pdev)
 	if (si476x_core_has_diversity(radio->core)) {
 		si476x_ctrls[SI476X_IDX_DIVERSITY_MODE].def =
 			si476x_phase_diversity_mode_to_idx(radio->core->diversity_mode);
-		si476x_radio_add_new_custom(radio, SI476X_IDX_DIVERSITY_MODE);
+		rval = si476x_radio_add_new_custom(radio, SI476X_IDX_DIVERSITY_MODE);
 		if (rval < 0)
 			goto exit;
 
-		si476x_radio_add_new_custom(radio, SI476X_IDX_INTERCHIP_LINK);
+		rval = si476x_radio_add_new_custom(radio, SI476X_IDX_INTERCHIP_LINK);
 		if (rval < 0)
 			goto exit;
 	}
@@ -1560,7 +1537,7 @@ static int si476x_radio_probe(struct platform_device *pdev)
 
 	rval = si476x_radio_init_debugfs(radio);
 	if (rval < 0) {
-		dev_err(&pdev->dev, "Could not creat debugfs interface\n");
+		dev_err(&pdev->dev, "Could not create debugfs interface\n");
 		goto exit;
 	}
 
@@ -1587,7 +1564,6 @@ MODULE_ALIAS("platform:si476x-radio");
 static struct platform_driver si476x_radio_driver = {
 	.driver		= {
 		.name	= DRIVER_NAME,
-		.owner	= THIS_MODULE,
 	},
 	.probe		= si476x_radio_probe,
 	.remove		= si476x_radio_remove,

@@ -1,24 +1,17 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
- * Intel Lynxpoint LPSS clocks.
+ * Intel Low Power Subsystem clocks.
  *
  * Copyright (C) 2013, Intel Corporation
  * Authors: Mika Westerberg <mika.westerberg@linux.intel.com>
  *	    Heikki Krogerus <heikki.krogerus@linux.intel.com>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 
-#include <linux/clk.h>
-#include <linux/clkdev.h>
 #include <linux/clk-provider.h>
 #include <linux/err.h>
 #include <linux/module.h>
-#include <linux/platform_data/clk-lpss.h>
+#include <linux/platform_data/x86/clk-lpss.h>
 #include <linux/platform_device.h>
-
-#define PRV_CLOCK_PARAMS 0x800
 
 static int lpt_clk_probe(struct platform_device *pdev)
 {
@@ -32,7 +25,7 @@ static int lpt_clk_probe(struct platform_device *pdev)
 	/* LPSS free running clock */
 	drvdata->name = "lpss_clk";
 	clk = clk_register_fixed_rate(&pdev->dev, drvdata->name, NULL,
-				      CLK_IS_ROOT, 100000000);
+				      0, 100000000);
 	if (IS_ERR(clk))
 		return PTR_ERR(clk);
 
@@ -44,7 +37,6 @@ static int lpt_clk_probe(struct platform_device *pdev)
 static struct platform_driver lpt_clk_driver = {
 	.driver = {
 		.name = "clk-lpt",
-		.owner = THIS_MODULE,
 	},
 	.probe = lpt_clk_probe,
 };

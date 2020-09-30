@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef USBUSX2Y_H
 #define USBUSX2Y_H
 #include "../usbaudio.h"
@@ -17,7 +18,7 @@ struct snd_usX2Y_AsyncSeq {
 struct snd_usX2Y_urbSeq {
 	int	submitted;
 	int	len;
-	struct urb	*urb[0];
+	struct urb	*urb[];
 };
 
 #include "usx2yhwdeppcm.h"
@@ -36,7 +37,7 @@ struct usX2Ydev {
 	unsigned int		rate,
 				format;
 	int			chip_status;
-	struct mutex		prepare_mutex;
+	struct mutex		pcm_mutex;
 	struct us428ctls_sharedmem	*us428ctls_sharedmem;
 	int			wait_iso_frame;
 	wait_queue_head_t	us428ctls_wait_queue_head;

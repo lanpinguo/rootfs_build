@@ -1,25 +1,8 @@
-/* linux/arch/arm/mach-s3c2410/mach-qt2410.c
- *
- * Copyright (C) 2006 by OpenMoko, Inc.
- * Author: Harald Welte <laforge@openmoko.org>
- * All rights reserved.
- *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License as
- * published by the Free Software Foundation; either version 2 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
- * MA 02111-1307 USA
- *
- */
+// SPDX-License-Identifier: GPL-2.0+
+//
+// Copyright (C) 2006 by OpenMoko, Inc.
+// Author: Harald Welte <laforge@openmoko.org>
+// All rights reserved.
 
 #include <linux/kernel.h>
 #include <linux/types.h>
@@ -28,14 +11,16 @@
 #include <linux/timer.h>
 #include <linux/init.h>
 #include <linux/gpio.h>
+#include <linux/gpio/machine.h>
 #include <linux/device.h>
 #include <linux/platform_device.h>
 #include <linux/serial_core.h>
+#include <linux/serial_s3c.h>
 #include <linux/spi/spi.h>
 #include <linux/spi/spi_gpio.h>
 #include <linux/io.h>
 #include <linux/mtd/mtd.h>
-#include <linux/mtd/nand.h>
+#include <linux/mtd/rawnand.h>
 #include <linux/mtd/nand_ecc.h>
 #include <linux/mtd/partitions.h>
 
@@ -49,11 +34,11 @@
 
 #include <linux/platform_data/leds-s3c24xx.h>
 #include <mach/regs-lcd.h>
-#include <plat/regs-serial.h>
 #include <mach/fb.h>
 #include <linux/platform_data/mtd-nand-s3c2410.h>
 #include <linux/platform_data/usb-s3c2410_udc.h>
 #include <linux/platform_data/i2c-s3c2410.h>
+#include <mach/gpio-samsung.h>
 
 #include <plat/gpio-cfg.h>
 #include <plat/devs.h>
@@ -192,9 +177,15 @@ static struct platform_device qt2410_cs89x0 = {
 
 /* LED */
 
+static struct gpiod_lookup_table qt2410_led_gpio_table = {
+	.dev_id = "s3c24xx_led.0",
+	.table = {
+		GPIO_LOOKUP("GPB", 0, NULL, GPIO_ACTIVE_LOW | GPIO_OPEN_DRAIN),
+		{ },
+	},
+};
+
 static struct s3c24xx_led_platdata qt2410_pdata_led = {
-	.gpio		= S3C2410_GPB(0),
-	.flags		= S3C24XX_LEDF_ACTLOW | S3C24XX_LEDF_TRISTATE,
 	.name		= "led",
 	.def_trigger	= "timer",
 };
@@ -210,15 +201,28 @@ static struct platform_device qt2410_led = {
 /* SPI */
 
 static struct spi_gpio_platform_data spi_gpio_cfg = {
-	.sck		= S3C2410_GPG(7),
-	.mosi		= S3C2410_GPG(6),
-	.miso		= S3C2410_GPG(5),
+	.num_chipselect	= 1,
 };
 
 static struct platform_device qt2410_spi = {
-	.name		= "spi-gpio",
+	.name		= "spi_gpio",
 	.id		= 1,
 	.dev.platform_data = &spi_gpio_cfg,
+};
+
+static struct gpiod_lookup_table qt2410_spi_gpiod_table = {
+	.dev_id         = "spi_gpio",
+	.table          = {
+		GPIO_LOOKUP("GPIOG", 7,
+			    "sck", GPIO_ACTIVE_HIGH),
+		GPIO_LOOKUP("GPIOG", 6,
+			    "mosi", GPIO_ACTIVE_HIGH),
+		GPIO_LOOKUP("GPIOG", 5,
+			    "miso", GPIO_ACTIVE_HIGH),
+		GPIO_LOOKUP("GPIOB", 5,
+			    "cs", GPIO_ACTIVE_HIGH),
+		{ },
+	},
 };
 
 /* Board devices */
@@ -283,6 +287,7 @@ static struct s3c2410_platform_nand __initdata qt2410_nand_info = {
 	.twrph1		= 20,
 	.nr_sets	= ARRAY_SIZE(qt2410_nand_sets),
 	.sets		= qt2410_nand_sets,
+	.ecc_mode       = NAND_ECC_SOFT,
 };
 
 /* UDC */
@@ -303,9 +308,14 @@ __setup("tft=", qt2410_tft_setup);
 static void __init qt2410_map_io(void)
 {
 	s3c24xx_init_io(qt2410_iodesc, ARRAY_SIZE(qt2410_iodesc));
-	s3c24xx_init_clocks(12*1000*1000);
 	s3c24xx_init_uarts(smdk2410_uartcfgs, ARRAY_SIZE(smdk2410_uartcfgs));
 	samsung_set_timer_source(SAMSUNG_PWM3, SAMSUNG_PWM4);
+}
+
+static void __init qt2410_init_time(void)
+{
+	s3c2410_init_clocks(12000000);
+	samsung_timer_init();
 }
 
 static void __init qt2410_machine_init(void)
@@ -333,9 +343,9 @@ static void __init qt2410_machine_init(void)
 	s3c24xx_udc_set_platdata(&qt2410_udc_cfg);
 	s3c_i2c0_set_platdata(NULL);
 
-	WARN_ON(gpio_request(S3C2410_GPB(5), "spi cs"));
-	gpio_direction_output(S3C2410_GPB(5), 1);
-
+	gpiod_add_lookup_table(&qt2410_spi_gpiod_table);
+	s3c_gpio_setpull(S3C2410_GPB(0), S3C_GPIO_PULL_NONE);
+	gpiod_add_lookup_table(&qt2410_led_gpio_table);
 	platform_add_devices(qt2410_devices, ARRAY_SIZE(qt2410_devices));
 	s3c_pm_init();
 }
@@ -345,6 +355,5 @@ MACHINE_START(QT2410, "QT2410")
 	.map_io		= qt2410_map_io,
 	.init_irq	= s3c2410_init_irq,
 	.init_machine	= qt2410_machine_init,
-	.init_time	= samsung_timer_init,
-	.restart	= s3c2410_restart,
+	.init_time	= qt2410_init_time,
 MACHINE_END

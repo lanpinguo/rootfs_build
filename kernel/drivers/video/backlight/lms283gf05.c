@@ -1,11 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * lms283gf05.c -- support for Samsung LMS283GF05 LCD
  *
  * Copyright (c) 2009 Marek Vasut <marek.vasut@gmail.com>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 
 #include <linux/device.h>
@@ -128,7 +125,7 @@ static int lms283gf05_power_set(struct lcd_device *ld, int power)
 {
 	struct lms283gf05_state *st = lcd_get_data(ld);
 	struct spi_device *spi = st->spi;
-	struct lms283gf05_pdata *pdata = spi->dev.platform_data;
+	struct lms283gf05_pdata *pdata = dev_get_platdata(&spi->dev);
 
 	if (power <= FB_BLANK_NORMAL) {
 		if (pdata)
@@ -153,7 +150,7 @@ static struct lcd_ops lms_ops = {
 static int lms283gf05_probe(struct spi_device *spi)
 {
 	struct lms283gf05_state *st;
-	struct lms283gf05_pdata *pdata = spi->dev.platform_data;
+	struct lms283gf05_pdata *pdata = dev_get_platdata(&spi->dev);
 	struct lcd_device *ld;
 	int ret = 0;
 
@@ -161,19 +158,18 @@ static int lms283gf05_probe(struct spi_device *spi)
 		ret = devm_gpio_request_one(&spi->dev, pdata->reset_gpio,
 				GPIOF_DIR_OUT | (!pdata->reset_inverted ?
 				GPIOF_INIT_HIGH : GPIOF_INIT_LOW),
-				"LMS285GF05 RESET");
+				"LMS283GF05 RESET");
 		if (ret)
 			return ret;
 	}
 
 	st = devm_kzalloc(&spi->dev, sizeof(struct lms283gf05_state),
 				GFP_KERNEL);
-	if (st == NULL) {
-		dev_err(&spi->dev, "No memory for device state\n");
+	if (st == NULL)
 		return -ENOMEM;
-	}
 
-	ld = lcd_device_register("lms283gf05", &spi->dev, st, &lms_ops);
+	ld = devm_lcd_device_register(&spi->dev, "lms283gf05", &spi->dev, st,
+					&lms_ops);
 	if (IS_ERR(ld))
 		return PTR_ERR(ld);
 
@@ -190,22 +186,11 @@ static int lms283gf05_probe(struct spi_device *spi)
 	return 0;
 }
 
-static int lms283gf05_remove(struct spi_device *spi)
-{
-	struct lms283gf05_state *st = spi_get_drvdata(spi);
-
-	lcd_device_unregister(st->ld);
-
-	return 0;
-}
-
 static struct spi_driver lms283gf05_driver = {
 	.driver = {
 		.name	= "lms283gf05",
-		.owner	= THIS_MODULE,
 	},
 	.probe		= lms283gf05_probe,
-	.remove		= lms283gf05_remove,
 };
 
 module_spi_driver(lms283gf05_driver);

@@ -1,18 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Copyright (C) 2000 Deep Blue Solutions Ltd
  * Copyright (C) 2002 Shane Nay (shane@minirl.com)
  * Copyright 2005-2007 Freescale Semiconductor, Inc. All Rights Reserved.
  * Copyright 2011 Denis 'GNUtoo' Carikli <GNUtoo@no-log.org>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
  */
 
 #include <linux/kernel.h>
@@ -57,7 +48,6 @@ MACHINE_START(BUG, "BugLabs BUGBase")
 	.map_io = mx31_map_io,
 	.init_early = imx31_init_early,
 	.init_irq = mx31_init_irq,
-	.handle_irq = imx31_handle_irq,
 	.init_time	= bug_timer_init,
 	.init_machine = bug_board_init,
 	.restart	= mxc_restart,

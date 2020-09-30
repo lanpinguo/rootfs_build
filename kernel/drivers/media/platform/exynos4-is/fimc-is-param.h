@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Samsung EXYNOS4x12 FIMC-IS (Imaging Subsystem) driver
  *
@@ -5,10 +6,6 @@
  *
  * Authors: Younghwan Joo <yhwan.joo@samsung.com>
  *	    Sylwester Nawrocki <s.nawrocki@samsung.com>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 #ifndef FIMC_IS_PARAM_H_
 #define FIMC_IS_PARAM_H_
@@ -298,7 +295,7 @@ enum isp_af_mode {
 #define ISP_FLASH_COMMAND_AUTO			2
 #define ISP_FLASH_COMMAND_TORCH			3 /* 3 sec */
 
-/* Flash red-eye commads */
+/* Flash red-eye commands */
 #define ISP_FLASH_REDEYE_DISABLE		0
 #define ISP_FLASH_REDEYE_ENABLE			1
 
@@ -911,6 +908,10 @@ struct is_region {
 	u32 shared[MAX_SHARED_COUNT];
 } __packed;
 
+/* Offset to the ISP DMA2 output buffer address array. */
+#define DMA2_OUTPUT_ADDR_ARRAY_OFFS \
+	(offsetof(struct is_region, shared) + 32 * sizeof(u32))
+
 struct is_debug_frame_descriptor {
 	u32 sensor_frame_time;
 	u32 sensor_exposure_time;
@@ -988,6 +989,7 @@ struct sensor_open_extended {
 struct fimc_is;
 
 int fimc_is_hw_get_sensor_max_framerate(struct fimc_is *is);
+int __fimc_is_hw_update_param(struct fimc_is *is, u32 offset);
 void fimc_is_set_initial_params(struct fimc_is *is);
 unsigned int __get_pending_param_count(struct fimc_is *is);
 

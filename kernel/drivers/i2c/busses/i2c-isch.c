@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
     i2c-isch.c - Linux kernel driver for Intel SCH chipset SMBus
     - Based on i2c-piix4.c
@@ -6,18 +7,6 @@
     - Intel SCH support
     Copyright (c) 2007 - 2008 Jacob Jun Pan <jacob.jun.pan@intel.com>
 
-    This program is free software; you can redistribute it and/or modify
-    it under the terms of the GNU General Public License version 2 as
-    published by the Free Software Foundation.
-
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU General Public License for more details.
-
-    You should have received a copy of the GNU General Public License
-    along with this program; if not, write to the Free Software
-    Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 */
 
 /*
@@ -33,9 +22,7 @@
 #include <linux/stddef.h>
 #include <linux/ioport.h>
 #include <linux/i2c.h>
-#include <linux/init.h>
 #include <linux/io.h>
-#include <linux/acpi.h>
 
 /* SCH SMBus address offsets */
 #define SMBHSTCNT	(0 + sch_smba)
@@ -169,7 +156,7 @@ static s32 sch_access(struct i2c_adapter *adap, u16 addr,
 		 * run ~75 kHz instead which should do no harm.
 		 */
 		dev_notice(&sch_adapter.dev,
-			"Clock divider unitialized. Setting defaults\n");
+			"Clock divider uninitialized. Setting defaults\n");
 		outw(backbone_speed / (4 * 100), SMBHSTCLK);
 	}
 
@@ -275,7 +262,8 @@ static int smbus_sch_probe(struct platform_device *dev)
 	if (!res)
 		return -EBUSY;
 
-	if (!request_region(res->start, resource_size(res), dev->name)) {
+	if (!devm_request_region(&dev->dev, res->start, resource_size(res),
+				 dev->name)) {
 		dev_err(&dev->dev, "SMBus region 0x%x already in use!\n",
 			sch_smba);
 		return -EBUSY;
@@ -292,22 +280,16 @@ static int smbus_sch_probe(struct platform_device *dev)
 		"SMBus SCH adapter at %04x", sch_smba);
 
 	retval = i2c_add_adapter(&sch_adapter);
-	if (retval) {
-		dev_err(&dev->dev, "Couldn't register adapter!\n");
-		release_region(res->start, resource_size(res));
+	if (retval)
 		sch_smba = 0;
-	}
 
 	return retval;
 }
 
 static int smbus_sch_remove(struct platform_device *pdev)
 {
-	struct resource *res;
 	if (sch_smba) {
 		i2c_del_adapter(&sch_adapter);
-		res = platform_get_resource(pdev, IORESOURCE_IO, 0);
-		release_region(res->start, resource_size(res));
 		sch_smba = 0;
 	}
 
@@ -317,7 +299,6 @@ static int smbus_sch_remove(struct platform_device *pdev)
 static struct platform_driver smbus_sch_driver = {
 	.driver = {
 		.name = "isch_smbus",
-		.owner = THIS_MODULE,
 	},
 	.probe		= smbus_sch_probe,
 	.remove		= smbus_sch_remove,

@@ -46,7 +46,7 @@
 
 #include <asm/io.h>
 
-#include "../sticore.h"
+#include "../fbdev/sticore.h"
 
 /* switching to graphics mode */
 #define BLANK 0
@@ -77,11 +77,6 @@ static inline void cursor_undrawn(void)
 static const char *sticon_startup(void)
 {
     return "STI console";
-}
-
-static int sticon_set_palette(struct vc_data *c, unsigned char *table)
-{
-    return -EINVAL;
 }
 
 static void sticon_putc(struct vc_data *conp, int c, int ypos, int xpos)
@@ -137,33 +132,34 @@ static void sticon_cursor(struct vc_data *conp, int mode)
 {
     unsigned short car1;
 
-    car1 = conp->vc_screenbuf[conp->vc_x + conp->vc_y * conp->vc_cols];
+    car1 = conp->vc_screenbuf[conp->state.x + conp->state.y * conp->vc_cols];
     switch (mode) {
     case CM_ERASE:
-	sti_putc(sticon_sti, car1, conp->vc_y, conp->vc_x);
+	sti_putc(sticon_sti, car1, conp->state.y, conp->state.x);
 	break;
     case CM_MOVE:
     case CM_DRAW:
-	switch (conp->vc_cursor_type & 0x0f) {
+	switch (CUR_SIZE(conp->vc_cursor_type)) {
 	case CUR_UNDERLINE:
 	case CUR_LOWER_THIRD:
 	case CUR_LOWER_HALF:
 	case CUR_TWO_THIRDS:
 	case CUR_BLOCK:
 	    sti_putc(sticon_sti, (car1 & 255) + (0 << 8) + (7 << 11),
-		     conp->vc_y, conp->vc_x);
+		     conp->state.y, conp->state.x);
 	    break;
 	}
 	break;
     }
 }
 
-static int sticon_scroll(struct vc_data *conp, int t, int b, int dir, int count)
+static bool sticon_scroll(struct vc_data *conp, unsigned int t,
+		unsigned int b, enum con_scroll dir, unsigned int count)
 {
     struct sti_struct *sti = sticon_sti;
 
     if (vga_is_gfx)
-        return 0;
+        return false;
 
     sticon_cursor(conp, CM_ERASE);
 
@@ -179,23 +175,7 @@ static int sticon_scroll(struct vc_data *conp, int t, int b, int dir, int count)
 	break;
     }
 
-    return 0;
-}
-
-static void sticon_bmove(struct vc_data *conp, int sy, int sx, 
-	int dy, int dx, int height, int width)
-{
-    if (!width || !height)
-	    return;
-#if 0
-    if (((sy <= p->cursor_y) && (p->cursor_y < sy+height) &&
-	(sx <= p->cursor_x) && (p->cursor_x < sx+width)) ||
-	((dy <= p->cursor_y) && (p->cursor_y < dy+height) &&
-	(dx <= p->cursor_x) && (p->cursor_x < dx+width)))
-		sticon_cursor(p, CM_ERASE /*|CM_SOFTBACK*/);
-#endif
-
-    sti_bmove(sticon_sti, sy, sx, dy, dx, height, width);
+    return false;
 }
 
 static void sticon_init(struct vc_data *c, int init)
@@ -256,11 +236,6 @@ static int sticon_blank(struct vc_data *c, int blank, int mode_switch)
     return 1;
 }
 
-static int sticon_scrolldelta(struct vc_data *conp, int lines)
-{
-    return 0;
-}
-
 static u16 *sticon_screen_pos(struct vc_data *conp, int offset)
 {
     int line;
@@ -313,8 +288,10 @@ static unsigned long sticon_getxy(struct vc_data *conp, unsigned long pos,
     return ret;
 }
 
-static u8 sticon_build_attr(struct vc_data *conp, u8 color, u8 intens,
-			    u8 blink, u8 underline, u8 reverse, u8 italic)
+static u8 sticon_build_attr(struct vc_data *conp, u8 color,
+			    enum vc_intensity intens,
+			    bool blink, bool underline, bool reverse,
+			    bool italic)
 {
     u8 attr = ((color & 0x70) >> 1) | ((color & 7));
 
@@ -355,11 +332,8 @@ static const struct consw sti_con = {
 	.con_putcs		= sticon_putcs,
 	.con_cursor		= sticon_cursor,
 	.con_scroll		= sticon_scroll,
-	.con_bmove		= sticon_bmove,
 	.con_switch		= sticon_switch,
 	.con_blank		= sticon_blank,
-	.con_set_palette	= sticon_set_palette,
-	.con_scrolldelta	= sticon_scrolldelta,
 	.con_set_origin		= sticon_set_origin,
 	.con_save_screen	= sticon_save_screen, 
 	.con_build_attr		= sticon_build_attr,
@@ -372,6 +346,7 @@ static const struct consw sti_con = {
 
 static int __init sticonsole_init(void)
 {
+    int err;
     /* already initialized ? */
     if (sticon_sti)
 	 return 0;
@@ -382,7 +357,10 @@ static int __init sticonsole_init(void)
 
     if (conswitchp == &dummy_con) {
 	printk(KERN_INFO "sticon: Initializing STI text console.\n");
-	return take_over_console(&sti_con, 0, MAX_NR_CONSOLES - 1, 1);
+	console_lock();
+	err = do_take_over_console(&sti_con, 0, MAX_NR_CONSOLES - 1, 1);
+	console_unlock();
+	return err;
     }
     return 0;
 }

@@ -1,17 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright 2011-2012 Calxeda, Inc.
- *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms and conditions of the GNU General Public License,
- * version 2, as published by the Free Software Foundation.
- *
- * This program is distributed in the hope it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along with
- * this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include <linux/types.h>
 #include <linux/kernel.h>
@@ -21,7 +10,6 @@
 #include <linux/platform_device.h>
 #include <linux/of_platform.h>
 
-#include "edac_core.h"
 #include "edac_module.h"
 
 #define SR_CLR_SB_ECC_INTR	0x0
@@ -50,8 +38,15 @@ static irqreturn_t highbank_l2_err_handler(int irq, void *dev_id)
 	return IRQ_HANDLED;
 }
 
+static const struct of_device_id hb_l2_err_of_match[] = {
+	{ .compatible = "calxeda,hb-sregs-l2-ecc", },
+	{},
+};
+MODULE_DEVICE_TABLE(of, hb_l2_err_of_match);
+
 static int highbank_l2_err_probe(struct platform_device *pdev)
 {
+	const struct of_device_id *id;
 	struct edac_device_ctl_info *dci;
 	struct hb_l2_drvdata *drvdata;
 	struct resource *r;
@@ -90,7 +85,9 @@ static int highbank_l2_err_probe(struct platform_device *pdev)
 		goto err;
 	}
 
-	dci->mod_name = dev_name(&pdev->dev);
+	id = of_match_device(hb_l2_err_of_match, &pdev->dev);
+	dci->mod_name = pdev->dev.driver->name;
+	dci->ctl_name = id ? id->compatible : "unknown";
 	dci->dev_name = dev_name(&pdev->dev);
 
 	if (edac_device_add_device(dci))
@@ -128,12 +125,6 @@ static int highbank_l2_err_remove(struct platform_device *pdev)
 	edac_device_free_ctl_info(dci);
 	return 0;
 }
-
-static const struct of_device_id hb_l2_err_of_match[] = {
-	{ .compatible = "calxeda,hb-sregs-l2-ecc", },
-	{},
-};
-MODULE_DEVICE_TABLE(of, hb_l2_err_of_match);
 
 static struct platform_driver highbank_l2_edac_driver = {
 	.probe = highbank_l2_err_probe,

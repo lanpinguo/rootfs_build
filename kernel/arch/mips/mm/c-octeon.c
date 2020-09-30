@@ -6,7 +6,6 @@
  * Copyright (C) 2005-2007 Cavium Networks
  */
 #include <linux/export.h>
-#include <linux/init.h>
 #include <linux/kernel.h>
 #include <linux/sched.h>
 #include <linux/smp.h>
@@ -19,8 +18,8 @@
 #include <asm/bootinfo.h>
 #include <asm/cacheops.h>
 #include <asm/cpu-features.h>
+#include <asm/cpu-type.h>
 #include <asm/page.h>
-#include <asm/pgtable.h>
 #include <asm/r4kcache.h>
 #include <asm/traps.h>
 #include <asm/mmu_context.h>
@@ -128,21 +127,6 @@ static void octeon_flush_icache_range(unsigned long start, unsigned long end)
 
 
 /**
- * Flush the icache for a trampoline. These are used for interrupt
- * and exception hooking.
- *
- * @addr:   Address to flush
- */
-static void octeon_flush_cache_sigtramp(unsigned long addr)
-{
-	struct vm_area_struct *vma;
-
-	vma = find_vma(current->mm, addr);
-	octeon_flush_icache_all_cores(vma);
-}
-
-
-/**
  * Flush a range out of a vma
  *
  * @vma:    VMA to flush
@@ -180,15 +164,16 @@ static void octeon_flush_kernel_vmap_range(unsigned long vaddr, int size)
  * Probe Octeon's caches
  *
  */
-static void __cpuinit probe_octeon(void)
+static void probe_octeon(void)
 {
 	unsigned long icache_size;
 	unsigned long dcache_size;
 	unsigned int config1;
 	struct cpuinfo_mips *c = &current_cpu_data;
+	int cputype = current_cpu_type();
 
 	config1 = read_c0_config1();
-	switch (c->cputype) {
+	switch (cputype) {
 	case CPU_CAVIUM_OCTEON:
 	case CPU_CAVIUM_OCTEON_PLUS:
 		c->icache.linesz = 2 << ((config1 >> 19) & 7);
@@ -199,7 +184,7 @@ static void __cpuinit probe_octeon(void)
 			c->icache.sets * c->icache.ways * c->icache.linesz;
 		c->icache.waybit = ffs(icache_size / c->icache.ways) - 1;
 		c->dcache.linesz = 128;
-		if (c->cputype == CPU_CAVIUM_OCTEON_PLUS)
+		if (cputype == CPU_CAVIUM_OCTEON_PLUS)
 			c->dcache.sets = 2; /* CN5XXX has two Dcache sets */
 		else
 			c->dcache.sets = 1; /* CN3XXX has one Dcache set */
@@ -224,6 +209,20 @@ static void __cpuinit probe_octeon(void)
 		c->options |= MIPS_CPU_PREFETCH;
 		break;
 
+	case CPU_CAVIUM_OCTEON3:
+		c->icache.linesz = 128;
+		c->icache.sets = 16;
+		c->icache.ways = 39;
+		c->icache.flags |= MIPS_CACHE_VTAG;
+		icache_size = c->icache.sets * c->icache.ways * c->icache.linesz;
+
+		c->dcache.linesz = 128;
+		c->dcache.ways = 32;
+		c->dcache.sets = 8;
+		dcache_size = c->dcache.sets * c->dcache.ways * c->dcache.linesz;
+		c->options |= MIPS_CPU_PREFETCH;
+		break;
+
 	default:
 		panic("Unsupported Cavium Networks CPU type");
 		break;
@@ -237,21 +236,21 @@ static void __cpuinit probe_octeon(void)
 	c->dcache.sets = dcache_size / (c->dcache.linesz * c->dcache.ways);
 
 	if (smp_processor_id() == 0) {
-		pr_notice("Primary instruction cache %ldkB, %s, %d way, "
-			  "%d sets, linesize %d bytes.\n",
-			  icache_size >> 10,
-			  cpu_has_vtag_icache ?
+		pr_info("Primary instruction cache %ldkB, %s, %d way, "
+			"%d sets, linesize %d bytes.\n",
+			icache_size >> 10,
+			cpu_has_vtag_icache ?
 				"virtually tagged" : "physically tagged",
-			  c->icache.ways, c->icache.sets, c->icache.linesz);
+			c->icache.ways, c->icache.sets, c->icache.linesz);
 
-		pr_notice("Primary data cache %ldkB, %d-way, %d sets, "
-			  "linesize %d bytes.\n",
-			  dcache_size >> 10, c->dcache.ways,
-			  c->dcache.sets, c->dcache.linesz);
+		pr_info("Primary data cache %ldkB, %d-way, %d sets, "
+			"linesize %d bytes.\n",
+			dcache_size >> 10, c->dcache.ways,
+			c->dcache.sets, c->dcache.linesz);
 	}
 }
 
-static void  __cpuinit octeon_cache_error_setup(void)
+static void  octeon_cache_error_setup(void)
 {
 	extern char except_vec2_octeon;
 	set_handler(0x100, &except_vec2_octeon, 0x80);
@@ -261,7 +260,7 @@ static void  __cpuinit octeon_cache_error_setup(void)
  * Setup the Octeon cache flush routines
  *
  */
-void __cpuinit octeon_cache_init(void)
+void octeon_cache_init(void)
 {
 	probe_octeon();
 
@@ -272,11 +271,12 @@ void __cpuinit octeon_cache_init(void)
 	flush_cache_mm			= octeon_flush_cache_mm;
 	flush_cache_page		= octeon_flush_cache_page;
 	flush_cache_range		= octeon_flush_cache_range;
-	flush_cache_sigtramp		= octeon_flush_cache_sigtramp;
 	flush_icache_all		= octeon_flush_icache_all;
 	flush_data_cache_page		= octeon_flush_data_cache_page;
 	flush_icache_range		= octeon_flush_icache_range;
 	local_flush_icache_range	= local_octeon_flush_icache_range;
+	__flush_icache_user_range	= octeon_flush_icache_range;
+	__local_flush_icache_user_range	= local_octeon_flush_icache_range;
 
 	__flush_kernel_vmap_range	= octeon_flush_kernel_vmap_range;
 

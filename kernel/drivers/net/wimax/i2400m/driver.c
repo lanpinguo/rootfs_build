@@ -1,25 +1,10 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Intel Wireless WiMAX Connection 2400m
  * Generic probe/disconnect, reset and message passing
  *
- *
  * Copyright (C) 2007-2008 Intel Corporation <linux-wimax@intel.com>
  * Inaky Perez-Gonzalez <inaky.perez-gonzalez@intel.com>
- *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License version
- * 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
- * 02110-1301, USA.
- *
  *
  * See i2400m.h for driver documentation. This contains helpers for
  * the driver model glue [_setup()/_release()], handling device resets
@@ -500,26 +485,23 @@ int i2400m_pm_notifier(struct notifier_block *notifier,
  */
 int i2400m_pre_reset(struct i2400m *i2400m)
 {
-	int result;
 	struct device *dev = i2400m_dev(i2400m);
 
 	d_fnstart(3, dev, "(i2400m %p)\n", i2400m);
 	d_printf(1, dev, "pre-reset shut down\n");
 
-	result = 0;
 	mutex_lock(&i2400m->init_mutex);
 	if (i2400m->updown) {
 		netif_tx_disable(i2400m->wimax_dev.net_dev);
 		__i2400m_dev_stop(i2400m);
-		result = 0;
 		/* down't set updown to zero -- this way
 		 * post_reset can restore properly */
 	}
 	mutex_unlock(&i2400m->init_mutex);
 	if (i2400m->bus_release)
 		i2400m->bus_release(i2400m);
-	d_fnend(3, dev, "(i2400m %p) = %d\n", i2400m, result);
-	return result;
+	d_fnend(3, dev, "(i2400m %p) = 0\n", i2400m);
+	return 0;
 }
 EXPORT_SYMBOL_GPL(i2400m_pre_reset);
 
@@ -758,9 +740,6 @@ EXPORT_SYMBOL_GPL(i2400m_error_recovery);
 static
 int i2400m_bm_buf_alloc(struct i2400m *i2400m)
 {
-	int result;
-
-	result = -ENOMEM;
 	i2400m->bm_cmd_buf = kzalloc(I2400M_BM_CMD_BUF_SIZE, GFP_KERNEL);
 	if (i2400m->bm_cmd_buf == NULL)
 		goto error_bm_cmd_kzalloc;
@@ -772,7 +751,7 @@ int i2400m_bm_buf_alloc(struct i2400m *i2400m)
 error_bm_ack_buf_kzalloc:
 	kfree(i2400m->bm_cmd_buf);
 error_bm_cmd_kzalloc:
-	return result;
+	return -ENOMEM;
 }
 
 
@@ -861,7 +840,7 @@ EXPORT_SYMBOL_GPL(i2400m_reset);
  */
 int i2400m_setup(struct i2400m *i2400m, enum i2400m_bri bm_flags)
 {
-	int result = -ENODEV;
+	int result;
 	struct device *dev = i2400m_dev(i2400m);
 	struct wimax_dev *wimax_dev = &i2400m->wimax_dev;
 	struct net_device *net_dev = i2400m->wimax_dev.net_dev;
@@ -923,11 +902,7 @@ int i2400m_setup(struct i2400m *i2400m, enum i2400m_bri bm_flags)
 		goto error_sysfs_setup;
 	}
 
-	result = i2400m_debugfs_add(i2400m);
-	if (result < 0) {
-		dev_err(dev, "cannot setup i2400m's debugfs: %d\n", result);
-		goto error_debugfs_setup;
-	}
+	i2400m_debugfs_add(i2400m);
 
 	result = i2400m_dev_start(i2400m, bm_flags);
 	if (result < 0)
@@ -937,7 +912,6 @@ int i2400m_setup(struct i2400m *i2400m, enum i2400m_bri bm_flags)
 
 error_dev_start:
 	i2400m_debugfs_rm(i2400m);
-error_debugfs_setup:
 	sysfs_remove_group(&i2400m->wimax_dev.net_dev->dev.kobj,
 			   &i2400m_dev_attr_group);
 error_sysfs_setup:

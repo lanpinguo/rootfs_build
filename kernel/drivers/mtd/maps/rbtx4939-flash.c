@@ -1,11 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * rbtx4939-flash (based on physmap.c)
  *
  * This is a simplified physmap driver with map_init callback function.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  *
  * Copyright (C) 2009 Atsushi Nemoto <anemo@mba.ocn.ne.jp>
  */
@@ -13,7 +10,6 @@
 #include <linux/module.h>
 #include <linux/types.h>
 #include <linux/kernel.h>
-#include <linux/init.h>
 #include <linux/slab.h>
 #include <linux/device.h>
 #include <linux/platform_device.h>
@@ -34,11 +30,8 @@ static int rbtx4939_flash_remove(struct platform_device *dev)
 	info = platform_get_drvdata(dev);
 	if (!info)
 		return 0;
-	platform_set_drvdata(dev, NULL);
 
 	if (info->mtd) {
-		struct rbtx4939_flash_data *pdata = dev->dev.platform_data;
-
 		mtd_device_unregister(info->mtd);
 		map_destroy(info->mtd);
 	}
@@ -57,7 +50,7 @@ static int rbtx4939_flash_probe(struct platform_device *dev)
 	int err = 0;
 	unsigned long size;
 
-	pdata = dev->dev.platform_data;
+	pdata = dev_get_platdata(&dev->dev);
 	if (!pdata)
 		return -ENODEV;
 
@@ -100,9 +93,8 @@ static int rbtx4939_flash_probe(struct platform_device *dev)
 		err = -ENXIO;
 		goto err_out;
 	}
-	info->mtd->owner = THIS_MODULE;
-	err = mtd_device_parse_register(info->mtd, NULL, NULL, pdata->parts,
-					pdata->nr_parts);
+	info->mtd->dev.parent = &dev->dev;
+	err = mtd_device_register(info->mtd, pdata->parts, pdata->nr_parts);
 
 	if (err)
 		goto err_out;
@@ -131,7 +123,6 @@ static struct platform_driver rbtx4939_flash_driver = {
 	.shutdown	= rbtx4939_flash_shutdown,
 	.driver		= {
 		.name	= "rbtx4939-flash",
-		.owner	= THIS_MODULE,
 	},
 };
 

@@ -1,11 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Power control for Samsung LTV350QV Quarter VGA LCD Panel
  *
  * Copyright (C) 2006, 2007 Atmel Corporation
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 #include <linux/delay.h>
 #include <linux/err.h>
@@ -242,7 +239,8 @@ static int ltv350qv_probe(struct spi_device *spi)
 	if (!lcd->buffer)
 		return -ENOMEM;
 
-	ld = lcd_device_register("ltv350qv", &spi->dev, lcd, &ltv_ops);
+	ld = devm_lcd_device_register(&spi->dev, "ltv350qv", &spi->dev, lcd,
+					&ltv_ops);
 	if (IS_ERR(ld))
 		return PTR_ERR(ld);
 
@@ -250,15 +248,11 @@ static int ltv350qv_probe(struct spi_device *spi)
 
 	ret = ltv350qv_power(lcd, FB_BLANK_UNBLANK);
 	if (ret)
-		goto out_unregister;
+		return ret;
 
 	spi_set_drvdata(spi, lcd);
 
 	return 0;
-
-out_unregister:
-	lcd_device_unregister(ld);
-	return ret;
 }
 
 static int ltv350qv_remove(struct spi_device *spi)
@@ -266,8 +260,6 @@ static int ltv350qv_remove(struct spi_device *spi)
 	struct ltv350qv *lcd = spi_get_drvdata(spi);
 
 	ltv350qv_power(lcd, FB_BLANK_POWERDOWN);
-	lcd_device_unregister(lcd->ld);
-
 	return 0;
 }
 
@@ -300,7 +292,6 @@ static void ltv350qv_shutdown(struct spi_device *spi)
 static struct spi_driver ltv350qv_driver = {
 	.driver = {
 		.name		= "ltv350qv",
-		.owner		= THIS_MODULE,
 		.pm		= &ltv350qv_pm_ops,
 	},
 

@@ -1,9 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * kernel/power/suspend_test.c - Suspend to RAM and standby test facility.
  *
  * Copyright (c) 2009 Pavel Machek <pavel@ucw.cz>
- *
- * This file is released under the GPLv2.
  */
 
 #include <linux/init.h>
@@ -22,6 +21,8 @@
 #define TEST_SUSPEND_SECONDS	10
 
 static unsigned long suspend_test_start_time;
+static u32 test_repeat_count_max = 1;
+static u32 test_repeat_count_current;
 
 void suspend_test_start(void)
 {
@@ -69,20 +70,21 @@ static void __init test_wakealarm(struct rtc_device *rtc, suspend_state_t state)
 	static char info_test[] __initdata =
 		KERN_INFO "PM: test RTC wakeup from '%s' suspend\n";
 
-	unsigned long		now;
+	time64_t		now;
 	struct rtc_wkalrm	alm;
 	int			status;
 
 	/* this may fail if the RTC hasn't been initialized */
+repeat:
 	status = rtc_read_time(rtc, &alm.time);
 	if (status < 0) {
 		printk(err_readtime, dev_name(&rtc->dev), status);
 		return;
 	}
-	rtc_tm_to_time(&alm.time, &now);
+	now = rtc_tm_to_time64(&alm.time);
 
 	memset(&alm, 0, sizeof alm);
-	rtc_time_to_tm(now + TEST_SUSPEND_SECONDS, &alm.time);
+	rtc_time64_to_tm(now + TEST_SUSPEND_SECONDS, &alm.time);
 	alm.enabled = true;
 
 	status = rtc_set_alarm(rtc, &alm);
@@ -92,17 +94,28 @@ static void __init test_wakealarm(struct rtc_device *rtc, suspend_state_t state)
 	}
 
 	if (state == PM_SUSPEND_MEM) {
-		printk(info_test, pm_states[state].label);
+		printk(info_test, pm_states[state]);
 		status = pm_suspend(state);
 		if (status == -ENODEV)
 			state = PM_SUSPEND_STANDBY;
 	}
 	if (state == PM_SUSPEND_STANDBY) {
-		printk(info_test, pm_states[state].label);
+		printk(info_test, pm_states[state]);
+		status = pm_suspend(state);
+		if (status < 0)
+			state = PM_SUSPEND_TO_IDLE;
+	}
+	if (state == PM_SUSPEND_TO_IDLE) {
+		printk(info_test, pm_states[state]);
 		status = pm_suspend(state);
 	}
+
 	if (status < 0)
 		printk(err_suspend, status);
+
+	test_repeat_count_current++;
+	if (test_repeat_count_current < test_repeat_count_max)
+		goto repeat;
 
 	/* Some platforms can't detect that the alarm triggered the
 	 * wakeup, or (accordingly) disable it after it afterwards.
@@ -129,24 +142,36 @@ static int __init has_wakealarm(struct device *dev, const void *data)
  * at startup time.  They're normally disabled, for faster boot and because
  * we can't know which states really work on this particular system.
  */
-static suspend_state_t test_state __initdata = PM_SUSPEND_ON;
+static const char *test_state_label __initdata;
 
 static char warn_bad_state[] __initdata =
 	KERN_WARNING "PM: can't test '%s' suspend state\n";
 
 static int __init setup_test_suspend(char *value)
 {
-	suspend_state_t i;
+	int i;
+	char *repeat;
+	char *suspend_type;
 
-	/* "=mem" ==> "mem" */
+	/* example : "=mem[,N]" ==> "mem[,N]" */
 	value++;
+	suspend_type = strsep(&value, ",");
+	if (!suspend_type)
+		return 0;
+
+	repeat = strsep(&value, ",");
+	if (repeat) {
+		if (kstrtou32(repeat, 0, &test_repeat_count_max))
+			return 0;
+	}
+
 	for (i = PM_SUSPEND_MIN; i < PM_SUSPEND_MAX; i++)
-		if (!strcmp(pm_states[i].label, value)) {
-			test_state = pm_states[i].state;
+		if (!strcmp(pm_labels[i], suspend_type)) {
+			test_state_label = pm_labels[i];
 			return 0;
 		}
 
-	printk(warn_bad_state, value);
+	printk(warn_bad_state, suspend_type);
 	return 0;
 }
 __setup("test_suspend", setup_test_suspend);
@@ -158,28 +183,37 @@ static int __init test_suspend(void)
 
 	struct rtc_device	*rtc = NULL;
 	struct device		*dev;
+	suspend_state_t test_state;
 
 	/* PM is initialized by now; is that state testable? */
-	if (test_state == PM_SUSPEND_ON)
-		goto done;
-	if (!pm_states[test_state].state) {
-		printk(warn_bad_state, pm_states[test_state].label);
-		goto done;
+	if (!test_state_label)
+		return 0;
+
+	for (test_state = PM_SUSPEND_MIN; test_state < PM_SUSPEND_MAX; test_state++) {
+		const char *state_label = pm_states[test_state];
+
+		if (state_label && !strcmp(test_state_label, state_label))
+			break;
+	}
+	if (test_state == PM_SUSPEND_MAX) {
+		printk(warn_bad_state, test_state_label);
+		return 0;
 	}
 
 	/* RTCs have initialized by now too ... can we use one? */
 	dev = class_find_device(rtc_class, NULL, NULL, has_wakealarm);
-	if (dev)
+	if (dev) {
 		rtc = rtc_class_open(dev_name(dev));
+		put_device(dev);
+	}
 	if (!rtc) {
 		printk(warn_no_rtc);
-		goto done;
+		return 0;
 	}
 
 	/* go for it */
 	test_wakealarm(rtc, test_state);
 	rtc_class_close(rtc);
-done:
 	return 0;
 }
 late_initcall(test_suspend);

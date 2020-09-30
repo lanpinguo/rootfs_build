@@ -1,11 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * linux/drivers/input/serio/pcips2.c
  *
  *  Copyright (C) 2003 Russell King, All Rights Reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License.
  *
  *  I'm not sure if this is a generic PS/2 PCI interface or specific to
  *  the Mobility Electronics docking station.
@@ -16,7 +13,6 @@
 #include <linux/input.h>
 #include <linux/pci.h>
 #include <linux/slab.h>
-#include <linux/init.h>
 #include <linux/serio.h>
 #include <linux/delay.h>
 #include <asm/io.h>
@@ -181,7 +177,6 @@ static void pcips2_remove(struct pci_dev *dev)
 	struct pcips2_data *ps2if = pci_get_drvdata(dev);
 
 	serio_unregister_port(ps2if->io);
-	pci_set_drvdata(dev, NULL);
 	kfree(ps2if);
 	pci_release_regions(dev);
 	pci_disable_device(dev);

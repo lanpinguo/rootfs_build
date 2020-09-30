@@ -1,25 +1,11 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
 * Filename: cregs.c
-*
 *
 * Authors: Joshua Morris <josh.h.morris@us.ibm.com>
 *	Philip Kelleher <pjk1939@linux.vnet.ibm.com>
 *
 * (C) Copyright 2013 IBM Corporation
-*
-* This program is free software; you can redistribute it and/or
-* modify it under the terms of the GNU General Public License as
-* published by the Free Software Foundation; either version 2 of the
-* License, or (at your option) any later version.
-*
-* This program is distributed in the hope that it will be useful, but
-* WITHOUT ANY WARRANTY; without even the implied warranty of
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
-* General Public License for more details.
-*
-* You should have received a copy of the GNU General Public License
-* along with this program; if not, write to the Free Software Foundation,
-* Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 */
 
 #include <linux/completion.h>
@@ -203,9 +189,9 @@ static int creg_queue_cmd(struct rsxx_cardinfo *card,
 	return 0;
 }
 
-static void creg_cmd_timed_out(unsigned long data)
+static void creg_cmd_timed_out(struct timer_list *t)
 {
-	struct rsxx_cardinfo *card = (struct rsxx_cardinfo *) data;
+	struct rsxx_cardinfo *card = from_timer(card, t, creg_ctrl.cmd_timer);
 	struct creg_cmd *cmd;
 
 	spin_lock(&card->creg_ctrl.lock);
@@ -276,7 +262,7 @@ static void creg_cmd_done(struct work_struct *work)
 		st = -EIO;
 	}
 
-	if ((cmd->op == CREG_OP_READ)) {
+	if (cmd->op == CREG_OP_READ) {
 		unsigned int cnt8 = ioread32(card->regmap + CREG_CNT);
 
 		/* Paranoid Sanity Checks */
@@ -431,6 +417,15 @@ static int __issue_creg_rw(struct rsxx_cardinfo *card,
 	*hw_stat = completion.creg_status;
 
 	if (completion.st) {
+		/*
+		* This read is needed to verify that there has not been any
+		* extreme errors that might have occurred, i.e. EEH. The
+		* function iowrite32 will not detect EEH errors, so it is
+		* necessary that we recover if such an error is the reason
+		* for the timeout. This is a dummy read.
+		*/
+		ioread32(card->regmap + SCRATCH);
+
 		dev_warn(CARD_TO_DEV(card),
 			"creg command failed(%d x%08x)\n",
 			completion.st, addr);
@@ -727,12 +722,16 @@ int rsxx_creg_setup(struct rsxx_cardinfo *card)
 {
 	card->creg_ctrl.active_cmd = NULL;
 
+	card->creg_ctrl.creg_wq =
+			create_singlethread_workqueue(DRIVER_NAME"_creg");
+	if (!card->creg_ctrl.creg_wq)
+		return -ENOMEM;
+
 	INIT_WORK(&card->creg_ctrl.done_work, creg_cmd_done);
 	mutex_init(&card->creg_ctrl.reset_lock);
 	INIT_LIST_HEAD(&card->creg_ctrl.queue);
 	spin_lock_init(&card->creg_ctrl.lock);
-	setup_timer(&card->creg_ctrl.cmd_timer, creg_cmd_timed_out,
-		    (unsigned long) card);
+	timer_setup(&card->creg_ctrl.cmd_timer, creg_cmd_timed_out, 0);
 
 	return 0;
 }

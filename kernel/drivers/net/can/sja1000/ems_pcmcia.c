@@ -1,16 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (C) 2008 Sebastian Haas (initial chardev implementation)
  * Copyright (C) 2010 Markus Plessing <plessing@ems-wuensche.com>
  * Rework for mainline by Oliver Hartkopp <socketcan@hartkopp.net>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the version 2 of the GNU General Public License
- * as published by the Free Software Foundation
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU General Public License for more details.
  */
 
 #include <linux/kernel.h>
@@ -211,6 +203,7 @@ static int ems_pcmcia_add_card(struct pcmcia_device *pdev, unsigned long base)
 		priv = netdev_priv(dev);
 		priv->priv = card;
 		SET_NETDEV_DEV(dev, &pdev->dev);
+		dev->dev_id = i;
 
 		priv->irq_flags = IRQF_SHARED;
 		dev->irq = pdev->irq;

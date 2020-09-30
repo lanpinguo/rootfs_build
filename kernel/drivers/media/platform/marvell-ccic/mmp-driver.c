@@ -1,32 +1,29 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Support for the camera device found on Marvell MMP processors; known
  * to work with the Armada 610 as used in the OLPC 1.75 system.
  *
  * Copyright 2011 Jonathan Corbet <corbet@lwn.net>
- *
- * This file may be distributed under the terms of the GNU General
- * Public License, version 2.
+ * Copyright 2018 Lubomir Rintel <lkundrak@v3.sk>
  */
 
 #include <linux/init.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
-#include <linux/i2c.h>
-#include <linux/i2c-gpio.h>
 #include <linux/interrupt.h>
 #include <linux/spinlock.h>
 #include <linux/slab.h>
 #include <linux/videodev2.h>
 #include <media/v4l2-device.h>
-#include <media/v4l2-chip-ident.h>
-#include <media/mmp-camera.h>
+#include <linux/platform_data/media/mmp-camera.h>
 #include <linux/device.h>
+#include <linux/of.h>
+#include <linux/of_platform.h>
 #include <linux/platform_device.h>
-#include <linux/gpio.h>
 #include <linux/io.h>
-#include <linux/delay.h>
 #include <linux/list.h>
 #include <linux/pm.h>
+#include <linux/clk.h>
 
 #include "mcam-core.h"
 
@@ -34,11 +31,13 @@ MODULE_ALIAS("platform:mmp-camera");
 MODULE_AUTHOR("Jonathan Corbet <corbet@lwn.net>");
 MODULE_LICENSE("GPL");
 
+static char *mcam_clks[] = {"axi", "func", "phy"};
+
 struct mmp_camera {
-	void *power_regs;
 	struct platform_device *pdev;
 	struct mcam_camera mcam;
 	struct list_head devlist;
+	struct clk *mipi_clk;
 	int irq;
 };
 
@@ -90,68 +89,102 @@ static struct mmp_camera *mmpcam_find_device(struct platform_device *pdev)
 	return NULL;
 }
 
-
-
-
 /*
- * Power-related registers; this almost certainly belongs
- * somewhere else.
- *
- * ARMADA 610 register manual, sec 7.2.1, p1842.
+ * calc the dphy register values
+ * There are three dphy registers being used.
+ * dphy[0] - CSI2_DPHY3
+ * dphy[1] - CSI2_DPHY5
+ * dphy[2] - CSI2_DPHY6
+ * CSI2_DPHY3 and CSI2_DPHY6 can be set with a default value
+ * or be calculated dynamically
  */
-#define CPU_SUBSYS_PMU_BASE	0xd4282800
-#define REG_CCIC_DCGCR		0x28	/* CCIC dyn clock gate ctrl reg */
-#define REG_CCIC_CRCR		0x50	/* CCIC clk reset ctrl reg	*/
-
-/*
- * Power control.
- */
-static void mmpcam_power_up_ctlr(struct mmp_camera *cam)
-{
-	iowrite32(0x3f, cam->power_regs + REG_CCIC_DCGCR);
-	iowrite32(0x3805b, cam->power_regs + REG_CCIC_CRCR);
-	mdelay(1);
-}
-
-static void mmpcam_power_up(struct mcam_camera *mcam)
+static void mmpcam_calc_dphy(struct mcam_camera *mcam)
 {
 	struct mmp_camera *cam = mcam_to_cam(mcam);
-	struct mmp_camera_platform_data *pdata;
-/*
- * Turn on power and clocks to the controller.
- */
-	mmpcam_power_up_ctlr(cam);
-/*
- * Provide power to the sensor.
- */
-	mcam_reg_write(mcam, REG_CLKCTRL, 0x60000002);
-	pdata = cam->pdev->dev.platform_data;
-	gpio_set_value(pdata->sensor_power_gpio, 1);
-	mdelay(5);
-	mcam_reg_clear_bit(mcam, REG_CTRL1, 0x10000000);
-	gpio_set_value(pdata->sensor_reset_gpio, 0); /* reset is active low */
-	mdelay(5);
-	gpio_set_value(pdata->sensor_reset_gpio, 1); /* reset is active low */
-	mdelay(5);
-}
+	struct mmp_camera_platform_data *pdata = cam->pdev->dev.platform_data;
+	struct device *dev = &cam->pdev->dev;
+	unsigned long tx_clk_esc;
 
-static void mmpcam_power_down(struct mcam_camera *mcam)
-{
-	struct mmp_camera *cam = mcam_to_cam(mcam);
-	struct mmp_camera_platform_data *pdata;
-/*
- * Turn off clocks and set reset lines
- */
-	iowrite32(0, cam->power_regs + REG_CCIC_DCGCR);
-	iowrite32(0, cam->power_regs + REG_CCIC_CRCR);
-/*
- * Shut down the sensor.
- */
-	pdata = cam->pdev->dev.platform_data;
-	gpio_set_value(pdata->sensor_power_gpio, 0);
-	gpio_set_value(pdata->sensor_reset_gpio, 0);
-}
+	/*
+	 * If CSI2_DPHY3 is calculated dynamically,
+	 * pdata->lane_clk should be already set
+	 * either in the board driver statically
+	 * or in the sensor driver dynamically.
+	 */
+	/*
+	 * dphy[0] - CSI2_DPHY3:
+	 *  bit 0 ~ bit 7: HS Term Enable.
+	 *   defines the time that the DPHY
+	 *   wait before enabling the data
+	 *   lane termination after detecting
+	 *   that the sensor has driven the data
+	 *   lanes to the LP00 bridge state.
+	 *   The value is calculated by:
+	 *   (Max T(D_TERM_EN)/Period(DDR)) - 1
+	 *  bit 8 ~ bit 15: HS_SETTLE
+	 *   Time interval during which the HS
+	 *   receiver shall ignore any Data Lane
+	 *   HS transitions.
+	 *   The value has been calibrated on
+	 *   different boards. It seems to work well.
+	 *
+	 *  More detail please refer
+	 *  MIPI Alliance Spectification for D-PHY
+	 *  document for explanation of HS-SETTLE
+	 *  and D-TERM-EN.
+	 */
+	switch (pdata->dphy3_algo) {
+	case DPHY3_ALGO_PXA910:
+		/*
+		 * Calculate CSI2_DPHY3 algo for PXA910
+		 */
+		pdata->dphy[0] =
+			(((1 + (pdata->lane_clk * 80) / 1000) & 0xff) << 8)
+			| (1 + pdata->lane_clk * 35 / 1000);
+		break;
+	case DPHY3_ALGO_PXA2128:
+		/*
+		 * Calculate CSI2_DPHY3 algo for PXA2128
+		 */
+		pdata->dphy[0] =
+			(((2 + (pdata->lane_clk * 110) / 1000) & 0xff) << 8)
+			| (1 + pdata->lane_clk * 35 / 1000);
+		break;
+	default:
+		/*
+		 * Use default CSI2_DPHY3 value for PXA688/PXA988
+		 */
+		dev_dbg(dev, "camera: use the default CSI2_DPHY3 value\n");
+	}
 
+	/*
+	 * mipi_clk will never be changed, it is a fixed value on MMP
+	 */
+	if (IS_ERR(cam->mipi_clk))
+		return;
+
+	/* get the escape clk, this is hard coded */
+	clk_prepare_enable(cam->mipi_clk);
+	tx_clk_esc = (clk_get_rate(cam->mipi_clk) / 1000000) / 12;
+	clk_disable_unprepare(cam->mipi_clk);
+	/*
+	 * dphy[2] - CSI2_DPHY6:
+	 * bit 0 ~ bit 7: CK Term Enable
+	 *  Time for the Clock Lane receiver to enable the HS line
+	 *  termination. The value is calculated similarly with
+	 *  HS Term Enable
+	 * bit 8 ~ bit 15: CK Settle
+	 *  Time interval during which the HS receiver shall ignore
+	 *  any Clock Lane HS transitions.
+	 *  The value is calibrated on the boards.
+	 */
+	pdata->dphy[2] =
+		((((534 * tx_clk_esc) / 2000 - 1) & 0xff) << 8)
+		| (((38 * tx_clk_esc) / 1000 - 1) & 0xff);
+
+	dev_dbg(dev, "camera: DPHY sets: dphy3=0x%x, dphy5=0x%x, dphy6=0x%x\n",
+		pdata->dphy[0], pdata->dphy[1], pdata->dphy[2]);
+}
 
 static irqreturn_t mmpcam_irq(int irq, void *data)
 {
@@ -165,95 +198,109 @@ static irqreturn_t mmpcam_irq(int irq, void *data)
 	return IRQ_RETVAL(handled);
 }
 
+static void mcam_init_clk(struct mcam_camera *mcam)
+{
+	unsigned int i;
+
+	for (i = 0; i < NR_MCAM_CLK; i++) {
+		if (mcam_clks[i] != NULL) {
+			/* Some clks are not necessary on some boards
+			 * We still try to run even it fails getting clk
+			 */
+			mcam->clk[i] = devm_clk_get(mcam->dev, mcam_clks[i]);
+			if (IS_ERR(mcam->clk[i]))
+				dev_warn(mcam->dev, "Could not get clk: %s\n",
+						mcam_clks[i]);
+		}
+	}
+}
 
 static int mmpcam_probe(struct platform_device *pdev)
 {
 	struct mmp_camera *cam;
 	struct mcam_camera *mcam;
 	struct resource *res;
+	struct fwnode_handle *ep;
 	struct mmp_camera_platform_data *pdata;
 	int ret;
 
-	cam = kzalloc(sizeof(*cam), GFP_KERNEL);
+	cam = devm_kzalloc(&pdev->dev, sizeof(*cam), GFP_KERNEL);
 	if (cam == NULL)
 		return -ENOMEM;
 	cam->pdev = pdev;
 	INIT_LIST_HEAD(&cam->devlist);
 
 	mcam = &cam->mcam;
-	mcam->plat_power_up = mmpcam_power_up;
-	mcam->plat_power_down = mmpcam_power_down;
+	mcam->calc_dphy = mmpcam_calc_dphy;
 	mcam->dev = &pdev->dev;
-	mcam->use_smbus = 0;
-	mcam->chip_id = V4L2_IDENT_ARMADA610;
+	pdata = pdev->dev.platform_data;
+	if (pdata) {
+		mcam->mclk_src = pdata->mclk_src;
+		mcam->mclk_div = pdata->mclk_div;
+		mcam->bus_type = pdata->bus_type;
+		mcam->dphy = pdata->dphy;
+		mcam->lane = pdata->lane;
+	} else {
+		/*
+		 * These are values that used to be hardcoded in mcam-core and
+		 * work well on a OLPC XO 1.75 with a parallel bus sensor.
+		 * If it turns out other setups make sense, the values should
+		 * be obtained from the device tree.
+		 */
+		mcam->mclk_src = 3;
+		mcam->mclk_div = 2;
+	}
+	if (mcam->bus_type == V4L2_MBUS_CSI2_DPHY) {
+		cam->mipi_clk = devm_clk_get(mcam->dev, "mipi");
+		if ((IS_ERR(cam->mipi_clk) && mcam->dphy[2] == 0))
+			return PTR_ERR(cam->mipi_clk);
+	}
+	mcam->mipi_enabled = false;
+	mcam->chip_id = MCAM_ARMADA610;
 	mcam->buffer_mode = B_DMA_sg;
+	strscpy(mcam->bus_info, "platform:mmp-camera", sizeof(mcam->bus_info));
 	spin_lock_init(&mcam->dev_lock);
 	/*
 	 * Get our I/O memory.
 	 */
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	if (res == NULL) {
-		dev_err(&pdev->dev, "no iomem resource!\n");
-		ret = -ENODEV;
-		goto out_free;
-	}
-	mcam->regs = ioremap(res->start, resource_size(res));
-	if (mcam->regs == NULL) {
-		dev_err(&pdev->dev, "MMIO ioremap fail\n");
-		ret = -ENODEV;
-		goto out_free;
-	}
+	mcam->regs = devm_ioremap_resource(&pdev->dev, res);
+	if (IS_ERR(mcam->regs))
+		return PTR_ERR(mcam->regs);
+	mcam->regs_size = resource_size(res);
+
+	mcam_init_clk(mcam);
+
 	/*
-	 * Power/clock memory is elsewhere; get it too.  Perhaps this
-	 * should really be managed outside of this driver?
+	 * Create a match of the sensor against its OF node.
 	 */
-	res = platform_get_resource(pdev, IORESOURCE_MEM, 1);
-	if (res == NULL) {
-		dev_err(&pdev->dev, "no power resource!\n");
-		ret = -ENODEV;
-		goto out_unmap1;
-	}
-	cam->power_regs = ioremap(res->start, resource_size(res));
-	if (cam->power_regs == NULL) {
-		dev_err(&pdev->dev, "power MMIO ioremap fail\n");
-		ret = -ENODEV;
-		goto out_unmap1;
-	}
+	ep = fwnode_graph_get_next_endpoint(of_fwnode_handle(pdev->dev.of_node),
+					    NULL);
+	if (!ep)
+		return -ENODEV;
+
+	mcam->asd.match_type = V4L2_ASYNC_MATCH_FWNODE;
+	mcam->asd.match.fwnode = fwnode_graph_get_remote_port_parent(ep);
+
+	fwnode_handle_put(ep);
+
 	/*
-	 * Find the i2c adapter.  This assumes, of course, that the
-	 * i2c bus is already up and functioning.
+	 * Register the device with the core.
 	 */
-	pdata = pdev->dev.platform_data;
-	mcam->i2c_adapter = platform_get_drvdata(pdata->i2c_device);
-	if (mcam->i2c_adapter == NULL) {
-		ret = -ENODEV;
-		dev_err(&pdev->dev, "No i2c adapter\n");
-		goto out_unmap2;
-	}
-	/*
-	 * Sensor GPIO pins.
-	 */
-	ret = gpio_request(pdata->sensor_power_gpio, "cam-power");
-	if (ret) {
-		dev_err(&pdev->dev, "Can't get sensor power gpio %d",
-				pdata->sensor_power_gpio);
-		goto out_unmap2;
-	}
-	gpio_direction_output(pdata->sensor_power_gpio, 0);
-	ret = gpio_request(pdata->sensor_reset_gpio, "cam-reset");
-	if (ret) {
-		dev_err(&pdev->dev, "Can't get sensor reset gpio %d",
-				pdata->sensor_reset_gpio);
-		goto out_gpio;
-	}
-	gpio_direction_output(pdata->sensor_reset_gpio, 0);
-	/*
-	 * Power the device up and hand it off to the core.
-	 */
-	mmpcam_power_up(mcam);
 	ret = mccic_register(mcam);
 	if (ret)
-		goto out_gpio2;
+		return ret;
+
+	/*
+	 * Add OF clock provider.
+	 */
+	ret = of_clk_add_provider(pdev->dev.of_node, of_clk_src_simple_get,
+								mcam->mclk);
+	if (ret) {
+		dev_err(&pdev->dev, "can't add DT clock provider\n");
+		goto out;
+	}
+
 	/*
 	 * Finally, set up our IRQ now that the core is ready to
 	 * deal with it.
@@ -261,29 +308,20 @@ static int mmpcam_probe(struct platform_device *pdev)
 	res = platform_get_resource(pdev, IORESOURCE_IRQ, 0);
 	if (res == NULL) {
 		ret = -ENODEV;
-		goto out_unregister;
+		goto out;
 	}
 	cam->irq = res->start;
-	ret = request_irq(cam->irq, mmpcam_irq, IRQF_SHARED,
-			"mmp-camera", mcam);
+	ret = devm_request_irq(&pdev->dev, cam->irq, mmpcam_irq, IRQF_SHARED,
+					"mmp-camera", mcam);
 	if (ret == 0) {
 		mmpcam_add_device(cam);
 		return 0;
 	}
 
-out_unregister:
+out:
+	fwnode_handle_put(mcam->asd.match.fwnode);
 	mccic_shutdown(mcam);
-out_gpio2:
-	mmpcam_power_down(mcam);
-	gpio_free(pdata->sensor_reset_gpio);
-out_gpio:
-	gpio_free(pdata->sensor_power_gpio);
-out_unmap2:
-	iounmap(cam->power_regs);
-out_unmap1:
-	iounmap(mcam->regs);
-out_free:
-	kfree(cam);
+
 	return ret;
 }
 
@@ -291,18 +329,9 @@ out_free:
 static int mmpcam_remove(struct mmp_camera *cam)
 {
 	struct mcam_camera *mcam = &cam->mcam;
-	struct mmp_camera_platform_data *pdata;
 
 	mmpcam_remove_device(cam);
-	free_irq(cam->irq, mcam);
 	mccic_shutdown(mcam);
-	mmpcam_power_down(mcam);
-	pdata = cam->pdev->dev.platform_data;
-	gpio_free(pdata->sensor_reset_gpio);
-	gpio_free(pdata->sensor_power_gpio);
-	iounmap(cam->power_regs);
-	iounmap(mcam->regs);
-	kfree(cam);
 	return 0;
 }
 
@@ -334,17 +363,16 @@ static int mmpcam_resume(struct platform_device *pdev)
 {
 	struct mmp_camera *cam = mmpcam_find_device(pdev);
 
-	/*
-	 * Power up unconditionally just in case the core tries to
-	 * touch a register even if nothing was active before; trust
-	 * me, it's better this way.
-	 */
-	mmpcam_power_up_ctlr(cam);
 	return mccic_resume(&cam->mcam);
 }
 
 #endif
 
+static const struct of_device_id mmpcam_of_match[] = {
+	{ .compatible = "marvell,mmp2-ccic", },
+	{},
+};
+MODULE_DEVICE_TABLE(of, mmpcam_of_match);
 
 static struct platform_driver mmpcam_driver = {
 	.probe		= mmpcam_probe,
@@ -355,7 +383,7 @@ static struct platform_driver mmpcam_driver = {
 #endif
 	.driver = {
 		.name	= "mmp-camera",
-		.owner	= THIS_MODULE
+		.of_match_table = of_match_ptr(mmpcam_of_match),
 	}
 };
 

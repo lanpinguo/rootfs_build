@@ -15,7 +15,9 @@
 #include <linux/capability.h>
 #include <linux/kernel.h>
 #include <linux/sched.h>
+#include <linux/cred.h>
 #include <linux/fs.h>
+#include <linux/fs_context.h>
 #include <linux/list.h>
 #include <linux/mtd/mtd.h>
 #include <linux/pagemap.h>
@@ -183,22 +185,23 @@ int jffs2_do_setattr (struct inode *inode, struct iattr *iattr)
 	if (ivalid & ATTR_SIZE && inode->i_size > iattr->ia_size) {
 		truncate_setsize(inode, iattr->ia_size);
 		inode->i_blocks = (inode->i_size + 511) >> 9;
-	}	
+	}
 
 	return 0;
 }
 
 int jffs2_setattr(struct dentry *dentry, struct iattr *iattr)
 {
+	struct inode *inode = d_inode(dentry);
 	int rc;
 
-	rc = inode_change_ok(dentry->d_inode, iattr);
+	rc = setattr_prepare(dentry, iattr);
 	if (rc)
 		return rc;
 
-	rc = jffs2_do_setattr(dentry->d_inode, iattr);
+	rc = jffs2_do_setattr(inode, iattr);
 	if (!rc && (iattr->ia_valid & ATTR_MODE))
-		rc = jffs2_acl_chmod(dentry->d_inode);
+		rc = posix_acl_chmod(inode, inode->i_mode);
 
 	return rc;
 }
@@ -241,7 +244,7 @@ void jffs2_evict_inode (struct inode *inode)
 
 	jffs2_dbg(1, "%s(): ino #%lu mode %o\n",
 		  __func__, inode->i_ino, inode->i_mode);
-	truncate_inode_pages(&inode->i_data, 0);
+	truncate_inode_pages_final(&inode->i_data);
 	clear_inode(inode);
 	jffs2_do_clear_inode(c, f);
 }
@@ -271,12 +274,9 @@ struct inode *jffs2_iget(struct super_block *sb, unsigned long ino)
 	mutex_lock(&f->sem);
 
 	ret = jffs2_do_read_inode(c, f, inode->i_ino, &latest_node);
+	if (ret)
+		goto error;
 
-	if (ret) {
-		mutex_unlock(&f->sem);
-		iget_failed(inode);
-		return ERR_PTR(ret);
-	}
 	inode->i_mode = jemode_to_cpu(latest_node.mode);
 	i_uid_write(inode, je16_to_cpu(latest_node.uid));
 	i_gid_write(inode, je16_to_cpu(latest_node.gid));
@@ -293,6 +293,7 @@ struct inode *jffs2_iget(struct super_block *sb, unsigned long ino)
 
 	case S_IFLNK:
 		inode->i_op = &jffs2_symlink_inode_operations;
+		inode->i_link = f->target;
 		break;
 
 	case S_IFDIR:
@@ -340,6 +341,7 @@ struct inode *jffs2_iget(struct super_block *sb, unsigned long ino)
 			rdev = old_decode_dev(je16_to_cpu(jdev.old_id));
 		else
 			rdev = new_decode_dev(je32_to_cpu(jdev.new_id));
+		fallthrough;
 
 	case S_IFSOCK:
 	case S_IFIFO:
@@ -362,7 +364,6 @@ error_io:
 	ret = -EIO;
 error:
 	mutex_unlock(&f->sem);
-	jffs2_do_clear_inode(c, f);
 	iget_failed(inode);
 	return ERR_PTR(ret);
 }
@@ -391,28 +392,28 @@ void jffs2_dirty_inode(struct inode *inode, int flags)
 	jffs2_do_setattr(inode, &iattr);
 }
 
-int jffs2_do_remount_fs(struct super_block *sb, int *flags, char *data)
+int jffs2_do_remount_fs(struct super_block *sb, struct fs_context *fc)
 {
 	struct jffs2_sb_info *c = JFFS2_SB_INFO(sb);
 
-	if (c->flags & JFFS2_SB_FLAG_RO && !(sb->s_flags & MS_RDONLY))
+	if (c->flags & JFFS2_SB_FLAG_RO && !sb_rdonly(sb))
 		return -EROFS;
 
 	/* We stop if it was running, then restart if it needs to.
 	   This also catches the case where it was stopped and this
 	   is just a remount to restart it.
 	   Flush the writebuffer, if neccecary, else we loose it */
-	if (!(sb->s_flags & MS_RDONLY)) {
+	if (!sb_rdonly(sb)) {
 		jffs2_stop_garbage_collect_thread(c);
 		mutex_lock(&c->alloc_sem);
 		jffs2_flush_wbuf_pad(c);
 		mutex_unlock(&c->alloc_sem);
 	}
 
-	if (!(*flags & MS_RDONLY))
+	if (!(fc->sb_flags & SB_RDONLY))
 		jffs2_start_garbage_collect_thread(c);
 
-	*flags |= MS_NOATIME;
+	fc->sb_flags |= SB_NOATIME;
 	return 0;
 }
 
@@ -456,12 +457,14 @@ struct inode *jffs2_new_inode (struct inode *dir_i, umode_t mode, struct jffs2_r
 	   The umask is only applied if there's no default ACL */
 	ret = jffs2_init_acl_pre(dir_i, inode, &mode);
 	if (ret) {
-	    make_bad_inode(inode);
-	    iput(inode);
-	    return ERR_PTR(ret);
+		mutex_unlock(&f->sem);
+		make_bad_inode(inode);
+		iput(inode);
+		return ERR_PTR(ret);
 	}
 	ret = jffs2_do_new_inode (c, f, mode, ri);
 	if (ret) {
+		mutex_unlock(&f->sem);
 		make_bad_inode(inode);
 		iput(inode);
 		return ERR_PTR(ret);
@@ -471,13 +474,14 @@ struct inode *jffs2_new_inode (struct inode *dir_i, umode_t mode, struct jffs2_r
 	inode->i_mode = jemode_to_cpu(ri->mode);
 	i_gid_write(inode, je16_to_cpu(ri->gid));
 	i_uid_write(inode, je16_to_cpu(ri->uid));
-	inode->i_atime = inode->i_ctime = inode->i_mtime = CURRENT_TIME_SEC;
+	inode->i_atime = inode->i_ctime = inode->i_mtime = current_time(inode);
 	ri->atime = ri->mtime = ri->ctime = cpu_to_je32(I_SEC(inode->i_mtime));
 
 	inode->i_blocks = 0;
 	inode->i_size = 0;
 
 	if (insert_inode_locked(inode) < 0) {
+		mutex_unlock(&f->sem);
 		make_bad_inode(inode);
 		iput(inode);
 		return ERR_PTR(-EINVAL);
@@ -506,7 +510,7 @@ static int calculate_inocache_hashsize(uint32_t flash_size)
 	return hashsize;
 }
 
-int jffs2_do_fill_super(struct super_block *sb, void *data, int silent)
+int jffs2_do_fill_super(struct super_block *sb, struct fs_context *fc)
 {
 	struct jffs2_sb_info *c;
 	struct inode *root_i;
@@ -515,13 +519,17 @@ int jffs2_do_fill_super(struct super_block *sb, void *data, int silent)
 
 	c = JFFS2_SB_INFO(sb);
 
+	/* Do not support the MLC nand */
+	if (c->mtd->type == MTD_MLCNANDFLASH)
+		return -EINVAL;
+
 #ifndef CONFIG_JFFS2_FS_WRITEBUFFER
 	if (c->mtd->type == MTD_NANDFLASH) {
-		pr_err("Cannot operate on NAND flash unless jffs2 NAND support is compiled in\n");
+		errorf(fc, "Cannot operate on NAND flash unless jffs2 NAND support is compiled in");
 		return -EINVAL;
 	}
 	if (c->mtd->type == MTD_DATAFLASH) {
-		pr_err("Cannot operate on DataFlash unless jffs2 DataFlash support is compiled in\n");
+		errorf(fc, "Cannot operate on DataFlash unless jffs2 DataFlash support is compiled in");
 		return -EINVAL;
 	}
 #endif
@@ -535,12 +543,12 @@ int jffs2_do_fill_super(struct super_block *sb, void *data, int silent)
 	 */
 	if ((c->sector_size * blocks) != c->flash_size) {
 		c->flash_size = c->sector_size * blocks;
-		pr_info("Flash size not aligned to erasesize, reducing to %dKiB\n",
-			c->flash_size / 1024);
+		infof(fc, "Flash size not aligned to erasesize, reducing to %dKiB",
+		      c->flash_size / 1024);
 	}
 
 	if (c->flash_size < 5*c->sector_size) {
-		pr_err("Too few erase blocks (%d)\n",
+		errorf(fc, "Too few erase blocks (%d)",
 		       c->flash_size / c->sector_size);
 		return -EINVAL;
 	}
@@ -580,20 +588,20 @@ int jffs2_do_fill_super(struct super_block *sb, void *data, int silent)
 		goto out_root;
 
 	sb->s_maxbytes = 0xFFFFFFFF;
-	sb->s_blocksize = PAGE_CACHE_SIZE;
-	sb->s_blocksize_bits = PAGE_CACHE_SHIFT;
+	sb->s_blocksize = PAGE_SIZE;
+	sb->s_blocksize_bits = PAGE_SHIFT;
 	sb->s_magic = JFFS2_SUPER_MAGIC;
-	if (!(sb->s_flags & MS_RDONLY))
+	sb->s_time_min = 0;
+	sb->s_time_max = U32_MAX;
+
+	if (!sb_rdonly(sb))
 		jffs2_start_garbage_collect_thread(c);
 	return 0;
 
 out_root:
 	jffs2_free_ino_caches(c);
 	jffs2_free_raw_node_refs(c);
-	if (jffs2_blocks_use_vmalloc(c))
-		vfree(c->blocks);
-	else
-		kfree(c->blocks);
+	kvfree(c->blocks);
  out_inohash:
 	jffs2_clear_xattr_subsystem(c);
 	kfree(c->inocache_list);
@@ -672,33 +680,6 @@ struct jffs2_inode_info *jffs2_gc_fetch_inode(struct jffs2_sb_info *c,
 	}
 
 	return JFFS2_INODE_INFO(inode);
-}
-
-unsigned char *jffs2_gc_fetch_page(struct jffs2_sb_info *c,
-				   struct jffs2_inode_info *f,
-				   unsigned long offset,
-				   unsigned long *priv)
-{
-	struct inode *inode = OFNI_EDONI_2SFFJ(f);
-	struct page *pg;
-
-	pg = read_cache_page_async(inode->i_mapping, offset >> PAGE_CACHE_SHIFT,
-			     (void *)jffs2_do_readpage_unlock, inode);
-	if (IS_ERR(pg))
-		return (void *)pg;
-
-	*priv = (unsigned long)pg;
-	return kmap(pg);
-}
-
-void jffs2_gc_release_page(struct jffs2_sb_info *c,
-			   unsigned char *ptr,
-			   unsigned long *priv)
-{
-	struct page *pg = (void *)*priv;
-
-	kunmap(pg);
-	page_cache_release(pg);
 }
 
 static int jffs2_flash_setup(struct jffs2_sb_info *c) {

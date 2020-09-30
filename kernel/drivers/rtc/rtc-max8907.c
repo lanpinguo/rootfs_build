@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * RTC driver for Maxim MAX8907
  *
@@ -5,10 +6,6 @@
  *
  * Based on drivers/rtc/rtc-max8925.c,
  * Copyright (C) 2009-2010 Marvell International Ltd.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 
 #include <linux/bcd.h>
@@ -212,17 +209,11 @@ static int max8907_rtc_probe(struct platform_device *pdev)
 	return ret;
 }
 
-static int max8907_rtc_remove(struct platform_device *pdev)
-{
-	return 0;
-}
-
 static struct platform_driver max8907_rtc_driver = {
 	.driver = {
 		.name = "max8907-rtc",
 	},
 	.probe = max8907_rtc_probe,
-	.remove = max8907_rtc_remove,
 };
 module_platform_driver(max8907_rtc_driver);
 

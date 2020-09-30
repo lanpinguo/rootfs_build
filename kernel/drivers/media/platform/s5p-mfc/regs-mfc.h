@@ -1,12 +1,9 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Register definition file for Samsung MFC V5.1 Interface (FIMV) driver
  *
  * Kamil Debski, Copyright (c) 2010 Samsung Electronics
  * http://www.samsung.com/
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
 */
 
 #ifndef _REGS_FIMV_H
@@ -382,7 +379,7 @@
 #define S5P_FIMV_R2H_CMD_EDFU_INIT_RET		16
 #define S5P_FIMV_R2H_CMD_ERR_RET		32
 
-/* Dummy definition for MFCv6 compatibilty */
+/* Dummy definition for MFCv6 compatibility */
 #define S5P_FIMV_CODEC_H264_MVC_DEC		-1
 #define S5P_FIMV_R2H_CMD_FIELD_DONE_RET		-1
 #define S5P_FIMV_MFC_RESET			-1
@@ -393,6 +390,9 @@
 #define S5P_FIMV_REG_CLEAR_COUNT		0
 
 /* Error handling defines */
+#define S5P_FIMV_ERR_NO_VALID_SEQ_HDR		67
+#define S5P_FIMV_ERR_INCOMPLETE_FRAME		124
+#define S5P_FIMV_ERR_TIMEOUT			140
 #define S5P_FIMV_ERR_WARNINGS_START		145
 #define S5P_FIMV_ERR_DEC_MASK			0xFFFF
 #define S5P_FIMV_ERR_DEC_SHIFT			0

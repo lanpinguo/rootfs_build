@@ -39,6 +39,29 @@ static void sh_clk_write(int value, struct clk *clk)
 static int sh_clk_mstp_enable(struct clk *clk)
 {
 	sh_clk_write(sh_clk_read(clk) & ~(1 << clk->enable_bit), clk);
+	if (clk->status_reg) {
+		unsigned int (*read)(const void __iomem *addr);
+		int i;
+		void __iomem *mapped_status = (phys_addr_t)clk->status_reg -
+			(phys_addr_t)clk->enable_reg + clk->mapped_reg;
+
+		if (clk->flags & CLK_ENABLE_REG_8BIT)
+			read = ioread8;
+		else if (clk->flags & CLK_ENABLE_REG_16BIT)
+			read = ioread16;
+		else
+			read = ioread32;
+
+		for (i = 1000;
+		     (read(mapped_status) & (1 << clk->enable_bit)) && i;
+		     i--)
+			cpu_relax();
+		if (!i) {
+			pr_err("cpg: failed to enable %p[%d]\n",
+			       clk->enable_reg, clk->enable_bit);
+			return -ETIMEDOUT;
+		}
+	}
 	return 0;
 }
 
@@ -211,7 +234,7 @@ static int __init sh_clk_div_register_ops(struct clk *clks, int nr,
 	int k;
 
 	freq_table_size *= (nr_divs + 1);
-	freq_table = kzalloc(freq_table_size * nr, GFP_KERNEL);
+	freq_table = kcalloc(nr, freq_table_size, GFP_KERNEL);
 	if (!freq_table) {
 		pr_err("%s: unable to alloc memory\n", __func__);
 		return -ENOMEM;

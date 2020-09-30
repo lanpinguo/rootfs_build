@@ -1,9 +1,6 @@
-obj-$(CONFIG_ARCH_SUN8I) += sun8i.o
-obj-$(CONFIG_ARCH_SUN50I) += sun50i.o
+# SPDX-License-Identifier: GPL-2.0-only
+CFLAGS_mc_smp.o	+= -march=armv7-a
 
-ifeq ($(CONFIG_SMP), y)
-ifneq ($(CONFIG_ARM_PSCI), y)
-obj-y += headsmp.o platsmp.o
-obj-$(CONFIG_HOTPLUG_CPU) += hotplug.o
-endif
-endif
+obj-$(CONFIG_ARCH_SUNXI) += sunxi.o
+obj-$(CONFIG_ARCH_SUNXI_MC_SMP) += mc_smp.o headsmp.o
+obj-$(CONFIG_SMP) += platsmp.o

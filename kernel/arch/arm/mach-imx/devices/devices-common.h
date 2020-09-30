@@ -1,14 +1,12 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (C) 2009-2010 Pengutronix
  * Uwe Kleine-Koenig <u.kleine-koenig@pengutronix.de>
- *
- * This program is free software; you can redistribute it and/or modify it under
- * the terms of the GNU General Public License version 2 as published by the
- * Free Software Foundation.
  */
 #include <linux/kernel.h>
 #include <linux/platform_device.h>
 #include <linux/init.h>
+#include <linux/gpio/machine.h>
 #include <linux/platform_data/dma-imx-sdma.h>
 
 extern struct device mxc_aips_bus;
@@ -50,7 +48,6 @@ struct platform_device *__init imx_add_fec(
 		const struct imx_fec_data *data,
 		const struct fec_platform_data *pdata);
 
-#include <linux/can/platform/flexcan.h>
 struct imx_flexcan_data {
 	int id;
 	resource_size_t iobase;
@@ -58,8 +55,7 @@ struct imx_flexcan_data {
 	resource_size_t irq;
 };
 struct platform_device *__init imx_add_flexcan(
-		const struct imx_flexcan_data *data,
-		const struct flexcan_platform_data *pdata);
+		const struct imx_flexcan_data *data);
 
 #include <linux/fsl_devices.h>
 struct imx_fsl_usb2_udc_data {
@@ -156,18 +152,6 @@ struct platform_device *__init imx_add_imx_ssi(
 		const struct imx_ssi_platform_data *pdata);
 
 #include <linux/platform_data/serial-imx.h>
-struct imx_imx_uart_3irq_data {
-	int id;
-	resource_size_t iobase;
-	resource_size_t iosize;
-	resource_size_t irqrx;
-	resource_size_t irqtx;
-	resource_size_t irqrts;
-};
-struct platform_device *__init imx_add_imx_uart_3irq(
-		const struct imx_imx_uart_3irq_data *data,
-		const struct imxuart_platform_data *pdata);
-
 struct imx_imx_uart_1irq_data {
 	int id;
 	resource_size_t iobase;
@@ -178,24 +162,8 @@ struct platform_device *__init imx_add_imx_uart_1irq(
 		const struct imx_imx_uart_1irq_data *data,
 		const struct imxuart_platform_data *pdata);
 
-#include <linux/platform_data/usb-imx_udc.h>
-struct imx_imx_udc_data {
-	resource_size_t iobase;
-	resource_size_t iosize;
-	resource_size_t irq0;
-	resource_size_t irq1;
-	resource_size_t irq2;
-	resource_size_t irq3;
-	resource_size_t irq4;
-	resource_size_t irq5;
-	resource_size_t irq6;
-};
-struct platform_device *__init imx_add_imx_udc(
-		const struct imx_imx_udc_data *data,
-		const struct imxusb_platform_data *pdata);
-
 #include <linux/platform_data/video-mx3fb.h>
-#include <linux/platform_data/camera-mx3.h>
+#include <linux/platform_data/media/camera-mx3.h>
 struct imx_ipu_core_data {
 	resource_size_t iobase;
 	resource_size_t synirq;
@@ -210,17 +178,7 @@ struct platform_device *__init imx_add_mx3_sdc_fb(
 		const struct imx_ipu_core_data *data,
 		struct mx3fb_platform_data *pdata);
 
-#include <linux/platform_data/camera-mx1.h>
-struct imx_mx1_camera_data {
-	resource_size_t iobase;
-	resource_size_t iosize;
-	resource_size_t irq;
-};
-struct platform_device *__init imx_add_mx1_camera(
-		const struct imx_mx1_camera_data *data,
-		const struct mx1_camera_pdata *pdata);
-
-#include <linux/platform_data/camera-mx2.h>
+#include <linux/platform_data/media/camera-mx2.h>
 struct imx_mx2_camera_data {
 	const char *devid;
 	resource_size_t iobasecsi;
@@ -292,15 +250,6 @@ struct imx_pata_imx_data {
 struct platform_device *__init imx_add_pata_imx(
 		const struct imx_pata_imx_data *data);
 
-struct imx_mxc_pwm_data {
-	int id;
-	resource_size_t iobase;
-	resource_size_t iosize;
-	resource_size_t irq;
-};
-struct platform_device *__init imx_add_mxc_pwm(
-		const struct imx_mxc_pwm_data *data);
-
 /* mxc_rtc */
 struct imx_mxc_rtc_data {
 	const char *devid;
@@ -328,7 +277,6 @@ struct platform_device *__init imx_add_sdhci_esdhc_imx(
 		const struct imx_sdhci_esdhc_imx_data *data,
 		const struct esdhc_platform_data *pdata);
 
-#include <linux/platform_data/spi-imx.h>
 struct imx_spi_imx_data {
 	const char *devid;
 	int id;
@@ -337,10 +285,9 @@ struct imx_spi_imx_data {
 	int irq;
 };
 struct platform_device *__init imx_add_spi_imx(
-		const struct imx_spi_imx_data *data,
-		const struct spi_imx_master *pdata);
+	const struct imx_spi_imx_data *data, struct gpiod_lookup_table *gtable);
 
 struct platform_device *imx_add_imx_dma(char *name, resource_size_t iobase,
-					int irq, int irq_err);
+					int irq);
 struct platform_device *imx_add_imx_sdma(char *name,
 	resource_size_t iobase, int irq, struct sdma_platform_data *pdata);

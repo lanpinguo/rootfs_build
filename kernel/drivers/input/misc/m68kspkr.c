@@ -1,17 +1,12 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  *  m68k beeper driver for Linux
  *
  *  Copyright (c) 2002 Richard Zidlicky
  *  Copyright (c) 2002 Vojtech Pavlik
  *  Copyright (c) 1992 Orest Zborowski
- *
  */
 
-/*
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License version 2 as published by
- * the Free Software Foundation
- */
 
 #include <linux/kernel.h>
 #include <linux/module.h>
@@ -85,7 +80,6 @@ static int m68kspkr_remove(struct platform_device *dev)
 	struct input_dev *input_dev = platform_get_drvdata(dev);
 
 	input_unregister_device(input_dev);
-	platform_set_drvdata(dev, NULL);
 	/* turn off the speaker */
 	m68kspkr_event(NULL, EV_SND, SND_BELL, 0);
 
@@ -101,7 +95,6 @@ static void m68kspkr_shutdown(struct platform_device *dev)
 static struct platform_driver m68kspkr_platform_driver = {
 	.driver		= {
 		.name	= "m68kspkr",
-		.owner	= THIS_MODULE,
 	},
 	.probe		= m68kspkr_probe,
 	.remove		= m68kspkr_remove,

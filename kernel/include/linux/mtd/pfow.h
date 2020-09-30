@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 /* Primary function overlay window definitions
  * and service functions used by LPDDR chips
  */
@@ -18,7 +19,7 @@
 /* Identification info for LPDDR chip */
 #define PFOW_MANUFACTURER_ID			0x0020
 #define PFOW_DEVICE_ID				0x0022
-/* Address in PFOW where prog buffer can can be found */
+/* Address in PFOW where prog buffer can be found */
 #define PFOW_PROGRAM_BUFFER_OFFSET		0x0040
 /* Size of program buffer in words */
 #define PFOW_PROGRAM_BUFFER_SIZE		0x0042
@@ -101,9 +102,6 @@ static inline void send_pfow_command(struct map_info *map,
 				unsigned long len, map_word *datum)
 {
 	int bits_per_chip = map_bankwidth(map) * 8;
-	int chipnum;
-	struct lpddr_private *lpddr = map->fldrv_priv;
-	chipnum = adr >> lpddr->chipshift;
 
 	map_write(map, CMD(cmd_code), map->pfow_base + PFOW_COMMAND_CODE);
 	map_write(map, CMD(adr & ((1<<bits_per_chip) - 1)),

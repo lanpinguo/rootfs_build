@@ -1,24 +1,14 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
+ * STA2x11 mfd for GPIO, SCTL and APBREG
+ *
  * Copyright (c) 2009-2011 Wind River Systems, Inc.
  * Copyright (c) 2011 ST Microelectronics (Alessandro Rubini, Davide Ciminaghi)
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
- * See the GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
- *
  */
 
 #include <linux/kernel.h>
-#include <linux/module.h>
+#include <linux/init.h>
+#include <linux/export.h>
 #include <linux/spinlock.h>
 #include <linux/errno.h>
 #include <linux/device.h>
@@ -60,8 +50,8 @@ static struct sta2x11_mfd *sta2x11_mfd_find(struct pci_dev *pdev)
 	struct sta2x11_mfd *mfd;
 
 	if (!pdev && !list_empty(&sta2x11_mfd_list)) {
-		pr_warning("%s: Unspecified device, "
-			    "using first instance\n", __func__);
+		pr_warn("%s: Unspecified device, using first instance\n",
+			__func__);
 		return list_entry(sta2x11_mfd_list.next,
 				  struct sta2x11_mfd, list);
 	}
@@ -133,7 +123,7 @@ int sta2x11_mfd_get_regs_data(struct platform_device *dev,
 			      void __iomem **regs,
 			      spinlock_t **lock)
 {
-	struct pci_dev *pdev = *(struct pci_dev **)(dev->dev.platform_data);
+	struct pci_dev *pdev = *(struct pci_dev **)dev_get_platdata(&dev->dev);
 	struct sta2x11_mfd *mfd;
 
 	if (!pdev)
@@ -312,7 +302,7 @@ static int sta2x11_mfd_platform_probe(struct platform_device *dev,
 	const char *name = sta2x11_mfd_names[index];
 	struct regmap_config *regmap_config = sta2x11_mfd_regmap_configs[index];
 
-	pdev = dev->dev.platform_data;
+	pdev = dev_get_platdata(&dev->dev);
 	mfd = sta2x11_mfd_find(*pdev);
 	if (!mfd)
 		return -ENODEV;
@@ -339,7 +329,7 @@ static int sta2x11_mfd_platform_probe(struct platform_device *dev,
 	regmap_config->cache_type = REGCACHE_NONE;
 	mfd->regmap[index] = devm_regmap_init_mmio(&dev->dev, mfd->regs[index],
 						   regmap_config);
-	WARN_ON(!mfd->regmap[index]);
+	WARN_ON(IS_ERR(mfd->regmap[index]));
 
 	return 0;
 }
@@ -368,59 +358,42 @@ static int sta2x11_scr_probe(struct platform_device *dev)
 static struct platform_driver sta2x11_sctl_platform_driver = {
 	.driver = {
 		.name	= STA2X11_MFD_SCTL_NAME,
-		.owner	= THIS_MODULE,
 	},
 	.probe		= sta2x11_sctl_probe,
 };
 
-static int __init sta2x11_sctl_init(void)
-{
-	pr_info("%s\n", __func__);
-	return platform_driver_register(&sta2x11_sctl_platform_driver);
-}
-
 static struct platform_driver sta2x11_platform_driver = {
 	.driver = {
 		.name	= STA2X11_MFD_APBREG_NAME,
-		.owner	= THIS_MODULE,
 	},
 	.probe		= sta2x11_apbreg_probe,
 };
 
-static int __init sta2x11_apbreg_init(void)
-{
-	pr_info("%s\n", __func__);
-	return platform_driver_register(&sta2x11_platform_driver);
-}
-
 static struct platform_driver sta2x11_apb_soc_regs_platform_driver = {
 	.driver = {
 		.name	= STA2X11_MFD_APB_SOC_REGS_NAME,
-		.owner	= THIS_MODULE,
 	},
 	.probe		= sta2x11_apb_soc_regs_probe,
 };
 
-static int __init sta2x11_apb_soc_regs_init(void)
-{
-	pr_info("%s\n", __func__);
-	return platform_driver_register(&sta2x11_apb_soc_regs_platform_driver);
-}
-
 static struct platform_driver sta2x11_scr_platform_driver = {
 	.driver = {
 		.name = STA2X11_MFD_SCR_NAME,
-		.owner = THIS_MODULE,
 	},
 	.probe = sta2x11_scr_probe,
 };
 
-static int __init sta2x11_scr_init(void)
-{
-	pr_info("%s\n", __func__);
-	return platform_driver_register(&sta2x11_scr_platform_driver);
-}
+static struct platform_driver * const drivers[] = {
+	&sta2x11_platform_driver,
+	&sta2x11_sctl_platform_driver,
+	&sta2x11_apb_soc_regs_platform_driver,
+	&sta2x11_scr_platform_driver,
+};
 
+static int __init sta2x11_drivers_init(void)
+{
+	return platform_register_drivers(drivers, ARRAY_SIZE(drivers));
+}
 
 /*
  * What follows are the PCI devices that host the above pdevs.
@@ -529,7 +502,7 @@ static int sta2x11_mfd_resume(struct pci_dev *pdev)
 {
 	int err;
 
-	pci_set_power_state(pdev, 0);
+	pci_set_power_state(pdev, PCI_D0);
 	err = pci_enable_device(pdev);
 	if (err)
 		return err;
@@ -642,7 +615,7 @@ err_disable:
 	return err;
 }
 
-static DEFINE_PCI_DEVICE_TABLE(sta2x11_mfd_tbl) = {
+static const struct pci_device_id sta2x11_mfd_tbl[] = {
 	{PCI_DEVICE(PCI_VENDOR_ID_STMICRO, PCI_DEVICE_ID_STMICRO_GPIO)},
 	{PCI_DEVICE(PCI_VENDOR_ID_STMICRO, PCI_DEVICE_ID_STMICRO_VIC)},
 	{0,},
@@ -668,13 +641,5 @@ static int __init sta2x11_mfd_init(void)
  * prepares platform drivers very early and probe the PCI device later,
  * but before other PCI devices.
  */
-subsys_initcall(sta2x11_apbreg_init);
-subsys_initcall(sta2x11_sctl_init);
-subsys_initcall(sta2x11_apb_soc_regs_init);
-subsys_initcall(sta2x11_scr_init);
+subsys_initcall(sta2x11_drivers_init);
 rootfs_initcall(sta2x11_mfd_init);
-
-MODULE_LICENSE("GPL v2");
-MODULE_AUTHOR("Wind River");
-MODULE_DESCRIPTION("STA2x11 mfd for GPIO, SCTL and APBREG");
-MODULE_DEVICE_TABLE(pci, sta2x11_mfd_tbl);

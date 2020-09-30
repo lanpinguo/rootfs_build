@@ -1,9 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (C) ST-Ericsson AB 2013
  * Authors: Vicram Arv
  *	    Dmitry Tarnyagin <dmitry.tarnyagin@lockless.no>
  *	    Sjur Brendeland
- * License terms: GNU General Public License (GPL) version 2
  */
 #include <linux/module.h>
 #include <linux/if_arp.h>
@@ -242,7 +242,7 @@ static struct sk_buff *cfv_alloc_and_copy_skb(int *err,
 
 	skb_reserve(skb, cfv->rx_hr + pad_len);
 
-	memcpy(skb_put(skb, cfpkt_len), frm + cfv->rx_hr, cfpkt_len);
+	skb_put_data(skb, frm + cfv->rx_hr, cfpkt_len);
 	return skb;
 }
 
@@ -257,7 +257,6 @@ static int cfv_rx_poll(struct napi_struct *napi, int quota)
 	struct vringh_kiov *riov = &cfv->ctx.riov;
 	unsigned int skb_len;
 
-again:
 	do {
 		skb = NULL;
 
@@ -322,7 +321,6 @@ exit:
 		    napi_schedule_prep(napi)) {
 			vringh_notify_disable_kern(cfv->vr_rx);
 			__napi_schedule(napi);
-			goto again;
 		}
 		break;
 
@@ -521,7 +519,7 @@ err:
 }
 
 /* Put the CAIF packet on the virtio ring and kick the receiver */
-static int cfv_netdev_tx(struct sk_buff *skb, struct net_device *netdev)
+static netdev_tx_t cfv_netdev_tx(struct sk_buff *skb, struct net_device *netdev)
 {
 	struct cfv_info *cfv = netdev_priv(netdev);
 	struct buf_info *buf_info;
@@ -619,33 +617,29 @@ static void cfv_netdev_setup(struct net_device *netdev)
 	netdev->tx_queue_len = 100;
 	netdev->flags = IFF_POINTOPOINT | IFF_NOARP;
 	netdev->mtu = CFV_DEF_MTU_SIZE;
-	netdev->destructor = free_netdev;
+	netdev->needs_free_netdev = true;
 }
 
 /* Create debugfs counters for the device */
 static inline void debugfs_init(struct cfv_info *cfv)
 {
-	cfv->debugfs =
-		debugfs_create_dir(netdev_name(cfv->ndev), NULL);
+	cfv->debugfs = debugfs_create_dir(netdev_name(cfv->ndev), NULL);
 
-	if (IS_ERR(cfv->debugfs))
-		return;
-
-	debugfs_create_u32("rx-napi-complete", S_IRUSR, cfv->debugfs,
+	debugfs_create_u32("rx-napi-complete", 0400, cfv->debugfs,
 			   &cfv->stats.rx_napi_complete);
-	debugfs_create_u32("rx-napi-resched", S_IRUSR, cfv->debugfs,
+	debugfs_create_u32("rx-napi-resched", 0400, cfv->debugfs,
 			   &cfv->stats.rx_napi_resched);
-	debugfs_create_u32("rx-nomem", S_IRUSR, cfv->debugfs,
+	debugfs_create_u32("rx-nomem", 0400, cfv->debugfs,
 			   &cfv->stats.rx_nomem);
-	debugfs_create_u32("rx-kicks", S_IRUSR, cfv->debugfs,
+	debugfs_create_u32("rx-kicks", 0400, cfv->debugfs,
 			   &cfv->stats.rx_kicks);
-	debugfs_create_u32("tx-full-ring", S_IRUSR, cfv->debugfs,
+	debugfs_create_u32("tx-full-ring", 0400, cfv->debugfs,
 			   &cfv->stats.tx_full_ring);
-	debugfs_create_u32("tx-no-mem", S_IRUSR, cfv->debugfs,
+	debugfs_create_u32("tx-no-mem", 0400, cfv->debugfs,
 			   &cfv->stats.tx_no_mem);
-	debugfs_create_u32("tx-kicks", S_IRUSR, cfv->debugfs,
+	debugfs_create_u32("tx-kicks", 0400, cfv->debugfs,
 			   &cfv->stats.tx_kicks);
-	debugfs_create_u32("tx-flow-on", S_IRUSR, cfv->debugfs,
+	debugfs_create_u32("tx-flow-on", 0400, cfv->debugfs,
 			   &cfv->stats.tx_flow_on);
 }
 
@@ -661,7 +655,7 @@ static int cfv_probe(struct virtio_device *vdev)
 	int err = -EINVAL;
 
 	netdev = alloc_netdev(sizeof(struct cfv_info), cfv_netdev_name,
-			      cfv_netdev_setup);
+			      NET_NAME_UNKNOWN, cfv_netdev_setup);
 	if (!netdev)
 		return -ENOMEM;
 
@@ -681,23 +675,24 @@ static int cfv_probe(struct virtio_device *vdev)
 		goto err;
 
 	/* Get the TX virtio ring. This is a "guest side vring". */
-	err = vdev->config->find_vqs(vdev, 1, &cfv->vq_tx, &vq_cbs, &names);
+	err = virtio_find_vqs(vdev, 1, &cfv->vq_tx, &vq_cbs, &names, NULL);
 	if (err)
 		goto err;
 
 	/* Get the CAIF configuration from virtio config space, if available */
-#define GET_VIRTIO_CONFIG_OPS(_v, _var, _f) \
-	((_v)->config->get(_v, offsetof(struct virtio_caif_transf_config, _f), \
-			   &_var, \
-			   FIELD_SIZEOF(struct virtio_caif_transf_config, _f)))
-
 	if (vdev->config->get) {
-		GET_VIRTIO_CONFIG_OPS(vdev, cfv->tx_hr, headroom);
-		GET_VIRTIO_CONFIG_OPS(vdev, cfv->rx_hr, headroom);
-		GET_VIRTIO_CONFIG_OPS(vdev, cfv->tx_tr, tailroom);
-		GET_VIRTIO_CONFIG_OPS(vdev, cfv->rx_tr, tailroom);
-		GET_VIRTIO_CONFIG_OPS(vdev, cfv->mtu, mtu);
-		GET_VIRTIO_CONFIG_OPS(vdev, cfv->mru, mtu);
+		virtio_cread(vdev, struct virtio_caif_transf_config, headroom,
+			     &cfv->tx_hr);
+		virtio_cread(vdev, struct virtio_caif_transf_config, headroom,
+			     &cfv->rx_hr);
+		virtio_cread(vdev, struct virtio_caif_transf_config, tailroom,
+			     &cfv->tx_tr);
+		virtio_cread(vdev, struct virtio_caif_transf_config, tailroom,
+			     &cfv->rx_tr);
+		virtio_cread(vdev, struct virtio_caif_transf_config, mtu,
+			     &cfv->mtu);
+		virtio_cread(vdev, struct virtio_caif_transf_config, mtu,
+			     &cfv->mru);
 	} else {
 		cfv->tx_hr = CFV_DEF_HEADROOM;
 		cfv->rx_hr = CFV_DEF_HEADROOM;

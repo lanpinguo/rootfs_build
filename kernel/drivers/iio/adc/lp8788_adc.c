@@ -1,13 +1,10 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * TI LP8788 MFD - ADC driver
  *
  * Copyright 2012 Texas Instruments
  *
  * Author: Milo(Woogyom) Kim <milo.kim@ti.com>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 
 #include <linux/delay.h>
@@ -125,7 +122,6 @@ static int lp8788_adc_read_raw(struct iio_dev *indio_dev,
 
 static const struct iio_info lp8788_adc_info = {
 	.read_raw = &lp8788_adc_read_raw,
-	.driver_module = THIS_MODULE,
 };
 
 #define LP8788_CHAN(_id, _type) {				\
@@ -194,7 +190,7 @@ static int lp8788_adc_probe(struct platform_device *pdev)
 	struct lp8788_adc *adc;
 	int ret;
 
-	indio_dev = iio_device_alloc(sizeof(*adc));
+	indio_dev = devm_iio_device_alloc(&pdev->dev, sizeof(*adc));
 	if (!indio_dev)
 		return -ENOMEM;
 
@@ -202,14 +198,12 @@ static int lp8788_adc_probe(struct platform_device *pdev)
 	adc->lp = lp;
 	platform_set_drvdata(pdev, indio_dev);
 
-	indio_dev->dev.of_node = pdev->dev.of_node;
 	ret = lp8788_iio_map_register(indio_dev, lp->pdata, adc);
 	if (ret)
-		goto err_iio_map;
+		return ret;
 
 	mutex_init(&adc->lock);
 
-	indio_dev->dev.parent = &pdev->dev;
 	indio_dev->name = pdev->name;
 	indio_dev->modes = INDIO_DIRECT_MODE;
 	indio_dev->info = &lp8788_adc_info;
@@ -226,8 +220,6 @@ static int lp8788_adc_probe(struct platform_device *pdev)
 
 err_iio_device:
 	iio_map_array_unregister(indio_dev);
-err_iio_map:
-	iio_device_free(indio_dev);
 	return ret;
 }
 
@@ -237,7 +229,6 @@ static int lp8788_adc_remove(struct platform_device *pdev)
 
 	iio_device_unregister(indio_dev);
 	iio_map_array_unregister(indio_dev);
-	iio_device_free(indio_dev);
 
 	return 0;
 }
@@ -247,7 +238,6 @@ static struct platform_driver lp8788_adc_driver = {
 	.remove = lp8788_adc_remove,
 	.driver = {
 		.name = LP8788_DEV_ADC,
-		.owner = THIS_MODULE,
 	},
 };
 module_platform_driver(lp8788_adc_driver);

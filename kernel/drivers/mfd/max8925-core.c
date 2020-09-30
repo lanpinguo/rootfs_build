@@ -1,16 +1,13 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Base driver for Maxim MAX8925
  *
  * Copyright (C) 2009-2010 Marvell International Ltd.
  *	Haojian Zhuang <haojian.zhuang@marvell.com>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 
 #include <linux/kernel.h>
-#include <linux/module.h>
+#include <linux/init.h>
 #include <linux/i2c.h>
 #include <linux/irq.h>
 #include <linux/interrupt.h>
@@ -45,7 +42,7 @@ static struct resource touch_resources[] = {
 	},
 };
 
-static struct mfd_cell touch_devs[] = {
+static const struct mfd_cell touch_devs[] = {
 	{
 		.name		= "max8925-touch",
 		.num_resources	= 1,
@@ -63,7 +60,7 @@ static struct resource power_supply_resources[] = {
 	},
 };
 
-static struct mfd_cell power_devs[] = {
+static const struct mfd_cell power_devs[] = {
 	{
 		.name		= "max8925-power",
 		.num_resources	= 1,
@@ -81,7 +78,7 @@ static struct resource rtc_resources[] = {
 	},
 };
 
-static struct mfd_cell rtc_devs[] = {
+static const struct mfd_cell rtc_devs[] = {
 	{
 		.name		= "max8925-rtc",
 		.num_resources	= 1,
@@ -104,7 +101,7 @@ static struct resource onkey_resources[] = {
 	},
 };
 
-static struct mfd_cell onkey_devs[] = {
+static const struct mfd_cell onkey_devs[] = {
 	{
 		.name		= "max8925-onkey",
 		.num_resources	= 2,
@@ -624,6 +621,7 @@ static void max8925_irq_sync_unlock(struct irq_data *data)
 static void max8925_irq_enable(struct irq_data *data)
 {
 	struct max8925_chip *chip = irq_data_get_irq_chip_data(data);
+
 	max8925_irqs[data->irq - chip->irq_base].enable
 		= max8925_irqs[data->irq - chip->irq_base].offs;
 }
@@ -631,6 +629,7 @@ static void max8925_irq_enable(struct irq_data *data)
 static void max8925_irq_disable(struct irq_data *data)
 {
 	struct max8925_chip *chip = irq_data_get_irq_chip_data(data);
+
 	max8925_irqs[data->irq - chip->irq_base].enable = 0;
 }
 
@@ -648,15 +647,12 @@ static int max8925_irq_domain_map(struct irq_domain *d, unsigned int virq,
 	irq_set_chip_data(virq, d->host_data);
 	irq_set_chip_and_handler(virq, &max8925_irq_chip, handle_edge_irq);
 	irq_set_nested_thread(virq, 1);
-#ifdef CONFIG_ARM
-	set_irq_flags(virq, IRQF_VALID);
-#else
 	irq_set_noprobe(virq);
-#endif
+
 	return 0;
 }
 
-static struct irq_domain_ops max8925_irq_domain_ops = {
+static const struct irq_domain_ops max8925_irq_domain_ops = {
 	.map	= max8925_irq_domain_map,
 	.xlate	= irq_domain_xlate_onetwocell,
 };
@@ -920,8 +916,3 @@ void max8925_device_exit(struct max8925_chip *chip)
 		free_irq(chip->tsc_irq, chip);
 	mfd_remove_devices(chip->dev);
 }
-
-
-MODULE_DESCRIPTION("PMIC Driver for Maxim MAX8925");
-MODULE_AUTHOR("Haojian Zhuang <haojian.zhuang@marvell.com");
-MODULE_LICENSE("GPL");

@@ -1,9 +1,8 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * ADF4350/ADF4351 SPI PLL driver
  *
- * Copyright 2012 Analog Devices Inc.
- *
- * Licensed under the GPL-2.
+ * Copyright 2012-2013 Analog Devices Inc.
  */
 
 #ifndef IIO_PLL_ADF4350_H_
@@ -41,7 +40,7 @@
 #define ADF4350_REG2_RDIV2_EN			(1 << 24)
 #define ADF4350_REG2_RMULT2_EN			(1 << 25)
 #define ADF4350_REG2_MUXOUT(x)			((x) << 26)
-#define ADF4350_REG2_NOISE_MODE(x)		((x) << 29)
+#define ADF4350_REG2_NOISE_MODE(x)		(((unsigned)(x)) << 29)
 #define ADF4350_MUXOUT_THREESTATE		0
 #define ADF4350_MUXOUT_DVDD			1
 #define ADF4350_MUXOUT_GND			2
@@ -104,9 +103,6 @@
  * @r2_user_settings:	User defined settings for ADF4350/1 REGISTER_2.
  * @r3_user_settings:	User defined settings for ADF4350/1 REGISTER_3.
  * @r4_user_settings:	User defined settings for ADF4350/1 REGISTER_4.
- * @gpio_lock_detect:	Optional, if set with a valid GPIO number,
- *			pll lock state is tested upon read.
- *			If not used - set to -1.
  */
 
 struct adf4350_platform_data {
@@ -122,7 +118,6 @@ struct adf4350_platform_data {
 	unsigned		r2_user_settings;
 	unsigned		r3_user_settings;
 	unsigned		r4_user_settings;
-	int			gpio_lock_detect;
 };
 
 #endif /* IIO_PLL_ADF4350_H_ */

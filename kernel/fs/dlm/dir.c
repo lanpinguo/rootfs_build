@@ -1,12 +1,10 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /******************************************************************************
 *******************************************************************************
 **
 **  Copyright (C) Sistina Software, Inc.  1997-2003  All rights reserved.
 **  Copyright (C) 2004-2005 Red Hat, Inc.  All rights reserved.
 **
-**  This copyrighted material is made available to anyone wishing to use,
-**  modify, copy, or redistribute it subject to the terms and conditions
-**  of the GNU General Public License v.2.
 **
 *******************************************************************************
 ******************************************************************************/
@@ -68,7 +66,7 @@ int dlm_recover_directory(struct dlm_ls *ls)
 	uint16_t namelen;
 	unsigned int count = 0, count_match = 0, count_bad = 0, count_add = 0;
 
-	log_debug(ls, "dlm_recover_directory");
+	log_rinfo(ls, "dlm_recover_directory");
 
 	if (dlm_no_directory(ls))
 		goto out_status;
@@ -189,7 +187,7 @@ int dlm_recover_directory(struct dlm_ls *ls)
 	error = 0;
 	dlm_set_recover_status(ls, DLM_RS_DIR);
 
-	log_debug(ls, "dlm_recover_directory %u in %u new",
+	log_rinfo(ls, "dlm_recover_directory %u in %u new",
 		  count, count_add);
  out_free:
 	kfree(last_name);

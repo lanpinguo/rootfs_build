@@ -1,26 +1,17 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2007, Intel Corporation.
  * All Rights Reserved.
- *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms and conditions of the GNU General Public License,
- * version 2, as published by the Free Software Foundation.
- *
- * This program is distributed in the hope it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along with
- * this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin St - Fifth Floor, Boston, MA 02110-1301 USA.
  *
  * Authors: Thomas Hellstrom <thomas-at-tungstengraphics.com>
  *	    Alan Cox <alan@linux.intel.com>
  */
 
-#include <drm/drmP.h>
 #include <linux/shmem_fs.h>
+
+#include <asm/set_memory.h>
+
+#include "blitter.h"
 #include "psb_drv.h"
 
 
@@ -75,6 +66,7 @@ static u32 __iomem *psb_gtt_entry(struct drm_device *dev, struct gtt_range *r)
  *	psb_gtt_insert	-	put an object into the GTT
  *	@dev: our DRM device
  *	@r: our GTT range
+ *	@resume: on resume
  *
  *	Take our preallocated GTT range and insert the GEM object into
  *	the GTT. This is protected via the gtt mutex which the caller
@@ -105,11 +97,13 @@ static int psb_gtt_insert(struct drm_device *dev, struct gtt_range *r,
 
 	/* Write our page entries into the GTT itself */
 	for (i = r->roll; i < r->npage; i++) {
-		pte = psb_gtt_mask_pte(page_to_pfn(r->pages[i]), 0);
+		pte = psb_gtt_mask_pte(page_to_pfn(r->pages[i]),
+				       PSB_MMU_CACHED_MEMORY);
 		iowrite32(pte, gtt_slot++);
 	}
 	for (i = 0; i < r->roll; i++) {
-		pte = psb_gtt_mask_pte(page_to_pfn(r->pages[i]), 0);
+		pte = psb_gtt_mask_pte(page_to_pfn(r->pages[i]),
+				       PSB_MMU_CACHED_MEMORY);
 		iowrite32(pte, gtt_slot++);
 	}
 	/* Make sure all the entries are set before we return */
@@ -137,7 +131,8 @@ static void psb_gtt_remove(struct drm_device *dev, struct gtt_range *r)
 	WARN_ON(r->stolen);
 
 	gtt_slot = psb_gtt_entry(dev, r);
-	pte = psb_gtt_mask_pte(page_to_pfn(dev_priv->scratch_page), 0);
+	pte = psb_gtt_mask_pte(page_to_pfn(dev_priv->scratch_page),
+			       PSB_MMU_CACHED_MEMORY);
 
 	for (i = 0; i < r->npage; i++)
 		iowrite32(pte, gtt_slot++);
@@ -176,11 +171,13 @@ void psb_gtt_roll(struct drm_device *dev, struct gtt_range *r, int roll)
 	gtt_slot = psb_gtt_entry(dev, r);
 
 	for (i = r->roll; i < r->npage; i++) {
-		pte = psb_gtt_mask_pte(page_to_pfn(r->pages[i]), 0);
+		pte = psb_gtt_mask_pte(page_to_pfn(r->pages[i]),
+				       PSB_MMU_CACHED_MEMORY);
 		iowrite32(pte, gtt_slot++);
 	}
 	for (i = 0; i < r->roll; i++) {
-		pte = psb_gtt_mask_pte(page_to_pfn(r->pages[i]), 0);
+		pte = psb_gtt_mask_pte(page_to_pfn(r->pages[i]),
+				       PSB_MMU_CACHED_MEMORY);
 		iowrite32(pte, gtt_slot++);
 	}
 	ioread32(gtt_slot - 1);
@@ -196,37 +193,18 @@ void psb_gtt_roll(struct drm_device *dev, struct gtt_range *r, int roll)
  */
 static int psb_gtt_attach_pages(struct gtt_range *gt)
 {
-	struct inode *inode;
-	struct address_space *mapping;
-	int i;
-	struct page *p;
-	int pages = gt->gem.size / PAGE_SIZE;
+	struct page **pages;
 
 	WARN_ON(gt->pages);
 
-	/* This is the shared memory object that backs the GEM resource */
-	inode = file_inode(gt->gem.filp);
-	mapping = inode->i_mapping;
+	pages = drm_gem_get_pages(&gt->gem);
+	if (IS_ERR(pages))
+		return PTR_ERR(pages);
 
-	gt->pages = kmalloc(pages * sizeof(struct page *), GFP_KERNEL);
-	if (gt->pages == NULL)
-		return -ENOMEM;
-	gt->npage = pages;
+	gt->npage = gt->gem.size / PAGE_SIZE;
+	gt->pages = pages;
 
-	for (i = 0; i < pages; i++) {
-		p = shmem_read_mapping_page(mapping, i);
-		if (IS_ERR(p))
-			goto err;
-		gt->pages[i] = p;
-	}
 	return 0;
-
-err:
-	while (i--)
-		page_cache_release(gt->pages[i]);
-	kfree(gt->pages);
-	gt->pages = NULL;
-	return PTR_ERR(p);
 }
 
 /**
@@ -240,13 +218,7 @@ err:
  */
 static void psb_gtt_detach_pages(struct gtt_range *gt)
 {
-	int i;
-	for (i = 0; i < gt->npage; i++) {
-		/* FIXME: do we need to force dirty */
-		set_page_dirty(gt->pages[i]);
-		page_cache_release(gt->pages[i]);
-	}
-	kfree(gt->pages);
+	drm_gem_put_pages(&gt->gem, gt->pages, true, false);
 	gt->pages = NULL;
 }
 
@@ -265,6 +237,7 @@ int psb_gtt_pin(struct gtt_range *gt)
 	int ret = 0;
 	struct drm_device *dev = gt->gem.dev;
 	struct drm_psb_private *dev_priv = dev->dev_private;
+	u32 gpu_base = dev_priv->gtt.gatt_start;
 
 	mutex_lock(&dev_priv->gtt_mutex);
 
@@ -277,6 +250,9 @@ int psb_gtt_pin(struct gtt_range *gt)
 			psb_gtt_detach_pages(gt);
 			goto out;
 		}
+		psb_mmu_insert_pages(psb_mmu_get_default_pd(dev_priv->mmu),
+				     gt->pages, (gpu_base + gt->offset),
+				     gt->npage, 0, 0, PSB_MMU_CACHED_MEMORY);
 	}
 	gt->in_gart++;
 out:
@@ -299,16 +275,30 @@ void psb_gtt_unpin(struct gtt_range *gt)
 {
 	struct drm_device *dev = gt->gem.dev;
 	struct drm_psb_private *dev_priv = dev->dev_private;
+	u32 gpu_base = dev_priv->gtt.gatt_start;
+	int ret;
 
+	/* While holding the gtt_mutex no new blits can be initiated */
 	mutex_lock(&dev_priv->gtt_mutex);
+
+	/* Wait for any possible usage of the memory to be finished */
+	ret = gma_blt_wait_idle(dev_priv);
+	if (ret) {
+		DRM_ERROR("Failed to idle the blitter, unpin failed!");
+		goto out;
+	}
 
 	WARN_ON(!gt->in_gart);
 
 	gt->in_gart--;
 	if (gt->in_gart == 0 && gt->stolen == 0) {
+		psb_mmu_remove_pages(psb_mmu_get_default_pd(dev_priv->mmu),
+				     (gpu_base + gt->offset), gt->npage, 0, 0);
 		psb_gtt_remove(dev, gt);
 		psb_gtt_detach_pages(gt);
 	}
+
+out:
 	mutex_unlock(&dev_priv->gtt_mutex);
 }
 
@@ -322,6 +312,7 @@ void psb_gtt_unpin(struct gtt_range *gt)
  *	@len: length (bytes) of address space required
  *	@name: resource name
  *	@backed: resource should be backed by stolen pages
+ *	@align: requested alignment
  *
  *	Ask the kernel core to find us a suitable range of addresses
  *	to use for a GTT mapping.
@@ -331,7 +322,7 @@ void psb_gtt_unpin(struct gtt_range *gt)
  *	as in use.
  */
 struct gtt_range *psb_gtt_alloc_range(struct drm_device *dev, int len,
-						const char *name, int backed)
+				      const char *name, int backed, u32 align)
 {
 	struct drm_psb_private *dev_priv = dev->dev_private;
 	struct gtt_range *gt;
@@ -359,7 +350,7 @@ struct gtt_range *psb_gtt_alloc_range(struct drm_device *dev, int len,
 	/* Ensure this is set for non GEM objects */
 	gt->gem.dev = dev;
 	ret = allocate_resource(dev_priv->gtt_mem, &gt->resource,
-				len, start, end, PAGE_SIZE, NULL, NULL);
+				len, start, end, align, NULL, NULL);
 	if (ret == 0) {
 		gt->offset = gt->resource.start - r->start;
 		return gt;
@@ -426,6 +417,7 @@ int psb_gtt_init(struct drm_device *dev, int resume)
 
 	if (!resume) {
 		mutex_init(&dev_priv->gtt_mutex);
+		mutex_init(&dev_priv->mmap_mutex);
 		psb_gtt_alloc(dev);
 	}
 
@@ -511,7 +503,7 @@ int psb_gtt_init(struct drm_device *dev, int resume)
 	 *	Map the GTT and the stolen memory area
 	 */
 	if (!resume)
-		dev_priv->gtt_map = ioremap_nocache(pg->gtt_phys_start,
+		dev_priv->gtt_map = ioremap(pg->gtt_phys_start,
 						gtt_pages << PAGE_SHIFT);
 	if (!dev_priv->gtt_map) {
 		dev_err(dev->dev, "Failure to map gtt.\n");
@@ -522,6 +514,7 @@ int psb_gtt_init(struct drm_device *dev, int resume)
 	if (!resume)
 		dev_priv->vram_addr = ioremap_wc(dev_priv->stolen_base,
 						 stolen_size);
+
 	if (!dev_priv->vram_addr) {
 		dev_err(dev->dev, "Failure to map stolen base.\n");
 		ret = -ENOMEM;
@@ -537,7 +530,7 @@ int psb_gtt_init(struct drm_device *dev, int resume)
 	dev_dbg(dev->dev, "Set up %d stolen pages starting at 0x%08x, GTT offset %dK\n",
 		num_pages, pfn_base << PAGE_SHIFT, 0);
 	for (i = 0; i < num_pages; ++i) {
-		pte = psb_gtt_mask_pte(pfn_base + i, 0);
+		pte = psb_gtt_mask_pte(pfn_base + i, PSB_MMU_CACHED_MEMORY);
 		iowrite32(pte, dev_priv->gtt_map + i);
 	}
 
@@ -546,7 +539,7 @@ int psb_gtt_init(struct drm_device *dev, int resume)
 	 */
 
 	pfn_base = page_to_pfn(dev_priv->scratch_page);
-	pte = psb_gtt_mask_pte(pfn_base, 0);
+	pte = psb_gtt_mask_pte(pfn_base, PSB_MMU_CACHED_MEMORY);
 	for (; i < gtt_pages; ++i)
 		iowrite32(pte, dev_priv->gtt_map + i);
 

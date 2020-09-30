@@ -1,14 +1,10 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Driver for the enhanced rotary controller on pxa930 and pxa935
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 
 #include <linux/kernel.h>
 #include <linux/module.h>
-#include <linux/init.h>
 #include <linux/interrupt.h>
 #include <linux/input.h>
 #include <linux/platform_device.h>
@@ -84,7 +80,8 @@ static void pxa930_rotary_close(struct input_dev *dev)
 
 static int pxa930_rotary_probe(struct platform_device *pdev)
 {
-	struct pxa930_rotary_platform_data *pdata = pdev->dev.platform_data;
+	struct pxa930_rotary_platform_data *pdata =
+			dev_get_platdata(&pdev->dev);
 	struct pxa930_rotary *r;
 	struct input_dev *input_dev;
 	struct resource *res;
@@ -92,10 +89,8 @@ static int pxa930_rotary_probe(struct platform_device *pdev)
 	int err;
 
 	irq = platform_get_irq(pdev, 0);
-	if (irq < 0) {
-		dev_err(&pdev->dev, "no irq for rotary controller\n");
+	if (irq < 0)
 		return -ENXIO;
-	}
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	if (!res) {
@@ -112,7 +107,7 @@ static int pxa930_rotary_probe(struct platform_device *pdev)
 	if (!r)
 		return -ENOMEM;
 
-	r->mmio_base = ioremap_nocache(res->start, resource_size(res));
+	r->mmio_base = ioremap(res->start, resource_size(res));
 	if (r->mmio_base == NULL) {
 		dev_err(&pdev->dev, "failed to remap IO memory\n");
 		err = -ENXIO;
@@ -181,7 +176,6 @@ static int pxa930_rotary_remove(struct platform_device *pdev)
 	free_irq(platform_get_irq(pdev, 0), r);
 	input_unregister_device(r->input_dev);
 	iounmap(r->mmio_base);
-	platform_set_drvdata(pdev, NULL);
 	kfree(r);
 
 	return 0;
@@ -190,7 +184,6 @@ static int pxa930_rotary_remove(struct platform_device *pdev)
 static struct platform_driver pxa930_rotary_driver = {
 	.driver		= {
 		.name	= "pxa930-rotary",
-		.owner	= THIS_MODULE,
 	},
 	.probe		= pxa930_rotary_probe,
 	.remove		= pxa930_rotary_remove,

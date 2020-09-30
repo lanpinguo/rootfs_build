@@ -1,9 +1,13 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _NF_CONNTRACK_H323_H
 #define _NF_CONNTRACK_H323_H
 
-#ifdef __KERNEL__
-
+#include <linux/netfilter.h>
+#include <linux/skbuff.h>
+#include <linux/types.h>
 #include <linux/netfilter/nf_conntrack_h323_asn1.h>
+#include <net/netfilter/nf_conntrack_expect.h>
+#include <uapi/linux/netfilter/nf_conntrack_tuple_common.h>
 
 #define RAS_PORT 1719
 #define Q931_PORT 1720
@@ -27,15 +31,13 @@ struct nf_ct_h323_master {
 	};
 };
 
-struct nf_conn;
-
-extern int get_h225_addr(struct nf_conn *ct, unsigned char *data,
-			 TransportAddress *taddr,
-			 union nf_inet_addr *addr, __be16 *port);
-extern void nf_conntrack_h245_expect(struct nf_conn *new,
-				     struct nf_conntrack_expect *this);
-extern void nf_conntrack_q931_expect(struct nf_conn *new,
-				     struct nf_conntrack_expect *this);
+int get_h225_addr(struct nf_conn *ct, unsigned char *data,
+		  TransportAddress *taddr, union nf_inet_addr *addr,
+		  __be16 *port);
+void nf_conntrack_h245_expect(struct nf_conn *new,
+			      struct nf_conntrack_expect *this);
+void nf_conntrack_q931_expect(struct nf_conn *new,
+			      struct nf_conntrack_expect *this);
 extern int (*set_h245_addr_hook) (struct sk_buff *skb, unsigned int protoff,
 				  unsigned char **data, int dataoff,
 				  H245_TransportAddress *taddr,
@@ -91,7 +93,5 @@ extern int (*nat_q931_hook) (struct sk_buff *skb, struct nf_conn *ct,
 			     unsigned char **data, TransportAddress *taddr,
 			     int idx, __be16 port,
 			     struct nf_conntrack_expect *exp);
-
-#endif
 
 #endif

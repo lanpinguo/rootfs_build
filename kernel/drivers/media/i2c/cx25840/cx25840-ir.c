@@ -1,30 +1,16 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *  Driver for the Conexant CX2584x Audio/Video decoder chip and related cores
  *
  *  Integrated Consumer Infrared Controller
  *
  *  Copyright (C) 2010  Andy Walls <awalls@md.metrocast.net>
- *
- *  This program is free software; you can redistribute it and/or
- *  modify it under the terms of the GNU General Public License
- *  as published by the Free Software Foundation; either version 2
- *  of the License, or (at your option) any later version.
- *
- *  This program is distributed in the hope that it will be useful,
- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *  GNU General Public License for more details.
- *
- *  You should have received a copy of the GNU General Public License
- *  along with this program; if not, write to the Free Software
- *  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
- *  02110-1301, USA.
  */
 
 #include <linux/slab.h>
 #include <linux/kfifo.h>
 #include <linux/module.h>
-#include <media/cx25840.h>
+#include <media/drv-intf/cx25840.h>
 #include <media/rc-core.h>
 
 #include "cx25840-core.h"
@@ -33,7 +19,7 @@ static unsigned int ir_debug;
 module_param(ir_debug, int, 0644);
 MODULE_PARM_DESC(ir_debug, "enable integrated IR debug messages");
 
-#define CX25840_IR_REG_BASE 	0x200
+#define CX25840_IR_REG_BASE	0x200
 
 #define CX25840_IR_CNTRL_REG	0x200
 #define CNTRL_WIN_3_3	0x00000000
@@ -136,7 +122,7 @@ static inline struct cx25840_ir_state *to_ir_state(struct v4l2_subdev *sd)
  * Rx and Tx Clock Divider register computations
  *
  * Note the largest clock divider value of 0xffff corresponds to:
- * 	(0xffff + 1) * 1000 / 108/2 MHz = 1,213,629.629... ns
+ *	(0xffff + 1) * 1000 / 108/2 MHz = 1,213,629.629... ns
  * which fits in 21 bits, so we'll use unsigned int for time arguments.
  */
 static inline u16 count_to_clock_divider(unsigned int d)
@@ -192,7 +178,7 @@ static inline unsigned int clock_divider_to_freq(unsigned int divider,
  * Low Pass Filter register calculations
  *
  * Note the largest count value of 0xffff corresponds to:
- * 	0xffff * 1000 / 108/2 MHz = 1,213,611.11... ns
+ *	0xffff * 1000 / 108/2 MHz = 1,213,611.11... ns
  * which fits in 21 bits, so we'll use unsigned int for time arguments.
  */
 static inline u16 count_to_lpf_count(unsigned int d)
@@ -224,7 +210,7 @@ static inline unsigned int lpf_count_to_us(unsigned int count)
 }
 
 /*
- * FIFO register pulse width count compuations
+ * FIFO register pulse width count computations
  */
 static u32 clock_divider_to_resolution(u16 divider)
 {
@@ -554,7 +540,7 @@ int cx25840_ir_irq_handler(struct v4l2_subdev *sd, u32 status, bool *handled)
 	ror = stats & STATS_ROR; /* Rx FIFO Over Run */
 
 	tse = irqen & IRQEN_TSE; /* Tx FIFO Service Request IRQ Enable */
-	rse = irqen & IRQEN_RSE; /* Rx FIFO Service Reuqest IRQ Enable */
+	rse = irqen & IRQEN_RSE; /* Rx FIFO Service Request IRQ Enable */
 	rte = irqen & IRQEN_RTE; /* Rx Pulse Width Timer Time Out IRQ Enable */
 	roe = irqen & IRQEN_ROE; /* Rx FIFO Over Run IRQ Enable */
 
@@ -643,7 +629,7 @@ int cx25840_ir_irq_handler(struct v4l2_subdev *sd, u32 status, bool *handled)
 		events |= V4L2_SUBDEV_IR_RX_END_OF_RX_DETECTED;
 	}
 	if (v) {
-		/* Clear STATS_ROR & STATS_RTO as needed by reseting hardware */
+		/* Clear STATS_ROR & STATS_RTO as needed by resetting hardware */
 		cx25840_write4(c, CX25840_IR_CNTRL_REG, cntrl & ~v);
 		cx25840_write4(c, CX25840_IR_CNTRL_REG, cntrl);
 		*handled = true;
@@ -706,10 +692,8 @@ static int cx25840_ir_rx_read(struct v4l2_subdev *sd, u8 *buf, size_t count,
 		if (v > IR_MAX_DURATION)
 			v = IR_MAX_DURATION;
 
-		init_ir_raw_event(&p->ir_core_data);
-		p->ir_core_data.pulse = u;
-		p->ir_core_data.duration = v;
-		p->ir_core_data.timeout = w;
+		p->ir_core_data = (struct ir_raw_event)
+			{ .pulse = u, .duration = v, .timeout = w };
 
 		v4l2_dbg(2, ir_debug, sd, "rx read: %10u ns  %s  %s\n",
 			 v, u ? "mark" : "space", w ? "(timed out)" : "");
@@ -1113,8 +1097,8 @@ int cx25840_ir_log_status(struct v4l2_subdev *sd)
 			j = 0;
 			break;
 		}
-		v4l2_info(sd, "\tNext carrier edge window:          16 clocks "
-			  "-%1d/+%1d, %u to %u Hz\n", i, j,
+		v4l2_info(sd, "\tNext carrier edge window:	    16 clocks -%1d/+%1d, %u to %u Hz\n",
+			  i, j,
 			  clock_divider_to_freq(rxclk, 16 + j),
 			  clock_divider_to_freq(rxclk, 16 - i));
 	}
@@ -1124,8 +1108,7 @@ int cx25840_ir_log_status(struct v4l2_subdev *sd)
 	v4l2_info(sd, "\tLow pass filter:                   %s\n",
 		  filtr ? "enabled" : "disabled");
 	if (filtr)
-		v4l2_info(sd, "\tMin acceptable pulse width (LPF):  %u us, "
-			  "%u ns\n",
+		v4l2_info(sd, "\tMin acceptable pulse width (LPF):  %u us, %u ns\n",
 			  lpf_count_to_us(filtr),
 			  lpf_count_to_ns(filtr));
 	v4l2_info(sd, "\tPulse width timer timed-out:       %s\n",
@@ -1230,16 +1213,14 @@ int cx25840_ir_probe(struct v4l2_subdev *sd)
 	if (!(is_cx23885(state) || is_cx23887(state)))
 		return 0;
 
-	ir_state = kzalloc(sizeof(struct cx25840_ir_state), GFP_KERNEL);
+	ir_state = devm_kzalloc(&state->c->dev, sizeof(*ir_state), GFP_KERNEL);
 	if (ir_state == NULL)
 		return -ENOMEM;
 
 	spin_lock_init(&ir_state->rx_kfifo_lock);
 	if (kfifo_alloc(&ir_state->rx_kfifo,
-			CX25840_IR_RX_KFIFO_SIZE, GFP_KERNEL)) {
-		kfree(ir_state);
+			CX25840_IR_RX_KFIFO_SIZE, GFP_KERNEL))
 		return -ENOMEM;
-	}
 
 	ir_state->c = state->c;
 	state->ir_state = ir_state;
@@ -1273,7 +1254,6 @@ int cx25840_ir_remove(struct v4l2_subdev *sd)
 	cx25840_ir_tx_shutdown(sd);
 
 	kfifo_free(&ir_state->rx_kfifo);
-	kfree(ir_state);
 	state->ir_state = NULL;
 	return 0;
 }

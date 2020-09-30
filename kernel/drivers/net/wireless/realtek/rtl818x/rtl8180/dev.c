@@ -803,7 +803,7 @@ static void rtl8180_config_cardbus(struct ieee80211_hw *dev)
 		rtl818x_iowrite16(priv, FEMR_SE, 0xffff);
 	} else {
 		reg16 = rtl818x_ioread16(priv, &priv->map->FEMR);
-			reg16 |= (1 << 15) | (1 << 14) | (1 << 4);
+		reg16 |= (1 << 15) | (1 << 14) | (1 << 4);
 		rtl818x_iowrite16(priv, &priv->map->FEMR, reg16);
 	}
 
@@ -1723,8 +1723,8 @@ static int rtl8180_probe(struct pci_dev *pdev,
 {
 	struct ieee80211_hw *dev;
 	struct rtl8180_priv *priv;
-	unsigned long mem_addr, mem_len;
-	unsigned int io_addr, io_len;
+	unsigned long mem_len;
+	unsigned int io_len;
 	int err;
 	const char *chip_name, *rf_name = NULL;
 	u32 reg;
@@ -1743,9 +1743,7 @@ static int rtl8180_probe(struct pci_dev *pdev,
 		goto err_disable_dev;
 	}
 
-	io_addr = pci_resource_start(pdev, 0);
 	io_len = pci_resource_len(pdev, 0);
-	mem_addr = pci_resource_start(pdev, 1);
 	mem_len = pci_resource_len(pdev, 1);
 
 	if (mem_len < sizeof(struct rtl818x_csr) ||
@@ -1968,32 +1966,17 @@ static void rtl8180_remove(struct pci_dev *pdev)
 	ieee80211_free_hw(dev);
 }
 
-#ifdef CONFIG_PM
-static int rtl8180_suspend(struct pci_dev *pdev, pm_message_t state)
-{
-	pci_save_state(pdev);
-	pci_set_power_state(pdev, pci_choose_state(pdev, state));
-	return 0;
-}
+#define rtl8180_suspend NULL
+#define rtl8180_resume NULL
 
-static int rtl8180_resume(struct pci_dev *pdev)
-{
-	pci_set_power_state(pdev, PCI_D0);
-	pci_restore_state(pdev);
-	return 0;
-}
-
-#endif /* CONFIG_PM */
+static SIMPLE_DEV_PM_OPS(rtl8180_pm_ops, rtl8180_suspend, rtl8180_resume);
 
 static struct pci_driver rtl8180_driver = {
 	.name		= KBUILD_MODNAME,
 	.id_table	= rtl8180_table,
 	.probe		= rtl8180_probe,
 	.remove		= rtl8180_remove,
-#ifdef CONFIG_PM
-	.suspend	= rtl8180_suspend,
-	.resume		= rtl8180_resume,
-#endif /* CONFIG_PM */
+	.driver.pm	= &rtl8180_pm_ops,
 };
 
 module_pci_driver(rtl8180_driver);

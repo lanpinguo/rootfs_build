@@ -1,13 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Support for the VMIVME-7805 board access to the Universe II bridge.
  *
  * Author: Arthur Benilov <arthur.benilov@iba-group.com>
  * Copyright 2010 Ion Beam Application, Inc.
- *
- * This program is free software; you can redistribute  it and/or modify it
- * under  the terms of  the GNU General  Public License as published by the
- * Free Software Foundation;  either version 2 of the  License, or (at your
- * option) any later version.
  */
 
 #include <linux/module.h>
@@ -23,11 +19,11 @@ static int vmic_probe(struct pci_dev *, const struct pci_device_id *);
 static void vmic_remove(struct pci_dev *);
 
 /** Base address to access FPGA register */
-static void *vmic_base;
+static void __iomem *vmic_base;
 
 static const char driver_name[] = "vmivme_7805";
 
-static DEFINE_PCI_DEVICE_TABLE(vmic_ids) = {
+static const struct pci_device_id vmic_ids[] = {
 	{ PCI_DEVICE(PCI_VENDOR_ID_VMIC, PCI_DEVICE_ID_VTIMR) },
 	{ },
 };
@@ -59,7 +55,7 @@ static int vmic_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	}
 
 	/* Map registers in BAR 0 */
-	vmic_base = ioremap_nocache(pci_resource_start(pdev, 0), 16);
+	vmic_base = ioremap(pci_resource_start(pdev, 0), 16);
 	if (!vmic_base) {
 		dev_err(&pdev->dev, "Unable to remap CRG region\n");
 		retval = -EIO;

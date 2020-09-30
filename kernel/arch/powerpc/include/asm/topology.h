@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _ASM_POWERPC_TOPOLOGY_H
 #define _ASM_POWERPC_TOPOLOGY_H
 #ifdef __KERNEL__
@@ -9,31 +10,12 @@ struct device_node;
 #ifdef CONFIG_NUMA
 
 /*
- * Before going off node we want the VM to try and reclaim from the local
- * node. It does this if the remote distance is larger than RECLAIM_DISTANCE.
- * With the default REMOTE_DISTANCE of 20 and the default RECLAIM_DISTANCE of
- * 20, we never reclaim and go off node straight away.
- *
- * To fix this we choose a smaller value of RECLAIM_DISTANCE.
+ * If zone_reclaim_mode is enabled, a RECLAIM_DISTANCE of 10 will mean that
+ * all zones on all nodes will be eligible for zone_reclaim().
  */
 #define RECLAIM_DISTANCE 10
 
 #include <asm/mmzone.h>
-
-static inline int cpu_to_node(int cpu)
-{
-	int nid;
-
-	nid = numa_cpu_lookup_table[cpu];
-
-	/*
-	 * During early boot, the numa-cpu lookup table might not have been
-	 * setup for all CPUs yet. In such cases, default to node 0.
-	 */
-	return (nid < 0) ? 0 : nid;
-}
-
-#define parent_node(node)	(node)
 
 #define cpumask_of_node(node) ((node) == -1 ?				\
 			       cpu_all_mask :				\
@@ -53,6 +35,7 @@ static inline int pcibus_to_node(struct pci_bus *bus)
 				 cpu_all_mask :				\
 				 cpumask_of_node(pcibus_to_node(bus)))
 
+extern int cpu_distance(__be32 *cpu1_assoc, __be32 *cpu2_assoc);
 extern int __node_distance(int, int);
 #define node_distance(a, b) __node_distance(a, b)
 
@@ -61,7 +44,26 @@ extern void __init dump_numa_cpu_topology(void);
 extern int sysfs_add_device_to_node(struct device *dev, int nid);
 extern void sysfs_remove_device_from_node(struct device *dev, int nid);
 
+static inline void update_numa_cpu_lookup_table(unsigned int cpu, int node)
+{
+	numa_cpu_lookup_table[cpu] = node;
+}
+
+static inline int early_cpu_to_node(int cpu)
+{
+	int nid;
+
+	nid = numa_cpu_lookup_table[cpu];
+
+	/*
+	 * Fall back to node 0 if nid is unset (it should be, except bugs).
+	 * This allows callers to safely do NODE_DATA(early_cpu_to_node(cpu)).
+	 */
+	return (nid < 0) ? 0 : nid;
+}
 #else
+
+static inline int early_cpu_to_node(int cpu) { return 0; }
 
 static inline void dump_numa_cpu_topology(void) {}
 
@@ -74,39 +76,45 @@ static inline void sysfs_remove_device_from_node(struct device *dev,
 						int nid)
 {
 }
+
+static inline void update_numa_cpu_lookup_table(unsigned int cpu, int node) {}
+
+static inline int cpu_distance(__be32 *cpu1_assoc, __be32 *cpu2_assoc)
+{
+	return 0;
+}
+
 #endif /* CONFIG_NUMA */
 
 #if defined(CONFIG_NUMA) && defined(CONFIG_PPC_SPLPAR)
-extern int start_topology_update(void);
-extern int stop_topology_update(void);
-extern int prrn_is_enabled(void);
+extern int find_and_online_cpu_nid(int cpu);
 #else
-static inline int start_topology_update(void)
+static inline int find_and_online_cpu_nid(int cpu)
 {
 	return 0;
 }
-static inline int stop_topology_update(void)
-{
-	return 0;
-}
-static inline int prrn_is_enabled(void)
-{
-	return 0;
-}
+
 #endif /* CONFIG_NUMA && CONFIG_PPC_SPLPAR */
 
 #include <asm-generic/topology.h>
 
 #ifdef CONFIG_SMP
 #include <asm/cputable.h>
-#define smt_capable()		(cpu_has_feature(CPU_FTR_SMT))
 
 #ifdef CONFIG_PPC64
 #include <asm/smp.h>
 
-#define topology_thread_cpumask(cpu)	(per_cpu(cpu_sibling_map, cpu))
+#ifdef CONFIG_PPC_SPLPAR
+int get_physical_package_id(int cpu);
+#define topology_physical_package_id(cpu)	(get_physical_package_id(cpu))
+#else
+#define topology_physical_package_id(cpu)	(cpu_to_chip_id(cpu))
+#endif
+
+#define topology_sibling_cpumask(cpu)	(per_cpu(cpu_sibling_map, cpu))
 #define topology_core_cpumask(cpu)	(per_cpu(cpu_core_map, cpu))
 #define topology_core_id(cpu)		(cpu_to_core_id(cpu))
+
 #endif
 #endif
 

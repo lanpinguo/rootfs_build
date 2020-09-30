@@ -1,19 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Copyright (C) 2000, 2001, 2002, 2003 Broadcom Corporation
- *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
  */
 
 #include <linux/init.h>
@@ -21,12 +8,13 @@
 #include <linux/linkage.h>
 #include <linux/mm.h>
 #include <linux/blkdev.h>
-#include <linux/bootmem.h>
+#include <linux/memblock.h>
 #include <linux/pm.h>
 #include <linux/smp.h>
 
 #include <asm/bootinfo.h>
 #include <asm/reboot.h>
+#include <asm/setup.h>
 #include <asm/sibyte/board.h>
 #include <asm/smp-ops.h>
 
@@ -38,7 +26,7 @@
 #define MAX_RAM_SIZE (~0ULL)
 #else
 #ifdef CONFIG_HIGHMEM
-#ifdef CONFIG_64BIT_PHYS_ADDR
+#ifdef CONFIG_PHYS_ADDR_T_64BIT
 #define MAX_RAM_SIZE (~0ULL)
 #else
 #define MAX_RAM_SIZE (0xffffffffULL)
@@ -49,8 +37,8 @@
 #endif
 
 #define SIBYTE_MAX_MEM_REGIONS 8
-phys_t board_mem_region_addrs[SIBYTE_MAX_MEM_REGIONS];
-phys_t board_mem_region_sizes[SIBYTE_MAX_MEM_REGIONS];
+phys_addr_t board_mem_region_addrs[SIBYTE_MAX_MEM_REGIONS];
+phys_addr_t board_mem_region_sizes[SIBYTE_MAX_MEM_REGIONS];
 unsigned int board_mem_region_count;
 
 int cfe_cons_handle;
@@ -96,7 +84,7 @@ static void __noreturn cfe_linux_halt(void)
 
 static __init void prom_meminit(void)
 {
-	u64 addr, size, type; /* regardless of 64BIT_PHYS_ADDR */
+	u64 addr, size, type; /* regardless of PHYS_ADDR_T_64BIT */
 	int mem_flags = 0;
 	unsigned int idx;
 	int rd_flag;
@@ -229,8 +217,8 @@ static int __init initrd_setup(char *str)
 
 #endif
 
-extern struct plat_smp_ops sb_smp_ops;
-extern struct plat_smp_ops bcm1480_smp_ops;
+extern const struct plat_smp_ops sb_smp_ops;
+extern const struct plat_smp_ops bcm1480_smp_ops;
 
 /*
  * prom_init is called just after the cpu type is determined, from setup_arch()

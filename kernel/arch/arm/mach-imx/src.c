@@ -1,13 +1,7 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Copyright 2011 Freescale Semiconductor, Inc.
  * Copyright 2011 Linaro Ltd.
- *
- * The code contained herein is licensed under the GNU General Public
- * License. You may obtain a copy of the GNU General Public License
- * Version 2 or later at the following locations:
- *
- * http://www.opensource.org/licenses/gpl-license.html
- * http://www.gnu.org/copyleft/gpl.html
  */
 
 #include <linux/init.h>
@@ -49,9 +43,6 @@ static int imx_src_reset_module(struct reset_controller_dev *rcdev,
 	int bit;
 	u32 val;
 
-	if (!src_base)
-		return -ENODEV;
-
 	if (sw_reset_idx >= ARRAY_SIZE(sw_reset_bits))
 		return -EINVAL;
 
@@ -73,7 +64,7 @@ static int imx_src_reset_module(struct reset_controller_dev *rcdev,
 	return 0;
 }
 
-static struct reset_control_ops imx_src_ops = {
+static const struct reset_control_ops imx_src_ops = {
 	.reset = imx_src_reset_module,
 };
 
@@ -91,6 +82,7 @@ void imx_enable_cpu(int cpu, bool enable)
 	spin_lock(&scr_lock);
 	val = readl_relaxed(src_base + SRC_SCR);
 	val = enable ? val | mask : val & ~mask;
+	val |= 1 << (BP_SRC_SCR_CORE1_RST + cpu - 1);
 	writel_relaxed(val, src_base + SRC_SCR);
 	spin_unlock(&scr_lock);
 }
@@ -98,7 +90,7 @@ void imx_enable_cpu(int cpu, bool enable)
 void imx_set_cpu_jump(int cpu, void *jump_addr)
 {
 	cpu = cpu_logical_map(cpu);
-	writel_relaxed(virt_to_phys(jump_addr),
+	writel_relaxed(__pa_symbol(jump_addr),
 		       src_base + SRC_GPR1 + cpu * 8);
 }
 
@@ -112,21 +104,6 @@ void imx_set_cpu_arg(int cpu, u32 arg)
 {
 	cpu = cpu_logical_map(cpu);
 	writel_relaxed(arg, src_base + SRC_GPR1 + cpu * 8 + 4);
-}
-
-void imx_src_prepare_restart(void)
-{
-	u32 val;
-
-	/* clear enable bits of secondary cores */
-	spin_lock(&scr_lock);
-	val = readl_relaxed(src_base + SRC_SCR);
-	val &= ~(0x7 << BP_SRC_SCR_CORE1_ENABLE);
-	writel_relaxed(val, src_base + SRC_SCR);
-	spin_unlock(&scr_lock);
-
-	/* clear persistent entry register of primary core */
-	writel_relaxed(0, src_base + SRC_GPR1);
 }
 
 void __init imx_src_init(void)

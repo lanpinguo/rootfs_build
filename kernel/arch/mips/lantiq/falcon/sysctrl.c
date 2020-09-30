@@ -1,10 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License version 2 as published
- * by the Free Software Foundation.
  *
  * Copyright (C) 2011 Thomas Langer <thomas.langer@lantiq.com>
- * Copyright (C) 2011 John Crispin <blogic@openwrt.org>
+ * Copyright (C) 2011 John Crispin <john@phrozen.org>
  */
 
 #include <linux/ioport.h>
@@ -24,7 +22,7 @@
 
 /* GPE frequency selection */
 #define GPPC_OFFSET		24
-#define GPEFREQ_MASK		0x00000C0
+#define GPEFREQ_MASK		0x0000C00
 #define GPEFREQ_OFFSET		10
 /* Clock status register */
 #define SYSCTL_CLKS		0x0000
@@ -48,6 +46,8 @@
 #define CPU0CC_CPUDIV		0x0001
 
 /* Activation Status Register */
+#define ACTS_ASC0_ACT	0x00001000
+#define ACTS_SSC0	0x00002000
 #define ACTS_ASC1_ACT	0x00000800
 #define ACTS_I2C_ACT	0x00004000
 #define ACTS_P0		0x00010000
@@ -108,6 +108,7 @@ static void sysctl_deactivate(struct clk *clk)
 static int sysctl_clken(struct clk *clk)
 {
 	sysctl_w32(clk->module, clk->bits, SYSCTL_CLKEN);
+	sysctl_w32(clk->module, clk->bits, SYSCTL_ACT);
 	sysctl_wait(clk, clk->bits, SYSCTL_CLKS);
 	return 0;
 }
@@ -145,12 +146,11 @@ static void falcon_gpe_enable(void)
 	if (status & (1 << (GPPC_OFFSET + 1)))
 		return;
 
-	if (status_r32(STATUS_CONFIG) == 0)
+	freq = (status_r32(STATUS_CONFIG) &
+		GPEFREQ_MASK) >>
+		GPEFREQ_OFFSET;
+	if (freq == 0)
 		freq = 1; /* use 625MHz on unfused chip */
-	else
-		freq = (status_r32(STATUS_CONFIG) &
-			GPEFREQ_MASK) >>
-			GPEFREQ_OFFSET;
 
 	/* apply new frequency */
 	sysctl_w32_mask(SYSCTL_SYS1, 7 << (GPPC_OFFSET + 1),
@@ -219,18 +219,18 @@ void __init ltq_soc_init(void)
 		(request_mem_region(res_sys[2].start,
 				resource_size(&res_sys[2]),
 				res_sys[2].name) < 0))
-		pr_err("Failed to request core reources");
+		pr_err("Failed to request core resources");
 
-	status_membase = ioremap_nocache(res_status.start,
+	status_membase = ioremap(res_status.start,
 					resource_size(&res_status));
-	ltq_ebu_membase = ioremap_nocache(res_ebu.start,
+	ltq_ebu_membase = ioremap(res_ebu.start,
 					resource_size(&res_ebu));
 
 	if (!status_membase || !ltq_ebu_membase)
 		panic("Failed to remap core resources");
 
 	for (i = 0; i < 3; i++) {
-		sysctl_membase[i] = ioremap_nocache(res_sys[i].start,
+		sysctl_membase[i] = ioremap(res_sys[i].start,
 						resource_size(&res_sys[i]));
 		if (!sysctl_membase[i])
 			panic("Failed to remap sysctrl resources");
@@ -256,6 +256,8 @@ void __init ltq_soc_init(void)
 	clkdev_add_sys("1e800400.pad", SYSCTL_SYS1, ACTS_PADCTRL1);
 	clkdev_add_sys("1e800500.pad", SYSCTL_SYS1, ACTS_PADCTRL3);
 	clkdev_add_sys("1e800600.pad", SYSCTL_SYS1, ACTS_PADCTRL4);
-	clkdev_add_sys("1e100C00.serial", SYSCTL_SYS1, ACTS_ASC1_ACT);
+	clkdev_add_sys("1e100b00.serial", SYSCTL_SYS1, ACTS_ASC1_ACT);
+	clkdev_add_sys("1e100c00.serial", SYSCTL_SYS1, ACTS_ASC0_ACT);
+	clkdev_add_sys("1e100d00.spi", SYSCTL_SYS1, ACTS_SSC0);
 	clkdev_add_sys("1e200000.i2c", SYSCTL_SYS1, ACTS_I2C_ACT);
 }

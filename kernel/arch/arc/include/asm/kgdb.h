@@ -1,11 +1,8 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * kgdb support for ARC
  *
  * Copyright (C) 2012 Synopsys, Inc. (www.synopsys.com)
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 
 #ifndef __ARC_KGDB_H__
@@ -31,7 +28,7 @@ static inline void arch_kgdb_breakpoint(void)
 	__asm__ __volatile__ ("trap_s	0x4\n");
 }
 
-extern void kgdb_trap(struct pt_regs *regs, int param);
+extern void kgdb_trap(struct pt_regs *regs);
 
 /* This is the numbering of registers according to the GDB. See GDB's
  * arc-tdep.h for details.
@@ -57,7 +54,7 @@ enum arc_linux_regnums {
 };
 
 #else
-#define kgdb_trap(regs, param)
+#define kgdb_trap(regs)
 #endif
 
 #endif	/* __ARC_KGDB_H__ */

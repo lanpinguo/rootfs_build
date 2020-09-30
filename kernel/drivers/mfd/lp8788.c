@@ -1,14 +1,10 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * TI LP8788 MFD - core interface
  *
  * Copyright 2012 Texas Instruments
  *
  * Author: Milo(Woogyom) Kim <milo.kim@ti.com>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
- *
  */
 
 #include <linux/err.h>
@@ -71,7 +67,7 @@ static struct resource rtc_irqs[] = {
 	},
 };
 
-static struct mfd_cell lp8788_devs[] = {
+static const struct mfd_cell lp8788_devs[] = {
 	/* 4 bucks */
 	MFD_DEV_WITH_ID(BUCK, 1),
 	MFD_DEV_WITH_ID(BUCK, 2),
@@ -173,7 +169,7 @@ static const struct regmap_config lp8788_regmap_config = {
 static int lp8788_probe(struct i2c_client *cl, const struct i2c_device_id *id)
 {
 	struct lp8788 *lp;
-	struct lp8788_platform_data *pdata = cl->dev.platform_data;
+	struct lp8788_platform_data *pdata = dev_get_platdata(&cl->dev);
 	int ret;
 
 	lp = devm_kzalloc(&cl->dev, sizeof(struct lp8788), GFP_KERNEL);
@@ -221,7 +217,6 @@ MODULE_DEVICE_TABLE(i2c, lp8788_ids);
 static struct i2c_driver lp8788_driver = {
 	.driver = {
 		.name = "lp8788",
-		.owner = THIS_MODULE,
 	},
 	.probe = lp8788_probe,
 	.remove = lp8788_remove,

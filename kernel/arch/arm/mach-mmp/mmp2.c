@@ -1,31 +1,31 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * linux/arch/arm/mach-mmp/mmp2.c
  *
  * code name MMP2
  *
  * Copyright (C) 2009 Marvell International Ltd.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
+#include <linux/clk/mmp.h>
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/init.h>
 #include <linux/io.h>
+#include <linux/irq.h>
+#include <linux/irqchip/mmp.h>
 #include <linux/platform_device.h>
 
 #include <asm/hardware/cache-tauros2.h>
 
 #include <asm/mach/time.h>
-#include <mach/addr-map.h>
-#include <mach/regs-apbc.h>
-#include <mach/cputype.h>
-#include <mach/irqs.h>
-#include <mach/dma.h>
-#include <mach/mfp.h>
-#include <mach/devices.h>
-#include <mach/mmp2.h>
+#include "addr-map.h"
+#include "regs-apbc.h"
+#include <linux/soc/mmp/cputype.h>
+#include "irqs.h"
+#include "mfp.h"
+#include "devices.h"
+#include "mmp2.h"
+#include "pm-mmp2.h"
 
 #include "common.h"
 
@@ -94,6 +94,9 @@ void mmp2_clear_pmic_int(void)
 void __init mmp2_init_irq(void)
 {
 	mmp2_init_icu();
+#ifdef CONFIG_PM
+	icu_irq_chip.irq_set_wake = mmp2_set_wake;
+#endif
 }
 
 static int __init mmp2_init(void)
@@ -104,8 +107,9 @@ static int __init mmp2_init(void)
 #endif
 		mfp_init_base(MFPR_VIRT_BASE);
 		mfp_init_addr(mmp2_addr_map);
-		pxa_init_dma(IRQ_MMP2_DMA_RIQ, 16);
-		mmp2_clk_init();
+		mmp2_clk_init(APB_PHYS_BASE + 0x50000,
+			      AXI_PHYS_BASE + 0x82800,
+			      APB_PHYS_BASE + 0x15000);
 	}
 
 	return 0;
@@ -127,7 +131,7 @@ void __init mmp2_timer_init(void)
 	clk_rst = APBC_APBCLK | APBC_FNCLK | APBC_FNCLKSEL(1);
 	__raw_writel(clk_rst, APBC_TIMERS);
 
-	timer_init(IRQ_MMP2_TIMER1);
+	mmp_timer_init(IRQ_MMP2_TIMER1, 6500000);
 }
 
 /* on-chip devices */

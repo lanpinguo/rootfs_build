@@ -1,23 +1,10 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *  interrupts.c: Interrupt mappings for PNX833X.
  *
  *  Copyright 2008 NXP Semiconductors
  *	  Chris Steel <chris.steel@nxp.com>
  *    Daniel Laird <daniel.j.laird@nxp.com>
- *
- *  This program is free software; you can redistribute it and/or modify
- *  it under the terms of the GNU General Public License as published by
- *  the Free Software Foundation; either version 2 of the License, or
- *  (at your option) any later version.
- *
- *  This program is distributed in the hope that it will be useful,
- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *  GNU General Public License for more details.
- *
- *  You should have received a copy of the GNU General Public License
- *  along with this program; if not, write to the Free Software
- *  Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
 #include <linux/kernel.h>
 #include <linux/irq.h>
@@ -281,7 +268,7 @@ void __init arch_init_irq(void)
 	write_c0_status(read_c0_status() | IE_IRQ2);
 }
 
-unsigned int __cpuinit get_c0_compare_int(void)
+unsigned int get_c0_compare_int(void)
 {
 	if (cpu_has_vint)
 		set_vi_handler(cp0_compare_irq, pnx833x_timer_dispatch);

@@ -1,35 +1,25 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /**************************************************************************
  * Copyright (c) 2011, Intel Corporation.
  * All Rights Reserved.
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms and conditions of the GNU General Public License,
- * version 2, as published by the Free Software Foundation.
- *
- * This program is distributed in the hope it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along with
- * this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin St - Fifth Floor, Boston, MA 02110-1301 USA.
- *
  **************************************************************************/
 
 #include <linux/backlight.h>
-#include <linux/module.h>
+#include <linux/delay.h>
 #include <linux/dmi.h>
-#include <drm/drmP.h>
-#include <drm/drm.h>
-#include <drm/gma_drm.h>
-#include "psb_drv.h"
-#include "psb_reg.h"
-#include "psb_intel_reg.h"
-#include <asm/mrst.h>
+#include <linux/module.h>
+
+#include <asm/intel-mid.h>
 #include <asm/intel_scu_ipc.h>
-#include "mid_bios.h"
+
+#include <drm/drm.h>
+
 #include "intel_bios.h"
+#include "mid_bios.h"
+#include "psb_drv.h"
+#include "psb_intel_reg.h"
+#include "psb_reg.h"
 
 static int oaktrail_output_init(struct drm_device *dev)
 {
@@ -40,6 +30,9 @@ static int oaktrail_output_init(struct drm_device *dev)
 		dev_err(dev->dev, "DSI is not supported\n");
 	if (dev_priv->hdmi_priv)
 		oaktrail_hdmi_init(dev, &dev_priv->mode_dev);
+
+	psb_intel_sdvo_init(dev, SDVOB);
+
 	return 0;
 }
 
@@ -324,7 +317,7 @@ static int oaktrail_restore_display_registers(struct drm_device *dev)
 
 	/* Actually enable it */
 	PSB_WVDC32(p->dpll, MRST_DPLL_A);
-	DRM_UDELAY(150);
+	udelay(150);
 
 	/* Restore mode */
 	PSB_WVDC32(p->htotal, HTOTAL_A);
@@ -526,6 +519,7 @@ static int oaktrail_chip_setup(struct drm_device *dev)
 		psb_intel_opregion_init(dev);
 		psb_intel_init_bios(dev);
 	}
+	gma_intel_setup_gmbus(dev);
 	oaktrail_hdmi_setup(dev);
 	return 0;
 }
@@ -534,6 +528,7 @@ static void oaktrail_teardown(struct drm_device *dev)
 {
 	struct drm_psb_private *dev_priv = dev->dev_private;
 
+	gma_intel_teardown_gmbus(dev);
 	oaktrail_hdmi_teardown(dev);
 	if (!dev_priv->has_gct)
 		psb_intel_destroy_bios(dev);
@@ -546,6 +541,7 @@ const struct psb_ops oaktrail_chip_ops = {
 	.crtcs = 2,
 	.hdmi_mask = (1 << 1),
 	.lvds_mask = (1 << 0),
+	.sdvo_mask = (1 << 1),
 	.cursor_needs_phys = 0,
 	.sgx_offset = MRST_SGX_OFFSET,
 
@@ -562,6 +558,8 @@ const struct psb_ops oaktrail_chip_ops = {
 
 	.save_regs = oaktrail_save_display_registers,
 	.restore_regs = oaktrail_restore_display_registers,
+	.save_crtc = gma_crtc_save,
+	.restore_crtc = gma_crtc_restore,
 	.power_down = oaktrail_power_down,
 	.power_up = oaktrail_power_up,
 

@@ -1,17 +1,7 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Edirol UA-101/UA-1000 driver
  * Copyright (c) Clemens Ladisch <clemens@ladisch.de>
- *
- * This driver is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License, version 2.
- *
- * This driver is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this driver.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #include <linux/init.h>
@@ -257,9 +247,9 @@ static inline void add_with_wraparound(struct ua101 *ua,
 		*value -= ua->playback.queue_length;
 }
 
-static void playback_tasklet(unsigned long data)
+static void playback_tasklet(struct tasklet_struct *t)
 {
-	struct ua101 *ua = (void *)data;
+	struct ua101 *ua = from_tasklet(ua, t, playback_tasklet);
 	unsigned long flags;
 	unsigned int frames;
 	struct ua101_urb *urb;
@@ -613,24 +603,14 @@ static int start_usb_playback(struct ua101 *ua)
 
 static void abort_alsa_capture(struct ua101 *ua)
 {
-	unsigned long flags;
-
-	if (test_bit(ALSA_CAPTURE_RUNNING, &ua->states)) {
-		snd_pcm_stream_lock_irqsave(ua->capture.substream, flags);
-		snd_pcm_stop(ua->capture.substream, SNDRV_PCM_STATE_XRUN);
-		snd_pcm_stream_unlock_irqrestore(ua->capture.substream, flags);
-	}
+	if (test_bit(ALSA_CAPTURE_RUNNING, &ua->states))
+		snd_pcm_stop_xrun(ua->capture.substream);
 }
 
 static void abort_alsa_playback(struct ua101 *ua)
 {
-	unsigned long flags;
-
-	if (test_bit(ALSA_PLAYBACK_RUNNING, &ua->states)) {
-		snd_pcm_stream_lock_irqsave(ua->playback.substream, flags);
-		snd_pcm_stop(ua->playback.substream, SNDRV_PCM_STATE_XRUN);
-		snd_pcm_stream_unlock_irqrestore(ua->playback.substream, flags);
-	}
+	if (test_bit(ALSA_PLAYBACK_RUNNING, &ua->states))
+		snd_pcm_stop_xrun(ua->playback.substream);
 }
 
 static int set_stream_hw(struct ua101 *ua, struct snd_pcm_substream *substream,
@@ -750,11 +730,7 @@ static int capture_pcm_hw_params(struct snd_pcm_substream *substream,
 	mutex_lock(&ua->mutex);
 	err = start_usb_capture(ua);
 	mutex_unlock(&ua->mutex);
-	if (err < 0)
-		return err;
-
-	return snd_pcm_lib_alloc_vmalloc_buffer(substream,
-						params_buffer_bytes(hw_params));
+	return err;
 }
 
 static int playback_pcm_hw_params(struct snd_pcm_substream *substream,
@@ -768,16 +744,7 @@ static int playback_pcm_hw_params(struct snd_pcm_substream *substream,
 	if (err >= 0)
 		err = start_usb_playback(ua);
 	mutex_unlock(&ua->mutex);
-	if (err < 0)
-		return err;
-
-	return snd_pcm_lib_alloc_vmalloc_buffer(substream,
-						params_buffer_bytes(hw_params));
-}
-
-static int ua101_pcm_hw_free(struct snd_pcm_substream *substream)
-{
-	return snd_pcm_lib_free_vmalloc_buffer(substream);
+	return err;
 }
 
 static int capture_pcm_prepare(struct snd_pcm_substream *substream)
@@ -900,30 +867,22 @@ static snd_pcm_uframes_t playback_pcm_pointer(struct snd_pcm_substream *subs)
 	return ua101_pcm_pointer(ua, &ua->playback);
 }
 
-static struct snd_pcm_ops capture_pcm_ops = {
+static const struct snd_pcm_ops capture_pcm_ops = {
 	.open = capture_pcm_open,
 	.close = capture_pcm_close,
-	.ioctl = snd_pcm_lib_ioctl,
 	.hw_params = capture_pcm_hw_params,
-	.hw_free = ua101_pcm_hw_free,
 	.prepare = capture_pcm_prepare,
 	.trigger = capture_pcm_trigger,
 	.pointer = capture_pcm_pointer,
-	.page = snd_pcm_lib_get_vmalloc_page,
-	.mmap = snd_pcm_lib_mmap_vmalloc,
 };
 
-static struct snd_pcm_ops playback_pcm_ops = {
+static const struct snd_pcm_ops playback_pcm_ops = {
 	.open = playback_pcm_open,
 	.close = playback_pcm_close,
-	.ioctl = snd_pcm_lib_ioctl,
 	.hw_params = playback_pcm_hw_params,
-	.hw_free = ua101_pcm_hw_free,
 	.prepare = playback_pcm_prepare,
 	.trigger = playback_pcm_trigger,
 	.pointer = playback_pcm_pointer,
-	.page = snd_pcm_lib_get_vmalloc_page,
-	.mmap = snd_pcm_lib_mmap_vmalloc,
 };
 
 static const struct uac_format_type_i_discrete_descriptor *
@@ -1047,7 +1006,7 @@ static int detect_usb_format(struct ua101 *ua)
 		return -ENXIO;
 	}
 	ua->capture.usb_pipe = usb_rcvisocpipe(ua->dev, usb_endpoint_num(epd));
-	ua->capture.max_packet_bytes = le16_to_cpu(epd->wMaxPacketSize);
+	ua->capture.max_packet_bytes = usb_endpoint_maxp(epd);
 
 	epd = &ua->intf[INTF_PLAYBACK]->altsetting[1].endpoint[0].desc;
 	if (!usb_endpoint_is_isoc_out(epd)) {
@@ -1055,7 +1014,7 @@ static int detect_usb_format(struct ua101 *ua)
 		return -ENXIO;
 	}
 	ua->playback.usb_pipe = usb_sndisocpipe(ua->dev, usb_endpoint_num(epd));
-	ua->playback.max_packet_bytes = le16_to_cpu(epd->wMaxPacketSize);
+	ua->playback.max_packet_bytes = usb_endpoint_maxp(epd);
 	return 0;
 }
 
@@ -1243,8 +1202,9 @@ static int ua101_probe(struct usb_interface *interface,
 		mutex_unlock(&devices_mutex);
 		return -ENOENT;
 	}
-	err = snd_card_create(index[card_index], id[card_index], THIS_MODULE,
-			      sizeof(*ua), &card);
+	err = snd_card_new(&interface->dev,
+			   index[card_index], id[card_index], THIS_MODULE,
+			   sizeof(*ua), &card);
 	if (err < 0) {
 		mutex_unlock(&devices_mutex);
 		return err;
@@ -1258,8 +1218,7 @@ static int ua101_probe(struct usb_interface *interface,
 	spin_lock_init(&ua->lock);
 	mutex_init(&ua->mutex);
 	INIT_LIST_HEAD(&ua->ready_playback_urbs);
-	tasklet_init(&ua->playback_tasklet,
-		     playback_tasklet, (unsigned long)ua);
+	tasklet_setup(&ua->playback_tasklet, playback_tasklet);
 	init_waitqueue_head(&ua->alsa_capture_wait);
 	init_waitqueue_head(&ua->rate_feedback_wait);
 	init_waitqueue_head(&ua->alsa_playback_wait);
@@ -1282,8 +1241,6 @@ static int ua101_probe(struct usb_interface *interface,
 			goto probe_error;
 		}
 	}
-
-	snd_card_set_dev(card, &interface->dev);
 
 	err = detect_usb_format(ua);
 	if (err < 0)
@@ -1319,6 +1276,8 @@ static int ua101_probe(struct usb_interface *interface,
 	strcpy(ua->pcm->name, name);
 	snd_pcm_set_ops(ua->pcm, SNDRV_PCM_STREAM_PLAYBACK, &playback_pcm_ops);
 	snd_pcm_set_ops(ua->pcm, SNDRV_PCM_STREAM_CAPTURE, &capture_pcm_ops);
+	snd_pcm_set_managed_buffer_all(ua->pcm, SNDRV_DMA_TYPE_VMALLOC,
+				       NULL, 0, 0);
 
 	err = snd_usbmidi_create(card, ua->intf[INTF_MIDI],
 				 &ua->midi_list, &midi_quirk);
@@ -1359,7 +1318,7 @@ static void ua101_disconnect(struct usb_interface *interface)
 	snd_card_disconnect(ua->card);
 
 	/* make sure that there are no pending USB requests */
-	__list_for_each(midi, &ua->midi_list)
+	list_for_each(midi, &ua->midi_list)
 		snd_usbmidi_disconnect(midi);
 	abort_alsa_playback(ua);
 	abort_alsa_capture(ua);
@@ -1377,7 +1336,7 @@ static void ua101_disconnect(struct usb_interface *interface)
 	mutex_unlock(&devices_mutex);
 }
 
-static struct usb_device_id ua101_ids[] = {
+static const struct usb_device_id ua101_ids[] = {
 	{ USB_DEVICE(0x0582, 0x0044) }, /* UA-1000 high speed */
 	{ USB_DEVICE(0x0582, 0x007d) }, /* UA-101 high speed */
 	{ USB_DEVICE(0x0582, 0x008d) }, /* UA-101 full speed */

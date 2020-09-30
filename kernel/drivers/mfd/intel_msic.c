@@ -1,18 +1,15 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * Driver for Intel MSIC
  *
  * Copyright (C) 2011, Intel Corporation
  * Author: Mika Westerberg <mika.westerberg@linux.intel.com>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 
 #include <linux/err.h>
 #include <linux/gpio.h>
 #include <linux/io.h>
-#include <linux/module.h>
+#include <linux/init.h>
 #include <linux/mfd/core.h>
 #include <linux/mfd/intel_msic.h>
 #include <linux/platform_device.h>
@@ -27,7 +24,7 @@
 
 /*
  * MSIC interrupt tree is readable from SRAM at INTEL_MSIC_IRQ_PHYS_BASE.
- * Since IRQ block starts from address 0x002 we need to substract that from
+ * Since IRQ block starts from address 0x002 we need to subtract that from
  * the actual IRQ status register address.
  */
 #define MSIC_IRQ_STATUS(x)	(INTEL_MSIC_IRQ_PHYS_BASE + ((x) - 2))
@@ -54,68 +51,44 @@ struct intel_msic {
 };
 
 static struct resource msic_touch_resources[] = {
-	{
-		.flags		= IORESOURCE_IRQ,
-	},
+	DEFINE_RES_IRQ(0),
 };
 
 static struct resource msic_adc_resources[] = {
-	{
-		.flags		= IORESOURCE_IRQ,
-	},
+	DEFINE_RES_IRQ(0),
 };
 
 static struct resource msic_battery_resources[] = {
-	{
-		.flags		= IORESOURCE_IRQ,
-	},
+	DEFINE_RES_IRQ(0),
 };
 
 static struct resource msic_gpio_resources[] = {
-	{
-		.flags		= IORESOURCE_IRQ,
-	},
+	DEFINE_RES_IRQ(0),
 };
 
 static struct resource msic_audio_resources[] = {
-	{
-		.name		= "IRQ",
-		.flags		= IORESOURCE_IRQ,
-	},
+	DEFINE_RES_IRQ_NAMED(0, "IRQ"),
 	/*
 	 * We will pass IRQ_BASE to the driver now but this can be removed
 	 * when/if the driver starts to use intel_msic_irq_read().
 	 */
-	{
-		.name		= "IRQ_BASE",
-		.flags		= IORESOURCE_MEM,
-		.start		= MSIC_IRQ_STATUS_ACCDET,
-		.end		= MSIC_IRQ_STATUS_ACCDET,
-	},
+	DEFINE_RES_MEM_NAMED(MSIC_IRQ_STATUS_ACCDET, 1, "IRQ_BASE"),
 };
 
 static struct resource msic_hdmi_resources[] = {
-	{
-		.flags		= IORESOURCE_IRQ,
-	},
+	DEFINE_RES_IRQ(0),
 };
 
 static struct resource msic_thermal_resources[] = {
-	{
-		.flags		= IORESOURCE_IRQ,
-	},
+	DEFINE_RES_IRQ(0),
 };
 
 static struct resource msic_power_btn_resources[] = {
-	{
-		.flags		= IORESOURCE_IRQ,
-	},
+	DEFINE_RES_IRQ(0),
 };
 
 static struct resource msic_ocd_resources[] = {
-	{
-		.flags		= IORESOURCE_IRQ,
-	},
+	DEFINE_RES_IRQ(0),
 };
 
 /*
@@ -178,7 +151,7 @@ static struct mfd_cell msic_devs[] = {
  * These devices appear only after the MSIC driver itself is initialized so
  * we can guarantee that the SCU IPC interface is ready.
  */
-static struct mfd_cell msic_other_devs[] = {
+static const struct mfd_cell msic_other_devs[] = {
 	/* Audio codec in the MSIC */
 	{
 		.id			= -1,
@@ -310,7 +283,7 @@ EXPORT_SYMBOL_GPL(intel_msic_irq_read);
 static int intel_msic_init_devices(struct intel_msic *msic)
 {
 	struct platform_device *pdev = msic->pdev;
-	struct intel_msic_platform_data *pdata = pdev->dev.platform_data;
+	struct intel_msic_platform_data *pdata = dev_get_platdata(&pdev->dev);
 	int ret, i;
 
 	if (pdata->gpio) {
@@ -372,7 +345,7 @@ static void intel_msic_remove_devices(struct intel_msic *msic)
 
 static int intel_msic_probe(struct platform_device *pdev)
 {
-	struct intel_msic_platform_data *pdata = pdev->dev.platform_data;
+	struct intel_msic_platform_data *pdata = dev_get_platdata(&pdev->dev);
 	struct intel_msic *msic;
 	struct resource *res;
 	u8 id0, id1;
@@ -438,7 +411,6 @@ static int intel_msic_remove(struct platform_device *pdev)
 	struct intel_msic *msic = platform_get_drvdata(pdev);
 
 	intel_msic_remove_devices(msic);
-	platform_set_drvdata(pdev, NULL);
 
 	return 0;
 }
@@ -448,12 +420,6 @@ static struct platform_driver intel_msic_driver = {
 	.remove		= intel_msic_remove,
 	.driver		= {
 		.name	= "intel_msic",
-		.owner	= THIS_MODULE,
 	},
 };
-
-module_platform_driver(intel_msic_driver);
-
-MODULE_DESCRIPTION("Driver for Intel MSIC");
-MODULE_AUTHOR("Mika Westerberg <mika.westerberg@linux.intel.com>");
-MODULE_LICENSE("GPL");
+builtin_platform_driver(intel_msic_driver);

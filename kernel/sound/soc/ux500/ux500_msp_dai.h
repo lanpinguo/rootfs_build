@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (C) ST-Ericsson SA 2012
  *
@@ -6,10 +7,6 @@
  *         for ST-Ericsson.
  *
  * License terms:
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as published
- * by the Free Software Foundation.
  */
 
 #ifndef UX500_msp_dai_H
@@ -51,15 +48,11 @@ enum ux500_msp_clock_id {
 struct ux500_msp_i2s_drvdata {
 	struct ux500_msp *msp;
 	struct regulator *reg_vape;
-	struct ux500_msp_dma_params playback_dma_data;
-	struct ux500_msp_dma_params capture_dma_data;
 	unsigned int fmt;
 	unsigned int tx_mask;
 	unsigned int rx_mask;
 	int slots;
 	int slot_width;
-	u8 configured;
-	int data_delay;
 
 	/* Clocks */
 	unsigned int master_clk;

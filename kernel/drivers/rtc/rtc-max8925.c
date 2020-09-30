@@ -1,12 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * RTC driver for Maxim MAX8925
  *
  * Copyright (C) 2009-2010 Marvell International Ltd.
  *	Haojian Zhuang <haojian.zhuang@marvell.com>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 
 #include <linux/module.h>
@@ -234,8 +231,6 @@ static int max8925_rtc_set_alarm(struct device *dev, struct rtc_wkalrm *alrm)
 		ret = max8925_reg_write(info->rtc, MAX8925_ALARM0_CNTL, 0x77);
 	else
 		ret = max8925_reg_write(info->rtc, MAX8925_ALARM0_CNTL, 0x0);
-	if (ret < 0)
-		goto out;
 out:
 	return ret;
 }
@@ -268,7 +263,7 @@ static int max8925_rtc_probe(struct platform_device *pdev)
 	if (ret < 0) {
 		dev_err(chip->dev, "Failed to request IRQ: #%d: %d\n",
 			info->irq, ret);
-		goto err;
+		return ret;
 	}
 
 	dev_set_drvdata(&pdev->dev, info);
@@ -282,17 +277,9 @@ static int max8925_rtc_probe(struct platform_device *pdev)
 	ret = PTR_ERR(info->rtc_dev);
 	if (IS_ERR(info->rtc_dev)) {
 		dev_err(&pdev->dev, "Failed to register RTC device: %d\n", ret);
-		goto err;
+		return ret;
 	}
 
-	return 0;
-err:
-	platform_set_drvdata(pdev, NULL);
-	return ret;
-}
-
-static int max8925_rtc_remove(struct platform_device *pdev)
-{
 	return 0;
 }
 
@@ -325,7 +312,6 @@ static struct platform_driver max8925_rtc_driver = {
 		.pm     = &max8925_rtc_pm_ops,
 	},
 	.probe		= max8925_rtc_probe,
-	.remove		= max8925_rtc_remove,
 };
 
 module_platform_driver(max8925_rtc_driver);

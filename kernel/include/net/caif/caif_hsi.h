@@ -1,8 +1,8 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (C) ST-Ericsson AB 2010
  * Author:  Daniel Martensson / daniel.martensson@stericsson.com
  *	    Dmitry.Tarnyagin  / dmitry.tarnyagin@stericsson.com
- * License terms: GNU General Public License (GPL) version 2
  */
 
 #ifndef CAIF_HSI_H_
@@ -195,6 +195,6 @@ enum ifla_caif_hsi {
 	__IFLA_CAIF_HSI_MAX
 };
 
-extern struct cfhsi_ops *cfhsi_get_ops(void);
+struct cfhsi_ops *cfhsi_get_ops(void);
 
 #endif		/* CAIF_HSI_H_ */

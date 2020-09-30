@@ -1,10 +1,7 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (C) 2010 Pengutronix
  * Uwe Kleine-Koenig <u.kleine-koenig@pengutronix.de>
- *
- * This program is free software; you can redistribute it and/or modify it under
- * the terms of the GNU General Public License version 2 as published by the
- * Free Software Foundation.
  */
 #include "../hardware.h"
 #include "devices-common.h"
@@ -12,7 +9,7 @@
 #define imx_mx2_emmaprp_data_entry_single(soc)				\
 	{								\
 		.iobase = soc ## _EMMAPRP_BASE_ADDR,			\
-		.iosize = SZ_32,					\
+		.iosize = SZ_256,					\
 		.irq = soc ## _INT_EMMAPRP,				\
 	}
 

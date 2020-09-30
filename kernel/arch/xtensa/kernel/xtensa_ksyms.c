@@ -19,12 +19,13 @@
 #include <asm/irq.h>
 #include <linux/in6.h>
 
-#include <asm/uaccess.h>
+#include <linux/uaccess.h>
+#include <asm/cacheflush.h>
 #include <asm/checksum.h>
 #include <asm/dma.h>
 #include <asm/io.h>
 #include <asm/page.h>
-#include <asm/pgalloc.h>
+#include <asm/ftrace.h>
 #ifdef CONFIG_BLK_DEV_FD
 #include <asm/floppy.h>
 #endif
@@ -39,7 +40,12 @@
 EXPORT_SYMBOL(memset);
 EXPORT_SYMBOL(memcpy);
 EXPORT_SYMBOL(memmove);
+EXPORT_SYMBOL(__memset);
+EXPORT_SYMBOL(__memcpy);
+EXPORT_SYMBOL(__memmove);
+#ifndef CONFIG_GENERIC_STRNCPY_FROM_USER
 EXPORT_SYMBOL(__strncpy_user);
+#endif
 EXPORT_SYMBOL(clear_page);
 EXPORT_SYMBOL(copy_page);
 
@@ -80,30 +86,29 @@ void __xtensa_libgcc_window_spill(void)
 }
 EXPORT_SYMBOL(__xtensa_libgcc_window_spill);
 
-unsigned long __sync_fetch_and_and_4(unsigned long *p, unsigned long v)
+unsigned int __sync_fetch_and_and_4(volatile void *p, unsigned int v)
 {
 	BUG();
 }
 EXPORT_SYMBOL(__sync_fetch_and_and_4);
 
-unsigned long __sync_fetch_and_or_4(unsigned long *p, unsigned long v)
+unsigned int __sync_fetch_and_or_4(volatile void *p, unsigned int v)
 {
 	BUG();
 }
 EXPORT_SYMBOL(__sync_fetch_and_or_4);
 
-#ifdef CONFIG_NET
 /*
  * Networking support
  */
 EXPORT_SYMBOL(csum_partial);
 EXPORT_SYMBOL(csum_partial_copy_generic);
-#endif /* CONFIG_NET */
 
 /*
  * Architecture-specific symbols
  */
 EXPORT_SYMBOL(__xtensa_copy_user);
+EXPORT_SYMBOL(__invalidate_icache_range);
 
 /*
  * Kernel hacking ...
@@ -113,14 +118,14 @@ EXPORT_SYMBOL(__xtensa_copy_user);
 // FIXME EXPORT_SYMBOL(screen_info);
 #endif
 
-EXPORT_SYMBOL(outsb);
-EXPORT_SYMBOL(outsw);
-EXPORT_SYMBOL(outsl);
-EXPORT_SYMBOL(insb);
-EXPORT_SYMBOL(insw);
-EXPORT_SYMBOL(insl);
-
 extern long common_exception_return;
-extern long _spill_registers;
 EXPORT_SYMBOL(common_exception_return);
-EXPORT_SYMBOL(_spill_registers);
+
+#ifdef CONFIG_FUNCTION_TRACER
+EXPORT_SYMBOL(_mcount);
+#endif
+
+EXPORT_SYMBOL(__invalidate_dcache_range);
+#if XCHAL_DCACHE_IS_WRITEBACK
+EXPORT_SYMBOL(__flush_dcache_range);
+#endif

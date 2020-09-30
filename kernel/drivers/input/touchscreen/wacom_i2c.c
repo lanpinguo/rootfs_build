@@ -1,14 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Wacom Penabled Driver for I2C
  *
- * Copyright (c) 2011 Tatsunosuke Tobita, Wacom.
+ * Copyright (c) 2011 - 2013 Tatsunosuke Tobita, Wacom.
  * <tobita.tatsunosuke@wacom.co.jp>
- *
- * This program is free software; you can redistribute it
- * and/or modify it under the terms of the GNU General
- * Public License as published by the Free Software
- * Foundation; either version of 2 of the License,
- * or (at your option) any later version.
  */
 
 #include <linux/module.h>
@@ -17,7 +12,6 @@
 #include <linux/slab.h>
 #include <linux/irq.h>
 #include <linux/interrupt.h>
-#include <linux/gpio.h>
 #include <asm/unaligned.h>
 
 #define WACOM_CMD_QUERY0	0x04
@@ -27,7 +21,6 @@
 #define WACOM_CMD_THROW0	0x05
 #define WACOM_CMD_THROW1	0x00
 #define WACOM_QUERY_SIZE	19
-#define WACOM_RETRY_CNT		100
 
 struct wacom_features {
 	int x_max;
@@ -40,6 +33,8 @@ struct wacom_i2c {
 	struct i2c_client *client;
 	struct input_dev *input;
 	u8 data[WACOM_QUERY_SIZE];
+	bool prox;
+	int tool;
 };
 
 static int wacom_query_device(struct i2c_client *client,
@@ -112,9 +107,14 @@ static irqreturn_t wacom_i2c_irq(int irq, void *dev_id)
 	y = le16_to_cpup((__le16 *)&data[6]);
 	pressure = le16_to_cpup((__le16 *)&data[8]);
 
+	if (!wac_i2c->prox)
+		wac_i2c->tool = (data[3] & 0x0c) ?
+			BTN_TOOL_RUBBER : BTN_TOOL_PEN;
+
+	wac_i2c->prox = data[3] & 0x20;
+
 	input_report_key(input, BTN_TOUCH, tsw || ers);
-	input_report_key(input, BTN_TOOL_PEN, tsw);
-	input_report_key(input, BTN_TOOL_RUBBER, ers);
+	input_report_key(input, wac_i2c->tool, wac_i2c->prox);
 	input_report_key(input, BTN_STYLUS, f1);
 	input_report_key(input, BTN_STYLUS2, f2);
 	input_report_abs(input, ABS_X, x);
@@ -236,8 +236,7 @@ static int wacom_i2c_remove(struct i2c_client *client)
 	return 0;
 }
 
-#ifdef CONFIG_PM_SLEEP
-static int wacom_i2c_suspend(struct device *dev)
+static int __maybe_unused wacom_i2c_suspend(struct device *dev)
 {
 	struct i2c_client *client = to_i2c_client(dev);
 
@@ -246,7 +245,7 @@ static int wacom_i2c_suspend(struct device *dev)
 	return 0;
 }
 
-static int wacom_i2c_resume(struct device *dev)
+static int __maybe_unused wacom_i2c_resume(struct device *dev)
 {
 	struct i2c_client *client = to_i2c_client(dev);
 
@@ -254,7 +253,6 @@ static int wacom_i2c_resume(struct device *dev)
 
 	return 0;
 }
-#endif
 
 static SIMPLE_DEV_PM_OPS(wacom_i2c_pm, wacom_i2c_suspend, wacom_i2c_resume);
 
@@ -267,7 +265,6 @@ MODULE_DEVICE_TABLE(i2c, wacom_i2c_id);
 static struct i2c_driver wacom_i2c_driver = {
 	.driver	= {
 		.name	= "wacom_i2c",
-		.owner	= THIS_MODULE,
 		.pm	= &wacom_i2c_pm,
 	},
 

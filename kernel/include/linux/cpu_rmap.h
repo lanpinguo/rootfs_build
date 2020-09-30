@@ -1,13 +1,10 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 #ifndef __LINUX_CPU_RMAP_H
 #define __LINUX_CPU_RMAP_H
 
 /*
  * cpu_rmap.c: CPU affinity reverse-map support
  * Copyright 2011 Solarflare Communications Inc.
- *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License version 2 as published
- * by the Free Software Foundation, incorporated herein by reference.
  */
 
 #include <linux/cpumask.h>
@@ -31,7 +28,7 @@ struct cpu_rmap {
 	struct {
 		u16	index;
 		u16	dist;
-	}		near[0];
+	}		near[];
 };
 #define CPU_RMAP_DIST_INF 0xffff
 
@@ -52,8 +49,6 @@ static inline void *cpu_rmap_lookup_obj(struct cpu_rmap *rmap, unsigned int cpu)
 	return rmap->obj[rmap->near[cpu].index];
 }
 
-#ifdef CONFIG_GENERIC_HARDIRQS
-
 /**
  * alloc_irq_cpu_rmap - allocate CPU affinity reverse-map for IRQs
  * @size: Number of objects to be mapped
@@ -68,5 +63,4 @@ extern void free_irq_cpu_rmap(struct cpu_rmap *rmap);
 
 extern int irq_cpu_rmap_add(struct cpu_rmap *rmap, int irq);
 
-#endif
 #endif /* __LINUX_CPU_RMAP_H */

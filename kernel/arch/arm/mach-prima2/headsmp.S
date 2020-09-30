@@ -1,15 +1,12 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * Entry of the second core for CSR Marco dual-core SMP SoCs
  *
  * Copyright (c) 2012 Cambridge Silicon Radio Limited, a CSR plc group company.
- *
- * Licensed under GPLv2 or later.
  */
 
 #include <linux/linkage.h>
 #include <linux/init.h>
-
-	__CPUINIT
 
 /*
  * SIRFSOC specific entry point for secondary CPUs.  This provides
@@ -17,7 +14,6 @@
  * ready for them to initialise.
  */
 ENTRY(sirfsoc_secondary_startup)
-	bl v7_invalidate_l1
         mrc     p15, 0, r0, c0, c0, 5
         and     r0, r0, #15
         adr     r4, 1f
@@ -37,4 +33,4 @@ ENDPROC(sirfsoc_secondary_startup)
 
         .align
 1:      .long   .
-        .long   pen_release
+        .long   prima2_pen_release

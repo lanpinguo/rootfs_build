@@ -1,20 +1,23 @@
+// SPDX-License-Identifier: GPL-2.0
+#include <errno.h>
+#include <inttypes.h>
 #include "builtin.h"
 #include "perf.h"
 
-#include "util/evlist.h"
+#include "util/evlist.h" // for struct evsel_str_handler
 #include "util/evsel.h"
-#include "util/util.h"
-#include "util/cache.h"
 #include "util/symbol.h"
 #include "util/thread.h"
 #include "util/header.h"
 
-#include "util/parse-options.h"
+#include <subcmd/pager.h>
+#include <subcmd/parse-options.h>
 #include "util/trace-event.h"
 
 #include "util/debug.h"
 #include "util/session.h"
 #include "util/tool.h"
+#include "util/data.h"
 
 #include <sys/types.h>
 #include <sys/prctl.h>
@@ -25,6 +28,9 @@
 
 #include <linux/list.h>
 #include <linux/hash.h>
+#include <linux/kernel.h>
+#include <linux/zalloc.h>
+#include <linux/err.h>
 
 static struct perf_session *session;
 
@@ -42,7 +48,7 @@ struct lock_stat {
 	struct rb_node		rb;		/* used for sorting */
 
 	/*
-	 * FIXME: perf_evsel__intval() returns u64,
+	 * FIXME: evsel__intval() returns u64,
 	 * so address of lockdep_map should be dealed as 64bit.
 	 * Is there more better solution?
 	 */
@@ -56,7 +62,9 @@ struct lock_stat {
 
 	unsigned int		nr_readlock;
 	unsigned int		nr_trylock;
+
 	/* these times are in nano sec. */
+	u64                     avg_wait_time;
 	u64			wait_time_total;
 	u64			wait_time_min;
 	u64			wait_time_max;
@@ -208,6 +216,7 @@ static struct thread_stat *thread_stat_findnew_first(u32 tid)
 
 SINGLE_KEY(nr_acquired)
 SINGLE_KEY(nr_contended)
+SINGLE_KEY(avg_wait_time)
 SINGLE_KEY(wait_time_total)
 SINGLE_KEY(wait_time_max)
 
@@ -244,6 +253,7 @@ static struct rb_root		result;	/* place to store sorted data */
 struct lock_key keys[] = {
 	DEF_KEY_LOCK(acquired, nr_acquired),
 	DEF_KEY_LOCK(contended, nr_contended),
+	DEF_KEY_LOCK(avg_wait, avg_wait_time),
 	DEF_KEY_LOCK(wait_total, wait_time_total),
 	DEF_KEY_LOCK(wait_min, wait_time_min),
 	DEF_KEY_LOCK(wait_max, wait_time_max),
@@ -321,10 +331,12 @@ static struct lock_stat *lock_stat_findnew(void *addr, const char *name)
 
 	new->addr = addr;
 	new->name = zalloc(sizeof(char) * strlen(name) + 1);
-	if (!new->name)
+	if (!new->name) {
+		free(new);
 		goto alloc_failed;
-	strcpy(new->name, name);
+	}
 
+	strcpy(new->name, name);
 	new->wait_time_min = ULLONG_MAX;
 
 	list_add(&new->hash_entry, entry);
@@ -336,16 +348,16 @@ alloc_failed:
 }
 
 struct trace_lock_handler {
-	int (*acquire_event)(struct perf_evsel *evsel,
+	int (*acquire_event)(struct evsel *evsel,
 			     struct perf_sample *sample);
 
-	int (*acquired_event)(struct perf_evsel *evsel,
+	int (*acquired_event)(struct evsel *evsel,
 			      struct perf_sample *sample);
 
-	int (*contended_event)(struct perf_evsel *evsel,
+	int (*contended_event)(struct evsel *evsel,
 			       struct perf_sample *sample);
 
-	int (*release_event)(struct perf_evsel *evsel,
+	int (*release_event)(struct evsel *evsel,
 			     struct perf_sample *sample);
 };
 
@@ -385,32 +397,32 @@ enum acquire_flags {
 	READ_LOCK = 2,
 };
 
-static int report_lock_acquire_event(struct perf_evsel *evsel,
+static int report_lock_acquire_event(struct evsel *evsel,
 				     struct perf_sample *sample)
 {
 	void *addr;
 	struct lock_stat *ls;
 	struct thread_stat *ts;
 	struct lock_seq_stat *seq;
-	const char *name = perf_evsel__strval(evsel, sample, "name");
-	u64 tmp = perf_evsel__intval(evsel, sample, "lockdep_addr");
-	int flag = perf_evsel__intval(evsel, sample, "flag");
+	const char *name = evsel__strval(evsel, sample, "name");
+	u64 tmp	 = evsel__intval(evsel, sample, "lockdep_addr");
+	int flag = evsel__intval(evsel, sample, "flag");
 
 	memcpy(&addr, &tmp, sizeof(void *));
 
 	ls = lock_stat_findnew(addr, name);
 	if (!ls)
-		return -1;
+		return -ENOMEM;
 	if (ls->discard)
 		return 0;
 
 	ts = thread_stat_findnew(sample->tid);
 	if (!ts)
-		return -1;
+		return -ENOMEM;
 
 	seq = get_seq(ts, addr);
 	if (!seq)
-		return -1;
+		return -ENOMEM;
 
 	switch (seq->state) {
 	case SEQ_STATE_UNINITIALIZED:
@@ -443,10 +455,9 @@ broken:
 		/* broken lock sequence, discard it */
 		ls->discard = 1;
 		bad_hist[BROKEN_ACQUIRE]++;
-		list_del(&seq->list);
+		list_del_init(&seq->list);
 		free(seq);
 		goto end;
-		break;
 	default:
 		BUG_ON("Unknown state of lock sequence found!\n");
 		break;
@@ -458,7 +469,7 @@ end:
 	return 0;
 }
 
-static int report_lock_acquired_event(struct perf_evsel *evsel,
+static int report_lock_acquired_event(struct evsel *evsel,
 				      struct perf_sample *sample)
 {
 	void *addr;
@@ -466,24 +477,24 @@ static int report_lock_acquired_event(struct perf_evsel *evsel,
 	struct thread_stat *ts;
 	struct lock_seq_stat *seq;
 	u64 contended_term;
-	const char *name = perf_evsel__strval(evsel, sample, "name");
-	u64 tmp = perf_evsel__intval(evsel, sample, "lockdep_addr");
+	const char *name = evsel__strval(evsel, sample, "name");
+	u64 tmp = evsel__intval(evsel, sample, "lockdep_addr");
 
 	memcpy(&addr, &tmp, sizeof(void *));
 
 	ls = lock_stat_findnew(addr, name);
 	if (!ls)
-		return -1;
+		return -ENOMEM;
 	if (ls->discard)
 		return 0;
 
 	ts = thread_stat_findnew(sample->tid);
 	if (!ts)
-		return -1;
+		return -ENOMEM;
 
 	seq = get_seq(ts, addr);
 	if (!seq)
-		return -1;
+		return -ENOMEM;
 
 	switch (seq->state) {
 	case SEQ_STATE_UNINITIALIZED:
@@ -505,11 +516,9 @@ static int report_lock_acquired_event(struct perf_evsel *evsel,
 		/* broken lock sequence, discard it */
 		ls->discard = 1;
 		bad_hist[BROKEN_ACQUIRED]++;
-		list_del(&seq->list);
+		list_del_init(&seq->list);
 		free(seq);
 		goto end;
-		break;
-
 	default:
 		BUG_ON("Unknown state of lock sequence found!\n");
 		break;
@@ -517,36 +526,37 @@ static int report_lock_acquired_event(struct perf_evsel *evsel,
 
 	seq->state = SEQ_STATE_ACQUIRED;
 	ls->nr_acquired++;
+	ls->avg_wait_time = ls->nr_contended ? ls->wait_time_total/ls->nr_contended : 0;
 	seq->prev_event_time = sample->time;
 end:
 	return 0;
 }
 
-static int report_lock_contended_event(struct perf_evsel *evsel,
+static int report_lock_contended_event(struct evsel *evsel,
 				       struct perf_sample *sample)
 {
 	void *addr;
 	struct lock_stat *ls;
 	struct thread_stat *ts;
 	struct lock_seq_stat *seq;
-	const char *name = perf_evsel__strval(evsel, sample, "name");
-	u64 tmp = perf_evsel__intval(evsel, sample, "lockdep_addr");
+	const char *name = evsel__strval(evsel, sample, "name");
+	u64 tmp = evsel__intval(evsel, sample, "lockdep_addr");
 
 	memcpy(&addr, &tmp, sizeof(void *));
 
 	ls = lock_stat_findnew(addr, name);
 	if (!ls)
-		return -1;
+		return -ENOMEM;
 	if (ls->discard)
 		return 0;
 
 	ts = thread_stat_findnew(sample->tid);
 	if (!ts)
-		return -1;
+		return -ENOMEM;
 
 	seq = get_seq(ts, addr);
 	if (!seq)
-		return -1;
+		return -ENOMEM;
 
 	switch (seq->state) {
 	case SEQ_STATE_UNINITIALIZED:
@@ -561,10 +571,9 @@ static int report_lock_contended_event(struct perf_evsel *evsel,
 		/* broken lock sequence, discard it */
 		ls->discard = 1;
 		bad_hist[BROKEN_CONTENDED]++;
-		list_del(&seq->list);
+		list_del_init(&seq->list);
 		free(seq);
 		goto end;
-		break;
 	default:
 		BUG_ON("Unknown state of lock sequence found!\n");
 		break;
@@ -572,41 +581,41 @@ static int report_lock_contended_event(struct perf_evsel *evsel,
 
 	seq->state = SEQ_STATE_CONTENDED;
 	ls->nr_contended++;
+	ls->avg_wait_time = ls->wait_time_total/ls->nr_contended;
 	seq->prev_event_time = sample->time;
 end:
 	return 0;
 }
 
-static int report_lock_release_event(struct perf_evsel *evsel,
+static int report_lock_release_event(struct evsel *evsel,
 				     struct perf_sample *sample)
 {
 	void *addr;
 	struct lock_stat *ls;
 	struct thread_stat *ts;
 	struct lock_seq_stat *seq;
-	const char *name = perf_evsel__strval(evsel, sample, "name");
-	u64 tmp = perf_evsel__intval(evsel, sample, "lockdep_addr");
+	const char *name = evsel__strval(evsel, sample, "name");
+	u64 tmp = evsel__intval(evsel, sample, "lockdep_addr");
 
 	memcpy(&addr, &tmp, sizeof(void *));
 
 	ls = lock_stat_findnew(addr, name);
 	if (!ls)
-		return -1;
+		return -ENOMEM;
 	if (ls->discard)
 		return 0;
 
 	ts = thread_stat_findnew(sample->tid);
 	if (!ts)
-		return -1;
+		return -ENOMEM;
 
 	seq = get_seq(ts, addr);
 	if (!seq)
-		return -1;
+		return -ENOMEM;
 
 	switch (seq->state) {
 	case SEQ_STATE_UNINITIALIZED:
 		goto end;
-		break;
 	case SEQ_STATE_ACQUIRED:
 		break;
 	case SEQ_STATE_READ_ACQUIRED:
@@ -624,7 +633,6 @@ static int report_lock_release_event(struct perf_evsel *evsel,
 		ls->discard = 1;
 		bad_hist[BROKEN_RELEASE]++;
 		goto free_seq;
-		break;
 	default:
 		BUG_ON("Unknown state of lock sequence found!\n");
 		break;
@@ -632,7 +640,7 @@ static int report_lock_release_event(struct perf_evsel *evsel,
 
 	ls->nr_release++;
 free_seq:
-	list_del(&seq->list);
+	list_del_init(&seq->list);
 	free(seq);
 end:
 	return 0;
@@ -649,32 +657,28 @@ static struct trace_lock_handler report_lock_ops  = {
 
 static struct trace_lock_handler *trace_handler;
 
-static int perf_evsel__process_lock_acquire(struct perf_evsel *evsel,
-					     struct perf_sample *sample)
+static int evsel__process_lock_acquire(struct evsel *evsel, struct perf_sample *sample)
 {
 	if (trace_handler->acquire_event)
 		return trace_handler->acquire_event(evsel, sample);
 	return 0;
 }
 
-static int perf_evsel__process_lock_acquired(struct perf_evsel *evsel,
-					      struct perf_sample *sample)
+static int evsel__process_lock_acquired(struct evsel *evsel, struct perf_sample *sample)
 {
 	if (trace_handler->acquired_event)
 		return trace_handler->acquired_event(evsel, sample);
 	return 0;
 }
 
-static int perf_evsel__process_lock_contended(struct perf_evsel *evsel,
-					      struct perf_sample *sample)
+static int evsel__process_lock_contended(struct evsel *evsel, struct perf_sample *sample)
 {
 	if (trace_handler->contended_event)
 		return trace_handler->contended_event(evsel, sample);
 	return 0;
 }
 
-static int perf_evsel__process_lock_release(struct perf_evsel *evsel,
-					    struct perf_sample *sample)
+static int evsel__process_lock_release(struct evsel *evsel, struct perf_sample *sample)
 {
 	if (trace_handler->release_event)
 		return trace_handler->release_event(evsel, sample);
@@ -690,7 +694,7 @@ static void print_bad_events(int bad, int total)
 
 	pr_info("\n=== output for debug===\n\n");
 	pr_info("bad: %d, total: %d\n", bad, total);
-	pr_info("bad rate: %f %%\n", (double)bad / (double)total * 100);
+	pr_info("bad rate: %.2f %%\n", (double)bad / (double)total * 100);
 	pr_info("histogram of events caused bad sequence\n");
 	for (i = 0; i < BROKEN_MAX; i++)
 		pr_info(" %10s: %d\n", name[i], bad_hist[i]);
@@ -707,6 +711,7 @@ static void print_result(void)
 	pr_info("%10s ", "acquired");
 	pr_info("%10s ", "contended");
 
+	pr_info("%15s ", "avg wait (ns)");
 	pr_info("%15s ", "total wait (ns)");
 	pr_info("%15s ", "max wait (ns)");
 	pr_info("%15s ", "min wait (ns)");
@@ -738,6 +743,7 @@ static void print_result(void)
 		pr_info("%10u ", st->nr_acquired);
 		pr_info("%10u ", st->nr_contended);
 
+		pr_info("%15" PRIu64 " ", st->avg_wait_time);
 		pr_info("%15" PRIu64 " ", st->wait_time_total);
 		pr_info("%15" PRIu64 " ", st->wait_time_max);
 		pr_info("%15" PRIu64 " ", st->wait_time_min == ULLONG_MAX ?
@@ -762,9 +768,10 @@ static void dump_threads(void)
 	while (node) {
 		st = container_of(node, struct thread_stat, rb);
 		t = perf_session__findnew(session, st->tid);
-		pr_info("%10d: %s\n", st->tid, t->comm);
+		pr_info("%10d: %s\n", st->tid, thread__comm_str(t));
 		node = rb_next(node);
-	};
+		thread__put(t);
+	}
 }
 
 static void dump_map(void)
@@ -796,16 +803,18 @@ static int dump_info(void)
 	return rc;
 }
 
-typedef int (*tracepoint_handler)(struct perf_evsel *evsel,
+typedef int (*tracepoint_handler)(struct evsel *evsel,
 				  struct perf_sample *sample);
 
 static int process_sample_event(struct perf_tool *tool __maybe_unused,
 				union perf_event *event,
 				struct perf_sample *sample,
-				struct perf_evsel *evsel,
+				struct evsel *evsel,
 				struct machine *machine)
 {
-	struct thread *thread = machine__findnew_thread(machine, sample->tid);
+	int err = 0;
+	struct thread *thread = machine__findnew_thread(machine, sample->pid,
+							sample->tid);
 
 	if (thread == NULL) {
 		pr_debug("problem processing %d event, skipping it.\n",
@@ -813,40 +822,14 @@ static int process_sample_event(struct perf_tool *tool __maybe_unused,
 		return -1;
 	}
 
-	if (evsel->handler.func != NULL) {
-		tracepoint_handler f = evsel->handler.func;
-		return f(evsel, sample);
+	if (evsel->handler != NULL) {
+		tracepoint_handler f = evsel->handler;
+		err = f(evsel, sample);
 	}
 
-	return 0;
-}
+	thread__put(thread);
 
-static const struct perf_evsel_str_handler lock_tracepoints[] = {
-	{ "lock:lock_acquire",	 perf_evsel__process_lock_acquire,   }, /* CONFIG_LOCKDEP */
-	{ "lock:lock_acquired",	 perf_evsel__process_lock_acquired,  }, /* CONFIG_LOCKDEP, CONFIG_LOCK_STAT */
-	{ "lock:lock_contended", perf_evsel__process_lock_contended, }, /* CONFIG_LOCKDEP, CONFIG_LOCK_STAT */
-	{ "lock:lock_release",	 perf_evsel__process_lock_release,   }, /* CONFIG_LOCKDEP */
-};
-
-static int read_events(void)
-{
-	struct perf_tool eops = {
-		.sample		 = process_sample_event,
-		.comm		 = perf_event__process_comm,
-		.ordered_samples = true,
-	};
-	session = perf_session__new(input_name, O_RDONLY, 0, false, &eops);
-	if (!session) {
-		pr_err("Initializing perf session failed\n");
-		return -1;
-	}
-
-	if (perf_session__set_tracepoints_handlers(session, lock_tracepoints)) {
-		pr_err("Initializing perf session tracepoint handlers failed\n");
-		return -1;
-	}
-
-	return perf_session__process_events(session, &eops);
+	return err;
 }
 
 static void sort_result(void)
@@ -861,26 +844,72 @@ static void sort_result(void)
 	}
 }
 
-static int __cmd_report(void)
+static const struct evsel_str_handler lock_tracepoints[] = {
+	{ "lock:lock_acquire",	 evsel__process_lock_acquire,   }, /* CONFIG_LOCKDEP */
+	{ "lock:lock_acquired",	 evsel__process_lock_acquired,  }, /* CONFIG_LOCKDEP, CONFIG_LOCK_STAT */
+	{ "lock:lock_contended", evsel__process_lock_contended, }, /* CONFIG_LOCKDEP, CONFIG_LOCK_STAT */
+	{ "lock:lock_release",	 evsel__process_lock_release,   }, /* CONFIG_LOCKDEP */
+};
+
+static bool force;
+
+static int __cmd_report(bool display_info)
 {
+	int err = -EINVAL;
+	struct perf_tool eops = {
+		.sample		 = process_sample_event,
+		.comm		 = perf_event__process_comm,
+		.namespaces	 = perf_event__process_namespaces,
+		.ordered_events	 = true,
+	};
+	struct perf_data data = {
+		.path  = input_name,
+		.mode  = PERF_DATA_MODE_READ,
+		.force = force,
+	};
+
+	session = perf_session__new(&data, false, &eops);
+	if (IS_ERR(session)) {
+		pr_err("Initializing perf session failed\n");
+		return PTR_ERR(session);
+	}
+
+	symbol__init(&session->header.env);
+
+	if (!perf_session__has_traces(session, "lock record"))
+		goto out_delete;
+
+	if (perf_session__set_tracepoints_handlers(session, lock_tracepoints)) {
+		pr_err("Initializing perf session tracepoint handlers failed\n");
+		goto out_delete;
+	}
+
+	if (select_key())
+		goto out_delete;
+
+	err = perf_session__process_events(session);
+	if (err)
+		goto out_delete;
+
 	setup_pager();
+	if (display_info) /* used for info subcommand */
+		err = dump_info();
+	else {
+		sort_result();
+		print_result();
+	}
 
-	if ((select_key() != 0) ||
-	    (read_events() != 0))
-		return -1;
-
-	sort_result();
-	print_result();
-
-	return 0;
+out_delete:
+	perf_session__delete(session);
+	return err;
 }
 
 static int __cmd_record(int argc, const char **argv)
 {
 	const char *record_args[] = {
-		"record", "-R", "-f", "-m", "1024", "-c", "1",
+		"record", "-R", "-m", "1024", "-c", "1",
 	};
-	unsigned int rec_argc, i, j;
+	unsigned int rec_argc, i, j, ret;
 	const char **rec_argv;
 
 	for (i = 0; i < ARRAY_SIZE(lock_tracepoints); i++) {
@@ -897,7 +926,7 @@ static int __cmd_record(int argc, const char **argv)
 	rec_argc += 2 * ARRAY_SIZE(lock_tracepoints);
 
 	rec_argv = calloc(rec_argc + 1, sizeof(char *));
-	if (rec_argv == NULL)
+	if (!rec_argv)
 		return -ENOMEM;
 
 	for (i = 0; i < ARRAY_SIZE(record_args); i++)
@@ -913,36 +942,44 @@ static int __cmd_record(int argc, const char **argv)
 
 	BUG_ON(i != rec_argc);
 
-	return cmd_record(i, rec_argv, NULL);
+	ret = cmd_record(i, rec_argv);
+	free(rec_argv);
+	return ret;
 }
 
-int cmd_lock(int argc, const char **argv, const char *prefix __maybe_unused)
+int cmd_lock(int argc, const char **argv)
 {
+	const struct option lock_options[] = {
+	OPT_STRING('i', "input", &input_name, "file", "input file name"),
+	OPT_INCR('v', "verbose", &verbose, "be more verbose (show symbol address, etc)"),
+	OPT_BOOLEAN('D', "dump-raw-trace", &dump_trace, "dump raw trace in ASCII"),
+	OPT_BOOLEAN('f', "force", &force, "don't complain, do it"),
+	OPT_END()
+	};
+
 	const struct option info_options[] = {
 	OPT_BOOLEAN('t', "threads", &info_threads,
 		    "dump thread list in perf.data"),
 	OPT_BOOLEAN('m', "map", &info_map,
 		    "map of lock instances (address:name table)"),
-	OPT_END()
+	OPT_PARENT(lock_options)
 	};
-	const struct option lock_options[] = {
-	OPT_STRING('i', "input", &input_name, "file", "input file name"),
-	OPT_INCR('v', "verbose", &verbose, "be more verbose (show symbol address, etc)"),
-	OPT_BOOLEAN('D', "dump-raw-trace", &dump_trace, "dump raw trace in ASCII"),
-	OPT_END()
-	};
+
 	const struct option report_options[] = {
 	OPT_STRING('k', "key", &sort_key, "acquired",
-		    "key for sorting (acquired / contended / wait_total / wait_max / wait_min)"),
+		    "key for sorting (acquired / contended / avg_wait / wait_total / wait_max / wait_min)"),
 	/* TODO: type */
-	OPT_END()
+	OPT_PARENT(lock_options)
 	};
+
 	const char * const info_usage[] = {
 		"perf lock info [<options>]",
 		NULL
 	};
-	const char * const lock_usage[] = {
-		"perf lock [<options>] {record|report|script|info}",
+	const char *const lock_subcommands[] = { "record", "report", "script",
+						 "info", NULL };
+	const char *lock_usage[] = {
+		NULL,
 		NULL
 	};
 	const char * const report_usage[] = {
@@ -952,12 +989,11 @@ int cmd_lock(int argc, const char **argv, const char *prefix __maybe_unused)
 	unsigned int i;
 	int rc = 0;
 
-	symbol__init();
 	for (i = 0; i < LOCKHASH_SIZE; i++)
 		INIT_LIST_HEAD(lockhash_table + i);
 
-	argc = parse_options(argc, argv, lock_options, lock_usage,
-			     PARSE_OPT_STOP_AT_NON_OPTION);
+	argc = parse_options_subcommand(argc, argv, lock_options, lock_subcommands,
+					lock_usage, PARSE_OPT_STOP_AT_NON_OPTION);
 	if (!argc)
 		usage_with_options(lock_usage, lock_options);
 
@@ -971,10 +1007,10 @@ int cmd_lock(int argc, const char **argv, const char *prefix __maybe_unused)
 			if (argc)
 				usage_with_options(report_usage, report_options);
 		}
-		__cmd_report();
+		rc = __cmd_report(false);
 	} else if (!strcmp(argv[0], "script")) {
 		/* Aliased to 'perf script' */
-		return cmd_script(argc, argv, prefix);
+		return cmd_script(argc, argv);
 	} else if (!strcmp(argv[0], "info")) {
 		if (argc) {
 			argc = parse_options(argc, argv,
@@ -984,11 +1020,7 @@ int cmd_lock(int argc, const char **argv, const char *prefix __maybe_unused)
 		}
 		/* recycling report_lock_ops */
 		trace_handler = &report_lock_ops;
-		setup_pager();
-		if (read_events() != 0)
-			rc = -1;
-		else
-			rc = dump_info();
+		rc = __cmd_report(true);
 	} else {
 		usage_with_options(lock_usage, lock_options);
 	}

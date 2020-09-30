@@ -1,15 +1,23 @@
+// SPDX-License-Identifier: GPL-2.0
+#include <errno.h>
+#include <inttypes.h>
 #include <unistd.h>
 #include <stdlib.h>
 #include <signal.h>
 #include <sys/mman.h>
+#include <linux/string.h>
 
 #include "tests.h"
+#include "util/debug.h"
 #include "util/evsel.h"
 #include "util/evlist.h"
 #include "util/cpumap.h"
+#include "util/mmap.h"
 #include "util/thread_map.h"
+#include <perf/evlist.h>
+#include <perf/mmap.h>
 
-#define NR_LOOPS  1000000
+#define NR_LOOPS  10000000
 
 /*
  * This test will open software clock events (cpu-clock, task-clock)
@@ -22,9 +30,10 @@ static int __test__sw_clock_freq(enum perf_sw_ids clock_id)
 	volatile int tmp = 0;
 	u64 total_periods = 0;
 	int nr_samples = 0;
+	char sbuf[STRERR_BUFSIZE];
 	union perf_event *event;
-	struct perf_evsel *evsel;
-	struct perf_evlist *evlist;
+	struct evsel *evsel;
+	struct evlist *evlist;
 	struct perf_event_attr attr = {
 		.type = PERF_TYPE_SOFTWARE,
 		.config = clock_id,
@@ -33,81 +42,102 @@ static int __test__sw_clock_freq(enum perf_sw_ids clock_id)
 		.disabled = 1,
 		.freq = 1,
 	};
+	struct perf_cpu_map *cpus;
+	struct perf_thread_map *threads;
+	struct mmap *md;
 
-	attr.sample_freq = 10000;
+	attr.sample_freq = 500;
 
-	evlist = perf_evlist__new();
+	evlist = evlist__new();
 	if (evlist == NULL) {
-		pr_debug("perf_evlist__new\n");
+		pr_debug("evlist__new\n");
 		return -1;
 	}
 
-	evsel = perf_evsel__new(&attr, 0);
+	evsel = evsel__new(&attr);
 	if (evsel == NULL) {
-		pr_debug("perf_evsel__new\n");
-		goto out_free_evlist;
+		pr_debug("evsel__new\n");
+		goto out_delete_evlist;
 	}
-	perf_evlist__add(evlist, evsel);
+	evlist__add(evlist, evsel);
 
-	evlist->cpus = cpu_map__dummy_new();
-	evlist->threads = thread_map__new_by_tid(getpid());
-	if (!evlist->cpus || !evlist->threads) {
+	cpus = perf_cpu_map__dummy_new();
+	threads = thread_map__new_by_tid(getpid());
+	if (!cpus || !threads) {
 		err = -ENOMEM;
 		pr_debug("Not enough memory to create thread/cpu maps\n");
-		goto out_delete_maps;
+		goto out_free_maps;
 	}
 
-	perf_evlist__open(evlist);
+	perf_evlist__set_maps(&evlist->core, cpus, threads);
 
-	err = perf_evlist__mmap(evlist, 128, true);
+	cpus	= NULL;
+	threads = NULL;
+
+	if (evlist__open(evlist)) {
+		const char *knob = "/proc/sys/kernel/perf_event_max_sample_rate";
+
+		err = -errno;
+		pr_debug("Couldn't open evlist: %s\nHint: check %s, using %" PRIu64 " in this test.\n",
+			 str_error_r(errno, sbuf, sizeof(sbuf)),
+			 knob, (u64)attr.sample_freq);
+		goto out_delete_evlist;
+	}
+
+	err = evlist__mmap(evlist, 128);
 	if (err < 0) {
 		pr_debug("failed to mmap event: %d (%s)\n", errno,
-			 strerror(errno));
-		goto out_close_evlist;
+			 str_error_r(errno, sbuf, sizeof(sbuf)));
+		goto out_delete_evlist;
 	}
 
-	perf_evlist__enable(evlist);
+	evlist__enable(evlist);
 
 	/* collect samples */
 	for (i = 0; i < NR_LOOPS; i++)
 		tmp++;
 
-	perf_evlist__disable(evlist);
+	evlist__disable(evlist);
 
-	while ((event = perf_evlist__mmap_read(evlist, 0)) != NULL) {
+	md = &evlist->mmap[0];
+	if (perf_mmap__read_init(&md->core) < 0)
+		goto out_init;
+
+	while ((event = perf_mmap__read_event(&md->core)) != NULL) {
 		struct perf_sample sample;
 
 		if (event->header.type != PERF_RECORD_SAMPLE)
-			continue;
+			goto next_event;
 
 		err = perf_evlist__parse_sample(evlist, event, &sample);
 		if (err < 0) {
 			pr_debug("Error during parse sample\n");
-			goto out_unmap_evlist;
+			goto out_delete_evlist;
 		}
 
 		total_periods += sample.period;
 		nr_samples++;
+next_event:
+		perf_mmap__consume(&md->core);
 	}
+	perf_mmap__read_done(&md->core);
 
+out_init:
 	if ((u64) nr_samples == total_periods) {
 		pr_debug("All (%d) samples have period value of 1!\n",
 			 nr_samples);
 		err = -1;
 	}
 
-out_unmap_evlist:
-	perf_evlist__munmap(evlist);
-out_close_evlist:
-	perf_evlist__close(evlist);
-out_delete_maps:
-	perf_evlist__delete_maps(evlist);
-out_free_evlist:
-	perf_evlist__delete(evlist);
+out_free_maps:
+	perf_cpu_map__put(cpus);
+	perf_thread_map__put(threads);
+out_delete_evlist:
+	evlist__delete(evlist);
 	return err;
 }
 
-int test__sw_clock_freq(void)
+int test__sw_clock_freq(struct test *test __maybe_unused, int subtest __maybe_unused)
 {
 	int ret;
 

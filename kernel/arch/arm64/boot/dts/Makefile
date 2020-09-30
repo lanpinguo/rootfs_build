@@ -1,26 +1,31 @@
-dtb-$(CONFIG_ARCH_VEXPRESS) += rtsm_ve-aemv8a.dtb foundation-v8.dtb \
-				fvp-base-gicv2-psci.dtb
-dtb-$(CONFIG_ARCH_VEXPRESS) += juno.dtb
-dtb-$(CONFIG_ARCH_XGENE) += apm-mustang.dtb
-dtb-$(CONFIG_ARCH_SUN50IW1P1) += sun50iw1p1-fpga.dtb  sun50iw1p1-perf1_v1_0.dtb \
-				sun50iw1p1-perf2_v1_0.dtb sun50iw1p1-t1.dtb \
-				sun50iw1p1-soc.dtb
-dtb-$(CONFIG_ARCH_SUN50IW2P1) += sun50iw2p1-fpga.dtb sun50iw2p1-perf1_v1_0.dtb \
-				sun50iw2p1-perf2_v1_0.dtb sun50iw2p1-p1.dtb \
-				sun50iw2p1-cheetah-p1.dtb sun50iw2p1-cheetah-cmcc-p1.dtb \
-				sun50iw2p1-cheetah-perf.dtb \
-				sun50iw2p1-soc.dtb
-
-targets += dtbs
-
-DTB_NAMES := $(subst $\",,$(CONFIG_BUILD_ARM64_APPENDED_DTB_IMAGE_NAMES))
-ifneq ($(DTB_NAMES),)
-DTB_LIST := $(addsuffix .dtb,$(DTB_NAMES))
-else
-DTB_LIST := $(dtb-y)
-endif
-targets += $(DTB_LIST)
-
-dtbs: $(addprefix $(obj)/, $(DTB_LIST))
-
-clean-files := dts/*.dtb *.dtb
+# SPDX-License-Identifier: GPL-2.0
+subdir-y += actions
+subdir-y += allwinner
+subdir-y += altera
+subdir-y += amazon
+subdir-y += amd
+subdir-y += amlogic
+subdir-y += apm
+subdir-y += arm
+subdir-y += bitmain
+subdir-y += broadcom
+subdir-y += cavium
+subdir-y += exynos
+subdir-y += freescale
+subdir-y += hisilicon
+subdir-y += intel
+subdir-y += lg
+subdir-y += marvell
+subdir-y += mediatek
+subdir-y += microchip
+subdir-y += nvidia
+subdir-y += qcom
+subdir-y += realtek
+subdir-y += renesas
+subdir-y += rockchip
+subdir-y += socionext
+subdir-y += sprd
+subdir-y += synaptics
+subdir-y += ti
+subdir-y += xilinx
+subdir-y += zte

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * include/media/si476x-core.h -- Common definitions for si476x core
  * device
@@ -6,16 +7,6 @@
  * Copyright (C) 2013 Andrey Smirnov
  *
  * Author: Andrey Smirnov <andrew.smirnov@gmail.com>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; version 2 of the License.
- *
- * This program is distributed in the hope that it will be useful, but
- * WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * General Public License for more details.
- *
  */
 
 #ifndef SI476X_CORE_H
@@ -316,7 +307,7 @@ enum si476x_smoothmetrics {
  * response to 'FM_RD_STATUS' command
  * @rdstpptyint: Traffic program flag(TP) and/or program type(PTY)
  * code has changed.
- * @rdspiint: Program indentifiaction(PI) code has changed.
+ * @rdspiint: Program identification(PI) code has changed.
  * @rdssyncint: RDS synchronization has changed.
  * @rdsfifoint: RDS was received and the RDS FIFO has at least
  * 'FM_RDS_INTERRUPT_FIFO_COUNT' elements in it.

@@ -1,6 +1,5 @@
-
-generic-y += clkdev.h
-generic-y += exec.h
+# SPDX-License-Identifier: GPL-2.0
+generated-y += syscall_table.h
 generic-y += kvm_para.h
-generic-y += scatterlist.h
-generic-y += trace_clock.h
+generic-y += mcs_spinlock.h
+generic-y += vtime.h

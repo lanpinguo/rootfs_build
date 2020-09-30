@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
 #ifndef _UAPI_LINUX_MSDOS_FS_H
 #define _UAPI_LINUX_MSDOS_FS_H
 
@@ -9,7 +10,9 @@
  * The MS-DOS filesystem constants/structures
  */
 
+#ifndef SECTOR_SIZE
 #define SECTOR_SIZE	512		/* sector size (bytes) */
+#endif
 #define SECTOR_BITS	9		/* log2(SECTOR_SIZE) */
 #define MSDOS_DPB	(MSDOS_DPS)	/* dir entries per block */
 #define MSDOS_DPB_BITS	4		/* log2(MSDOS_DPB) */
@@ -55,9 +58,6 @@
 #define MSDOS_DOT	".          "	/* ".", padded to MSDOS_NAME chars */
 #define MSDOS_DOTDOT	"..         "	/* "..", padded to MSDOS_NAME chars */
 
-#define FAT_FIRST_ENT(s, x)	((MSDOS_SB(s)->fat_bits == 32 ? 0x0FFFFF00 : \
-	MSDOS_SB(s)->fat_bits == 16 ? 0xFF00 : 0xF00) | (x))
-
 /* start of data cluster's entry (number of reserved clusters) */
 #define FAT_START_ENT	2
 
@@ -65,8 +65,6 @@
 #define MAX_FAT12	0xFF4
 #define MAX_FAT16	0xFFF4
 #define MAX_FAT32	0x0FFFFFF6
-#define MAX_FAT(s)	(MSDOS_SB(s)->fat_bits == 32 ? MAX_FAT32 : \
-	MSDOS_SB(s)->fat_bits == 16 ? MAX_FAT16 : MAX_FAT12)
 
 /* bad cluster mark */
 #define BAD_FAT12	0xFF7
@@ -104,7 +102,8 @@ struct __fat_dirent {
 /* <linux/videotext.h> has used 0x72 ('r') in collision, so skip a few */
 #define FAT_IOCTL_GET_ATTRIBUTES	_IOR('r', 0x10, __u32)
 #define FAT_IOCTL_SET_ATTRIBUTES	_IOW('r', 0x11, __u32)
-#define VFAT_IOCTL_GET_VOLUME_ID	_IOR('r', 0x12, __u32)
+/*Android kernel has used 0x12, so we use 0x13*/
+#define FAT_IOCTL_GET_VOLUME_ID		_IOR('r', 0x13, __u32)
 
 struct fat_boot_sector {
 	__u8	ignored[3];	/* Boot strap short or near jump */
@@ -129,7 +128,11 @@ struct fat_boot_sector {
 			__u8	drive_number;	/* Physical drive number */
 			__u8	state;		/* undocumented, but used
 						   for mount state. */
-			/* other fiealds are not added here */
+			__u8	signature;  /* extended boot signature */
+			__u8	vol_id[4];	/* volume ID */
+			__u8	vol_label[MSDOS_NAME];	/* volume label */
+			__u8	fs_type[8];		/* file system type */
+			/* other fields are not added here */
 		} fat16;
 
 		struct {
@@ -148,7 +151,11 @@ struct fat_boot_sector {
 			__u8	drive_number;   /* Physical drive number */
 			__u8    state;       	/* undocumented, but used
 						   for mount state. */
-			/* other fiealds are not added here */
+			__u8	signature;  /* extended boot signature */
+			__u8	vol_id[4];	/* volume ID */
+			__u8	vol_label[MSDOS_NAME];	/* volume label */
+			__u8	fs_type[8];		/* file system type */
+			/* other fields are not added here */
 		} fat32;
 	};
 };
@@ -161,17 +168,6 @@ struct fat_boot_fsinfo {
 	__le32   next_cluster;	/* Most recently allocated cluster */
 	__le32   reserved2[4];
 };
-
-struct fat_boot_bsx {
-	__u8     drive;		/* drive number */
-	__u8     reserved1;
-	__u8     signature;	/* extended boot signature */
-	__u8     vol_id[4];	/* volume ID */
-	__u8     vol_label[11];	/* volume label */
-	__u8     type[8];	/* file system type */
-};
-#define FAT16_BSX_OFFSET 36 /* offset of fat_boot_bsx in FAT12 and FAT16 */
-#define FAT32_BSX_OFFSET 64 /* offset of fat_boot_bsx in FAT32 */
 
 struct msdos_dir_entry {
 	__u8	name[MSDOS_NAME];/* name and extension */

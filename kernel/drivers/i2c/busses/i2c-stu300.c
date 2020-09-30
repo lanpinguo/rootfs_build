@@ -1,6 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (C) 2007-2012 ST-Ericsson AB
- * License terms: GNU General Public License (GPL) version 2
  * ST DDC I2C master mode driver, used in e.g. U300 series platforms.
  * Author: Linus Walleij <linus.walleij@stericsson.com>
  * Author: Jonas Aaberg <jonas.aberg@stericsson.com>
@@ -127,12 +127,12 @@ enum stu300_error {
 
 /*
  * The number of address send athemps tried before giving up.
- * If the first one failes it seems like 5 to 8 attempts are required.
+ * If the first one fails it seems like 5 to 8 attempts are required.
  */
 #define NUM_ADDR_RESEND_ATTEMPTS 12
 
 /* I2C clock speed, in Hz 0-400kHz*/
-static unsigned int scl_frequency = 100000;
+static unsigned int scl_frequency = I2C_MAX_STANDARD_MODE_FREQ;
 module_param(scl_frequency, uint,  0644);
 
 /**
@@ -328,12 +328,6 @@ static int stu300_start_and_await_event(struct stu300_dev *dev,
 {
 	int ret;
 
-	if (unlikely(irqs_disabled())) {
-		/* TODO: implement polling for this case if need be. */
-		WARN(1, "irqs are disabled, cannot poll for event\n");
-		return -EIO;
-	}
-
 	/* Lock command issue, fill in an event we wait for */
 	spin_lock_irq(&dev->cmd_issue_lock);
 	init_completion(&dev->cmd_complete);
@@ -379,13 +373,6 @@ static int stu300_await_event(struct stu300_dev *dev,
 				enum stu300_event mr_event)
 {
 	int ret;
-
-	if (unlikely(irqs_disabled())) {
-		/* TODO: implement polling for this case if need be. */
-		dev_err(&dev->pdev->dev, "irqs are disabled on this "
-			"system!\n");
-		return -EIO;
-	}
 
 	/* Is it already here? */
 	spin_lock_irq(&dev->cmd_issue_lock);
@@ -457,7 +444,7 @@ static int stu300_wait_while_busy(struct stu300_dev *dev)
 		       "Attempt: %d\n", i+1);
 
 		dev_err(&dev->pdev->dev, "base address = "
-			"0x%08x, reinit hardware\n", (u32) dev->virtbase);
+			"0x%p, reinit hardware\n", dev->virtbase);
 
 		(void) stu300_init_hw(dev);
 	}
@@ -510,7 +497,7 @@ static int stu300_set_clk(struct stu300_dev *dev, unsigned long clkrate)
 	dev_dbg(&dev->pdev->dev, "Clock rate %lu Hz, I2C bus speed %d Hz "
 		"virtbase %p\n", clkrate, dev->speed, dev->virtbase);
 
-	if (dev->speed > 100000)
+	if (dev->speed > I2C_MAX_STANDARD_MODE_FREQ)
 		/* Fast Mode I2C */
 		val = ((clkrate/dev->speed) - 9)/3 + 1;
 	else
@@ -531,7 +518,7 @@ static int stu300_set_clk(struct stu300_dev *dev, unsigned long clkrate)
 		return -EINVAL;
 	}
 
-	if (dev->speed > 100000) {
+	if (dev->speed > I2C_MAX_STANDARD_MODE_FREQ) {
 		/* CC6..CC0 */
 		stu300_wr8((val & I2C_CCR_CC_MASK) | I2C_CCR_FMSM,
 			   dev->virtbase + I2C_CCR);
@@ -602,20 +589,24 @@ static int stu300_send_address(struct stu300_dev *dev,
 	u32 val;
 	int ret;
 
-	if (msg->flags & I2C_M_TEN)
+	if (msg->flags & I2C_M_TEN) {
 		/* This is probably how 10 bit addresses look */
 		val = (0xf0 | (((u32) msg->addr & 0x300) >> 7)) &
 			I2C_DR_D_MASK;
-	else
-		val = ((msg->addr << 1) & I2C_DR_D_MASK);
+		if (msg->flags & I2C_M_RD)
+			/* This is the direction bit */
+			val |= 0x01;
+	} else {
+		val = i2c_8bit_addr_from_msg(msg);
+	}
 
-	if (msg->flags & I2C_M_RD) {
-		/* This is the direction bit */
-		val |= 0x01;
-		if (resend)
+	if (resend) {
+		if (msg->flags & I2C_M_RD)
 			dev_dbg(&dev->pdev->dev, "read resend\n");
-	} else if (resend)
-		dev_dbg(&dev->pdev->dev, "write resend\n");
+		else
+			dev_dbg(&dev->pdev->dev, "write resend\n");
+	}
+
 	stu300_wr8(val, dev->virtbase + I2C_DR);
 
 	/* For 10bit addressing, await 10bit request (EVENT 9) */
@@ -667,12 +658,6 @@ static int stu300_xfer_msg(struct i2c_adapter *adap,
 		dev_dbg(&dev->pdev->dev, "I2C message to: 0x%04x, len: %d, "
 			"flags: 0x%04x, stop: %d\n",
 			msg->addr, msg->len, msg->flags, stop);
-	}
-
-	/* Zero-length messages are not supported by this hardware */
-	if (msg->len == 0) {
-		ret = -EINVAL;
-		goto exit_disable;
 	}
 
 	/*
@@ -801,7 +786,7 @@ static int stu300_xfer_msg(struct i2c_adapter *adap,
 	/* Check that the bus is free, or wait until some timeout occurs */
 	ret = stu300_wait_while_busy(dev);
 	if (ret != 0) {
-		dev_err(&dev->pdev->dev, "timout waiting for transfer "
+		dev_err(&dev->pdev->dev, "timeout waiting for transfer "
 		       "to commence.\n");
 		goto exit_disable;
 	}
@@ -848,6 +833,13 @@ static int stu300_xfer(struct i2c_adapter *adap, struct i2c_msg *msgs,
 	return num;
 }
 
+static int stu300_xfer_todo(struct i2c_adapter *adap, struct i2c_msg *msgs, int num)
+{
+	/* TODO: implement polling for this case if need be. */
+	WARN(1, "%s: atomic transfers not implemented\n", dev_name(&adap->dev));
+	return -EOPNOTSUPP;
+}
+
 static u32 stu300_func(struct i2c_adapter *adap)
 {
 	/* This is the simplest thing you can think of... */
@@ -855,40 +847,35 @@ static u32 stu300_func(struct i2c_adapter *adap)
 }
 
 static const struct i2c_algorithm stu300_algo = {
-	.master_xfer	= stu300_xfer,
-	.functionality	= stu300_func,
+	.master_xfer = stu300_xfer,
+	.master_xfer_atomic = stu300_xfer_todo,
+	.functionality = stu300_func,
 };
 
-static int __init
-stu300_probe(struct platform_device *pdev)
+static const struct i2c_adapter_quirks stu300_quirks = {
+	.flags = I2C_AQ_NO_ZERO_LEN,
+};
+
+static int stu300_probe(struct platform_device *pdev)
 {
 	struct stu300_dev *dev;
 	struct i2c_adapter *adap;
-	struct resource *res;
 	int bus_nr;
 	int ret = 0;
-	char clk_name[] = "I2C0";
 
 	dev = devm_kzalloc(&pdev->dev, sizeof(struct stu300_dev), GFP_KERNEL);
-	if (!dev) {
-		dev_err(&pdev->dev, "could not allocate device struct\n");
+	if (!dev)
 		return -ENOMEM;
-	}
 
 	bus_nr = pdev->id;
-	clk_name[3] += (char)bus_nr;
-	dev->clk = devm_clk_get(&pdev->dev, clk_name);
+	dev->clk = devm_clk_get(&pdev->dev, NULL);
 	if (IS_ERR(dev->clk)) {
 		dev_err(&pdev->dev, "could not retrieve i2c bus clock\n");
 		return PTR_ERR(dev->clk);
 	}
 
 	dev->pdev = pdev;
-	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	if (!res)
-		return -ENOENT;
-
-	dev->virtbase = devm_ioremap_resource(&pdev->dev, res);
+	dev->virtbase = devm_platform_ioremap_resource(pdev, 0);
 	dev_dbg(&pdev->dev, "initialize bus device I2C%d on virtual "
 		"base %p\n", bus_nr, dev->virtbase);
 	if (IS_ERR(dev->virtbase))
@@ -917,27 +904,30 @@ stu300_probe(struct platform_device *pdev)
 	adap = &dev->adapter;
 	adap->owner = THIS_MODULE;
 	/* DDC class but actually often used for more generic I2C */
-	adap->class = I2C_CLASS_DDC;
+	adap->class = I2C_CLASS_DEPRECATED;
 	strlcpy(adap->name, "ST Microelectronics DDC I2C adapter",
 		sizeof(adap->name));
 	adap->nr = bus_nr;
 	adap->algo = &stu300_algo;
 	adap->dev.parent = &pdev->dev;
+	adap->dev.of_node = pdev->dev.of_node;
+	adap->quirks = &stu300_quirks;
+
 	i2c_set_adapdata(adap, dev);
 
 	/* i2c device drivers may be active on return from add_adapter() */
 	ret = i2c_add_numbered_adapter(adap);
-	if (ret) {
-		dev_err(&pdev->dev, "failure adding ST Micro DDC "
-		       "I2C adapter\n");
+	if (ret)
 		return ret;
-	}
 
 	platform_set_drvdata(pdev, dev);
+	dev_info(&pdev->dev, "ST DDC I2C @ %p, irq %d\n",
+		 dev->virtbase, dev->irq);
+
 	return 0;
 }
 
-#ifdef CONFIG_PM
+#ifdef CONFIG_PM_SLEEP
 static int stu300_suspend(struct device *device)
 {
 	struct stu300_dev *dev = dev_get_drvdata(device);
@@ -967,8 +957,7 @@ static SIMPLE_DEV_PM_OPS(stu300_pm, stu300_suspend, stu300_resume);
 #define STU300_I2C_PM	NULL
 #endif
 
-static int __exit
-stu300_remove(struct platform_device *pdev)
+static int stu300_remove(struct platform_device *pdev)
 {
 	struct stu300_dev *dev = platform_get_drvdata(pdev);
 
@@ -978,19 +967,26 @@ stu300_remove(struct platform_device *pdev)
 	return 0;
 }
 
+static const struct of_device_id stu300_dt_match[] = {
+	{ .compatible = "st,ddci2c" },
+	{},
+};
+MODULE_DEVICE_TABLE(of, stu300_dt_match);
+
 static struct platform_driver stu300_i2c_driver = {
 	.driver = {
 		.name	= NAME,
-		.owner	= THIS_MODULE,
 		.pm	= STU300_I2C_PM,
+		.of_match_table = stu300_dt_match,
 	},
-	.remove		= __exit_p(stu300_remove),
+	.probe = stu300_probe,
+	.remove = stu300_remove,
 
 };
 
 static int __init stu300_init(void)
 {
-	return platform_driver_probe(&stu300_i2c_driver, stu300_probe);
+	return platform_driver_register(&stu300_i2c_driver);
 }
 
 static void __exit stu300_exit(void)

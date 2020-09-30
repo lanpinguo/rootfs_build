@@ -1,35 +1,28 @@
-/*
- * imx-ssi.c  --  ALSA Soc Audio Layer
- *
- * Copyright 2009 Sascha Hauer <s.hauer@pengutronix.de>
- *
- * This code is based on code copyrighted by Freescale,
- * Liam Girdwood, Javier Martin and probably others.
- *
- *  This program is free software; you can redistribute  it and/or modify it
- *  under  the terms of  the GNU General  Public License as published by the
- *  Free Software Foundation;  either version 2 of the  License, or (at your
- *  option) any later version.
- *
- *
- * The i.MX SSI core has some nasty limitations in AC97 mode. While most
- * sane processor vendors have a FIFO per AC97 slot, the i.MX has only
- * one FIFO which combines all valid receive slots. We cannot even select
- * which slots we want to receive. The WM9712 with which this driver
- * was developed with always sends GPIO status data in slot 12 which
- * we receive in our (PCM-) data stream. The only chance we have is to
- * manually skip this data in the FIQ handler. With sampling rates different
- * from 48000Hz not every frame has valid receive data, so the ratio
- * between pcm data and GPIO status data changes. Our FIQ handler is not
- * able to handle this, hence this driver only works with 48000Hz sampling
- * rate.
- * Reading and writing AC97 registers is another challenge. The core
- * provides us status bits when the read register is updated with *another*
- * value. When we read the same register two times (and the register still
- * contains the same value) these status bits are not set. We work
- * around this by not polling these bits but only wait a fixed delay.
- *
- */
+// SPDX-License-Identifier: GPL-2.0+
+//
+// imx-ssi.c  --  ALSA Soc Audio Layer
+//
+// Copyright 2009 Sascha Hauer <s.hauer@pengutronix.de>
+//
+// This code is based on code copyrighted by Freescale,
+// Liam Girdwood, Javier Martin and probably others.
+//
+// The i.MX SSI core has some nasty limitations in AC97 mode. While most
+// sane processor vendors have a FIFO per AC97 slot, the i.MX has only
+// one FIFO which combines all valid receive slots. We cannot even select
+// which slots we want to receive. The WM9712 with which this driver
+// was developed with always sends GPIO status data in slot 12 which
+// we receive in our (PCM-) data stream. The only chance we have is to
+// manually skip this data in the FIQ handler. With sampling rates different
+// from 48000Hz not every frame has valid receive data, so the ratio
+// between pcm data and GPIO status data changes. Our FIQ handler is not
+// able to handle this, hence this driver only works with 48000Hz sampling
+// rate.
+// Reading and writing AC97 registers is another challenge. The core
+// provides us status bits when the read register is updated with *another*
+// value. When we read the same register two times (and the register still
+// contains the same value) these status bits are not set. We work
+// around this by not polling these bits but only wait a fixed delay.
 
 #include <linux/clk.h>
 #include <linux/delay.h>
@@ -50,6 +43,7 @@
 #include <linux/platform_data/asoc-imx-ssi.h>
 
 #include "imx-ssi.h"
+#include "fsl_utils.h"
 
 #define SSI_SACNT_DEFAULT (SSI_SACNT_AC97EN | SSI_SACNT_FV)
 
@@ -73,8 +67,8 @@ static int imx_ssi_set_dai_tdm_slot(struct snd_soc_dai *cpu_dai,
 	sccr |= SSI_STCCR_DC(slots - 1);
 	writel(sccr, ssi->base + SSI_SRCCR);
 
-	writel(tx_mask, ssi->base + SSI_STMSK);
-	writel(rx_mask, ssi->base + SSI_SRMSK);
+	writel(~tx_mask, ssi->base + SSI_STMSK);
+	writel(~rx_mask, ssi->base + SSI_SRMSK);
 
 	return 0;
 }
@@ -94,7 +88,8 @@ static int imx_ssi_set_dai_fmt(struct snd_soc_dai *cpu_dai, unsigned int fmt)
 	switch (fmt & SND_SOC_DAIFMT_FORMAT_MASK) {
 	case SND_SOC_DAIFMT_I2S:
 		/* data on rising edge of bclk, frame low 1clk before data */
-		strcr |= SSI_STCR_TFSI | SSI_STCR_TEFS | SSI_STCR_TXBIT0;
+		strcr |= SSI_STCR_TXBIT0 | SSI_STCR_TSCKP | SSI_STCR_TFSI |
+			SSI_STCR_TEFS;
 		scr |= SSI_SCR_NET;
 		if (ssi->flags & IMX_SSI_USE_I2S_SLAVE) {
 			scr &= ~SSI_I2S_MODE_MASK;
@@ -103,33 +98,31 @@ static int imx_ssi_set_dai_fmt(struct snd_soc_dai *cpu_dai, unsigned int fmt)
 		break;
 	case SND_SOC_DAIFMT_LEFT_J:
 		/* data on rising edge of bclk, frame high with data */
-		strcr |= SSI_STCR_TXBIT0;
+		strcr |= SSI_STCR_TXBIT0 | SSI_STCR_TSCKP;
 		break;
 	case SND_SOC_DAIFMT_DSP_B:
 		/* data on rising edge of bclk, frame high with data */
-		strcr |= SSI_STCR_TFSL | SSI_STCR_TXBIT0;
+		strcr |= SSI_STCR_TXBIT0 | SSI_STCR_TSCKP | SSI_STCR_TFSL;
 		break;
 	case SND_SOC_DAIFMT_DSP_A:
 		/* data on rising edge of bclk, frame high 1clk before data */
-		strcr |= SSI_STCR_TFSL | SSI_STCR_TXBIT0 | SSI_STCR_TEFS;
+		strcr |= SSI_STCR_TXBIT0 | SSI_STCR_TSCKP | SSI_STCR_TFSL |
+			SSI_STCR_TEFS;
 		break;
 	}
 
 	/* DAI clock inversion */
 	switch (fmt & SND_SOC_DAIFMT_INV_MASK) {
 	case SND_SOC_DAIFMT_IB_IF:
-		strcr |= SSI_STCR_TFSI;
-		strcr &= ~SSI_STCR_TSCKP;
+		strcr ^= SSI_STCR_TSCKP | SSI_STCR_TFSI;
 		break;
 	case SND_SOC_DAIFMT_IB_NF:
-		strcr &= ~(SSI_STCR_TSCKP | SSI_STCR_TFSI);
+		strcr ^= SSI_STCR_TSCKP;
 		break;
 	case SND_SOC_DAIFMT_NB_IF:
-		strcr |= SSI_STCR_TFSI | SSI_STCR_TSCKP;
+		strcr ^= SSI_STCR_TFSI;
 		break;
 	case SND_SOC_DAIFMT_NB_NF:
-		strcr &= ~SSI_STCR_TFSI;
-		strcr |= SSI_STCR_TSCKP;
 		break;
 	}
 
@@ -304,8 +297,7 @@ static int imx_ssi_trigger(struct snd_pcm_substream *substream, int cmd,
 			scr |= SSI_SCR_RE;
 		sier |= sier_bits;
 
-		if (++ssi->enabled == 1)
-			scr |= SSI_SCR_SSIEN;
+		scr |= SSI_SCR_SSIEN;
 
 		break;
 
@@ -318,7 +310,7 @@ static int imx_ssi_trigger(struct snd_pcm_substream *substream, int cmd,
 			scr &= ~SSI_SCR_RE;
 		sier &= ~sier_bits;
 
-		if (--ssi->enabled == 0)
+		if (!(scr & (SSI_SCR_TE | SSI_SCR_RE)))
 			scr &= ~SSI_SCR_SSIEN;
 
 		break;
@@ -381,7 +373,6 @@ static struct snd_soc_dai_driver imx_ssi_dai = {
 
 static struct snd_soc_dai_driver imx_ac97_dai = {
 	.probe = imx_ssi_dai_probe,
-	.ac97_control = 1,
 	.playback = {
 		.stream_name = "AC97 Playback",
 		.channels_min = 2,
@@ -501,13 +492,12 @@ static void imx_ssi_ac97_warm_reset(struct snd_ac97 *ac97)
 	imx_ssi_ac97_read(ac97, 0);
 }
 
-struct snd_ac97_bus_ops soc_ac97_ops = {
+static struct snd_ac97_bus_ops imx_ssi_ac97_ops = {
 	.read		= imx_ssi_ac97_read,
 	.write		= imx_ssi_ac97_write,
 	.reset		= imx_ssi_ac97_reset,
 	.warm_reset	= imx_ssi_ac97_warm_reset
 };
-EXPORT_SYMBOL_GPL(soc_ac97_ops);
 
 static int imx_ssi_probe(struct platform_device *pdev)
 {
@@ -529,6 +519,8 @@ static int imx_ssi_probe(struct platform_device *pdev)
 	}
 
 	ssi->irq = platform_get_irq(pdev, 0);
+	if (ssi->irq < 0)
+		return ssi->irq;
 
 	ssi->clk = devm_clk_get(&pdev->dev, NULL);
 	if (IS_ERR(ssi->clk)) {
@@ -537,7 +529,9 @@ static int imx_ssi_probe(struct platform_device *pdev)
 			ret);
 		goto failed_clk;
 	}
-	clk_prepare_enable(ssi->clk);
+	ret = clk_prepare_enable(ssi->clk);
+	if (ret)
+		goto failed_clk;
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	ssi->base = devm_ioremap_resource(&pdev->dev, res);
@@ -572,16 +566,22 @@ static int imx_ssi_probe(struct platform_device *pdev)
 	res = platform_get_resource_byname(pdev, IORESOURCE_DMA, "tx0");
 	if (res) {
 		imx_pcm_dma_params_init_data(&ssi->filter_data_tx, res->start,
-			false);
+			IMX_DMATYPE_SSI);
 	}
 
 	res = platform_get_resource_byname(pdev, IORESOURCE_DMA, "rx0");
 	if (res) {
 		imx_pcm_dma_params_init_data(&ssi->filter_data_rx, res->start,
-			false);
+			IMX_DMATYPE_SSI);
 	}
 
 	platform_set_drvdata(pdev, ssi);
+
+	ret = snd_soc_set_ac97_ops(&imx_ssi_ac97_ops);
+	if (ret != 0) {
+		dev_err(&pdev->dev, "Failed to set AC'97 ops: %d\n", ret);
+		goto failed_register;
+	}
 
 	ret = snd_soc_register_component(&pdev->dev, &imx_component,
 					 dai, 1);
@@ -590,65 +590,45 @@ static int imx_ssi_probe(struct platform_device *pdev)
 		goto failed_register;
 	}
 
-	ssi->soc_platform_pdev_fiq = platform_device_alloc("imx-fiq-pcm-audio", pdev->id);
-	if (!ssi->soc_platform_pdev_fiq) {
-		ret = -ENOMEM;
-		goto failed_pdev_fiq_alloc;
-	}
+	ssi->fiq_params.irq = ssi->irq;
+	ssi->fiq_params.base = ssi->base;
+	ssi->fiq_params.dma_params_rx = &ssi->dma_params_rx;
+	ssi->fiq_params.dma_params_tx = &ssi->dma_params_tx;
 
-	platform_set_drvdata(ssi->soc_platform_pdev_fiq, ssi);
-	ret = platform_device_add(ssi->soc_platform_pdev_fiq);
-	if (ret) {
-		dev_err(&pdev->dev, "failed to add platform device\n");
-		goto failed_pdev_fiq_add;
-	}
+	ssi->fiq_init = imx_pcm_fiq_init(pdev, &ssi->fiq_params);
+	ssi->dma_init = imx_pcm_dma_init(pdev, IMX_SSI_DMABUF_SIZE);
 
-	ssi->soc_platform_pdev = platform_device_alloc("imx-pcm-audio", pdev->id);
-	if (!ssi->soc_platform_pdev) {
-		ret = -ENOMEM;
-		goto failed_pdev_alloc;
-	}
-
-	platform_set_drvdata(ssi->soc_platform_pdev, ssi);
-	ret = platform_device_add(ssi->soc_platform_pdev);
-	if (ret) {
-		dev_err(&pdev->dev, "failed to add platform device\n");
-		goto failed_pdev_add;
+	if (ssi->fiq_init && ssi->dma_init) {
+		ret = ssi->fiq_init;
+		goto failed_pcm;
 	}
 
 	return 0;
 
-failed_pdev_add:
-	platform_device_put(ssi->soc_platform_pdev);
-failed_pdev_alloc:
-	platform_device_del(ssi->soc_platform_pdev_fiq);
-failed_pdev_fiq_add:
-	platform_device_put(ssi->soc_platform_pdev_fiq);
-failed_pdev_fiq_alloc:
+failed_pcm:
 	snd_soc_unregister_component(&pdev->dev);
 failed_register:
-	release_mem_region(res->start, resource_size(res));
 	clk_disable_unprepare(ssi->clk);
 failed_clk:
+	snd_soc_set_ac97_ops(NULL);
 
 	return ret;
 }
 
 static int imx_ssi_remove(struct platform_device *pdev)
 {
-	struct resource *res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	struct imx_ssi *ssi = platform_get_drvdata(pdev);
 
-	platform_device_unregister(ssi->soc_platform_pdev);
-	platform_device_unregister(ssi->soc_platform_pdev_fiq);
+	if (!ssi->fiq_init)
+		imx_pcm_fiq_exit(pdev);
 
 	snd_soc_unregister_component(&pdev->dev);
 
 	if (ssi->flags & IMX_SSI_USE_AC97)
 		ac97_ssi = NULL;
 
-	release_mem_region(res->start, resource_size(res));
 	clk_disable_unprepare(ssi->clk);
+	snd_soc_set_ac97_ops(NULL);
 
 	return 0;
 }
@@ -659,7 +639,6 @@ static struct platform_driver imx_ssi_driver = {
 
 	.driver = {
 		.name = "imx-ssi",
-		.owner = THIS_MODULE,
 	},
 };
 

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /* bbc_i2c.c: I2C low-level driver for BBC device on UltraSPARC-III
  *            platforms.
  *
@@ -11,7 +12,6 @@
 #include <linux/sched.h>
 #include <linux/wait.h>
 #include <linux/delay.h>
-#include <linux/init.h>
 #include <linux/interrupt.h>
 #include <linux/of.h>
 #include <linux/of_device.h>
@@ -414,7 +414,6 @@ MODULE_DEVICE_TABLE(of, bbc_i2c_match);
 static struct platform_driver bbc_i2c_driver = {
 	.driver = {
 		.name = "bbc_i2c",
-		.owner = THIS_MODULE,
 		.of_match_table = bbc_i2c_match,
 	},
 	.probe		= bbc_i2c_probe,

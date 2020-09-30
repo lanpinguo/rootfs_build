@@ -1,9 +1,18 @@
+// SPDX-License-Identifier: GPL-2.0
+#include <errno.h>
+#include <inttypes.h>
+#include <linux/string.h>
+/* For the CLR_() macros */
+#include <pthread.h>
+
 #include <sched.h>
+#include <perf/mmap.h>
 #include "evlist.h"
 #include "evsel.h"
-#include "perf.h"
 #include "debug.h"
+#include "record.h"
 #include "tests.h"
+#include "util/mmap.h"
 
 static int sched__get_first_possible_cpu(pid_t pid, cpu_set_t *maskp)
 {
@@ -32,47 +41,41 @@ realloc:
 	return cpu;
 }
 
-int test__PERF_RECORD(void)
+int test__PERF_RECORD(struct test *test __maybe_unused, int subtest __maybe_unused)
 {
-	struct perf_record_opts opts = {
+	struct record_opts opts = {
 		.target = {
 			.uid = UINT_MAX,
 			.uses_mmap = true,
 		},
-		.no_delay   = true,
-		.freq	    = 10,
-		.mmap_pages = 256,
+		.no_buffering = true,
+		.mmap_pages   = 256,
 	};
 	cpu_set_t cpu_mask;
 	size_t cpu_mask_size = sizeof(cpu_mask);
-	struct perf_evlist *evlist = perf_evlist__new();
-	struct perf_evsel *evsel;
+	struct evlist *evlist = perf_evlist__new_dummy();
+	struct evsel *evsel;
 	struct perf_sample sample;
 	const char *cmd = "sleep";
 	const char *argv[] = { cmd, "1", NULL, };
-	char *bname;
+	char *bname, *mmap_filename;
 	u64 prev_time = 0;
 	bool found_cmd_mmap = false,
+	     found_coreutils_mmap = false,
 	     found_libc_mmap = false,
 	     found_vdso_mmap = false,
 	     found_ld_mmap = false;
 	int err = -1, errs = 0, i, wakeups = 0;
 	u32 cpu;
 	int total_events = 0, nr_events[PERF_RECORD_MAX] = { 0, };
+	char sbuf[STRERR_BUFSIZE];
 
-	if (evlist == NULL || argv == NULL) {
+	if (evlist == NULL) /* Fallback for kernels lacking PERF_COUNT_SW_DUMMY */
+		evlist = perf_evlist__new_default();
+
+	if (evlist == NULL) {
 		pr_debug("Not enough memory to create evlist\n");
 		goto out;
-	}
-
-	/*
-	 * We need at least one evsel in the evlist, use the default
-	 * one: "cycles".
-	 */
-	err = perf_evlist__add_default(evlist);
-	if (err < 0) {
-		pr_debug("Not enough memory to create evsel\n");
-		goto out_delete_evlist;
 	}
 
 	/*
@@ -93,26 +96,26 @@ int test__PERF_RECORD(void)
 	 * so that we have time to open the evlist (calling sys_perf_event_open
 	 * on all the fds) and then mmap them.
 	 */
-	err = perf_evlist__prepare_workload(evlist, &opts.target, argv,
-					    false, false);
+	err = perf_evlist__prepare_workload(evlist, &opts.target, argv, false, NULL);
 	if (err < 0) {
 		pr_debug("Couldn't run the workload!\n");
-		goto out_delete_maps;
+		goto out_delete_evlist;
 	}
 
 	/*
 	 * Config the evsels, setting attr->comm on the first one, etc.
 	 */
-	evsel = perf_evlist__first(evlist);
-	perf_evsel__set_sample_bit(evsel, CPU);
-	perf_evsel__set_sample_bit(evsel, TID);
-	perf_evsel__set_sample_bit(evsel, TIME);
-	perf_evlist__config(evlist, &opts);
+	evsel = evlist__first(evlist);
+	evsel__set_sample_bit(evsel, CPU);
+	evsel__set_sample_bit(evsel, TID);
+	evsel__set_sample_bit(evsel, TIME);
+	perf_evlist__config(evlist, &opts, NULL);
 
 	err = sched__get_first_possible_cpu(evlist->workload.pid, &cpu_mask);
 	if (err < 0) {
-		pr_debug("sched__get_first_possible_cpu: %s\n", strerror(errno));
-		goto out_delete_maps;
+		pr_debug("sched__get_first_possible_cpu: %s\n",
+			 str_error_r(errno, sbuf, sizeof(sbuf)));
+		goto out_delete_evlist;
 	}
 
 	cpu = err;
@@ -121,18 +124,20 @@ int test__PERF_RECORD(void)
 	 * So that we can check perf_sample.cpu on all the samples.
 	 */
 	if (sched_setaffinity(evlist->workload.pid, cpu_mask_size, &cpu_mask) < 0) {
-		pr_debug("sched_setaffinity: %s\n", strerror(errno));
-		goto out_delete_maps;
+		pr_debug("sched_setaffinity: %s\n",
+			 str_error_r(errno, sbuf, sizeof(sbuf)));
+		goto out_delete_evlist;
 	}
 
 	/*
 	 * Call sys_perf_event_open on all the fds on all the evsels,
 	 * grouping them if asked to.
 	 */
-	err = perf_evlist__open(evlist);
+	err = evlist__open(evlist);
 	if (err < 0) {
-		pr_debug("perf_evlist__open: %s\n", strerror(errno));
-		goto out_delete_maps;
+		pr_debug("perf_evlist__open: %s\n",
+			 str_error_r(errno, sbuf, sizeof(sbuf)));
+		goto out_delete_evlist;
 	}
 
 	/*
@@ -140,17 +145,18 @@ int test__PERF_RECORD(void)
 	 * fds in the same CPU to be injected in the same mmap ring buffer
 	 * (using ioctl(PERF_EVENT_IOC_SET_OUTPUT)).
 	 */
-	err = perf_evlist__mmap(evlist, opts.mmap_pages, false);
+	err = evlist__mmap(evlist, opts.mmap_pages);
 	if (err < 0) {
-		pr_debug("perf_evlist__mmap: %s\n", strerror(errno));
-		goto out_close_evlist;
+		pr_debug("evlist__mmap: %s\n",
+			 str_error_r(errno, sbuf, sizeof(sbuf)));
+		goto out_delete_evlist;
 	}
 
 	/*
 	 * Now that all is properly set up, enable the events, they will
 	 * count just on workload.pid, which will start...
 	 */
-	perf_evlist__enable(evlist);
+	evlist__enable(evlist);
 
 	/*
 	 * Now!
@@ -160,10 +166,15 @@ int test__PERF_RECORD(void)
 	while (1) {
 		int before = total_events;
 
-		for (i = 0; i < evlist->nr_mmaps; i++) {
+		for (i = 0; i < evlist->core.nr_mmaps; i++) {
 			union perf_event *event;
+			struct mmap *md;
 
-			while ((event = perf_evlist__mmap_read(evlist, i)) != NULL) {
+			md = &evlist->mmap[i];
+			if (perf_mmap__read_init(&md->core) < 0)
+				continue;
+
+			while ((event = perf_mmap__read_event(&md->core)) != NULL) {
 				const u32 type = event->header.type;
 				const char *name = perf_event__name(type);
 
@@ -173,15 +184,15 @@ int test__PERF_RECORD(void)
 
 				err = perf_evlist__parse_sample(evlist, event, &sample);
 				if (err < 0) {
-					if (verbose)
-						perf_event__fprintf(event, stderr);
+					if (verbose > 0)
+						perf_event__fprintf(event, NULL, stderr);
 					pr_debug("Couldn't parse sample\n");
-					goto out_err;
+					goto out_delete_evlist;
 				}
 
-				if (verbose) {
+				if (verbose > 0) {
 					pr_info("%" PRIu64" %d ", sample.time, sample.cpu);
-					perf_event__fprintf(event, stderr);
+					perf_event__fprintf(event, NULL, stderr);
 				}
 
 				if (prev_time > sample.time) {
@@ -212,6 +223,7 @@ int test__PERF_RECORD(void)
 
 				if ((type == PERF_RECORD_COMM ||
 				     type == PERF_RECORD_MMAP ||
+				     type == PERF_RECORD_MMAP2 ||
 				     type == PERF_RECORD_FORK ||
 				     type == PERF_RECORD_EXIT) &&
 				     (pid_t)event->comm.pid != evlist->workload.pid) {
@@ -220,7 +232,8 @@ int test__PERF_RECORD(void)
 				}
 
 				if ((type == PERF_RECORD_COMM ||
-				     type == PERF_RECORD_MMAP) &&
+				     type == PERF_RECORD_MMAP ||
+				     type == PERF_RECORD_MMAP2) &&
 				     event->comm.pid != event->comm.tid) {
 					pr_debug("%s with different pid/tid!\n", name);
 					++errs;
@@ -236,16 +249,23 @@ int test__PERF_RECORD(void)
 				case PERF_RECORD_EXIT:
 					goto found_exit;
 				case PERF_RECORD_MMAP:
-					bname = strrchr(event->mmap.filename, '/');
+					mmap_filename = event->mmap.filename;
+					goto check_bname;
+				case PERF_RECORD_MMAP2:
+					mmap_filename = event->mmap2.filename;
+				check_bname:
+					bname = strrchr(mmap_filename, '/');
 					if (bname != NULL) {
 						if (!found_cmd_mmap)
 							found_cmd_mmap = !strcmp(bname + 1, cmd);
+						if (!found_coreutils_mmap)
+							found_coreutils_mmap = !strcmp(bname + 1, "coreutils");
 						if (!found_libc_mmap)
 							found_libc_mmap = !strncmp(bname + 1, "libc", 4);
 						if (!found_ld_mmap)
 							found_ld_mmap = !strncmp(bname + 1, "ld", 2);
 					} else if (!found_vdso_mmap)
-						found_vdso_mmap = !strcmp(event->mmap.filename, "[vdso]");
+						found_vdso_mmap = !strcmp(mmap_filename, "[vdso]");
 					break;
 
 				case PERF_RECORD_SAMPLE:
@@ -256,7 +276,10 @@ int test__PERF_RECORD(void)
 						 type);
 					++errs;
 				}
+
+				perf_mmap__consume(&md->core);
 			}
+			perf_mmap__read_done(&md->core);
 		}
 
 		/*
@@ -265,7 +288,7 @@ int test__PERF_RECORD(void)
 		 * perf_event_attr.wakeup_events, just PERF_EVENT_SAMPLE does.
 		 */
 		if (total_events == before && false)
-			poll(evlist->pollfd, evlist->nr_fds, -1);
+			evlist__poll(evlist, -1);
 
 		sleep(1);
 		if (++wakeups > 5) {
@@ -275,7 +298,7 @@ int test__PERF_RECORD(void)
 	}
 
 found_exit:
-	if (nr_events[PERF_RECORD_COMM] > 1) {
+	if (nr_events[PERF_RECORD_COMM] > 1 + !!found_coreutils_mmap) {
 		pr_debug("Excessive number of PERF_RECORD_COMM events!\n");
 		++errs;
 	}
@@ -285,7 +308,7 @@ found_exit:
 		++errs;
 	}
 
-	if (!found_cmd_mmap) {
+	if (!found_cmd_mmap && !found_coreutils_mmap) {
 		pr_debug("PERF_RECORD_MMAP for %s missing!\n", cmd);
 		++errs;
 	}
@@ -304,14 +327,8 @@ found_exit:
 		pr_debug("PERF_RECORD_MMAP for %s missing!\n", "[vdso]");
 		++errs;
 	}
-out_err:
-	perf_evlist__munmap(evlist);
-out_close_evlist:
-	perf_evlist__close(evlist);
-out_delete_maps:
-	perf_evlist__delete_maps(evlist);
 out_delete_evlist:
-	perf_evlist__delete(evlist);
+	evlist__delete(evlist);
 out:
 	return (err < 0 || errs > 0) ? -1 : 0;
 }

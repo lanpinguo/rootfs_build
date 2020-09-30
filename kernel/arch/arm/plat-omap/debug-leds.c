@@ -1,12 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * linux/arch/arm/plat-omap/debug-leds.c
  *
  * Copyright 2011 by Bryan Wu <bryan.wu@canonical.com>
  * Copyright 2003 by Texas Instruments Incorporated
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 
 #include <linux/kernel.h>
@@ -85,12 +82,12 @@ static void dbg_led_set(struct led_classdev *cdev,
 	struct dbg_led *led = container_of(cdev, struct dbg_led, cdev);
 	u16 reg;
 
-	reg = __raw_readw(&fpga->leds);
+	reg = readw_relaxed(&fpga->leds);
 	if (b != LED_OFF)
 		reg |= led->mask;
 	else
 		reg &= ~led->mask;
-	__raw_writew(reg, &fpga->leds);
+	writew_relaxed(reg, &fpga->leds);
 }
 
 static enum led_brightness dbg_led_get(struct led_classdev *cdev)
@@ -98,7 +95,7 @@ static enum led_brightness dbg_led_get(struct led_classdev *cdev)
 	struct dbg_led *led = container_of(cdev, struct dbg_led, cdev);
 	u16 reg;
 
-	reg = __raw_readw(&fpga->leds);
+	reg = readw_relaxed(&fpga->leds);
 	return (reg & led->mask) ? LED_FULL : LED_OFF;
 }
 
@@ -112,7 +109,7 @@ static int fpga_probe(struct platform_device *pdev)
 		return -ENODEV;
 
 	fpga = ioremap(iomem->start, resource_size(iomem));
-	__raw_writew(0xff, &fpga->leds);
+	writew_relaxed(0xff, &fpga->leds);
 
 	for (i = 0; i < ARRAY_SIZE(dbg_leds); i++) {
 		struct dbg_led *led;
@@ -138,15 +135,15 @@ static int fpga_probe(struct platform_device *pdev)
 
 static int fpga_suspend_noirq(struct device *dev)
 {
-	fpga_led_state = __raw_readw(&fpga->leds);
-	__raw_writew(0xff, &fpga->leds);
+	fpga_led_state = readw_relaxed(&fpga->leds);
+	writew_relaxed(0xff, &fpga->leds);
 
 	return 0;
 }
 
 static int fpga_resume_noirq(struct device *dev)
 {
-	__raw_writew(~fpga_led_state, &fpga->leds);
+	writew_relaxed(~fpga_led_state, &fpga->leds);
 	return 0;
 }
 

@@ -1,23 +1,10 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /* linux/drivers/i2c/busses/i2c-s3c2410.c
  *
  * Copyright (C) 2004,2005,2009 Simtec Electronics
  *	Ben Dooks <ben@simtec.co.uk>
  *
  * S3C2410 I2C Controller
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 */
 
 #include <linux/kernel.h>
@@ -36,9 +23,11 @@
 #include <linux/cpufreq.h>
 #include <linux/slab.h>
 #include <linux/io.h>
-#include <linux/of_i2c.h>
-#include <linux/of_gpio.h>
+#include <linux/of.h>
+#include <linux/gpio/consumer.h>
 #include <linux/pinctrl/consumer.h>
+#include <linux/mfd/syscon.h>
+#include <linux/regmap.h>
 
 #include <asm/irq.h>
 
@@ -86,9 +75,13 @@
 #define QUIRK_S3C2440		(1 << 0)
 #define QUIRK_HDMIPHY		(1 << 1)
 #define QUIRK_NO_GPIO		(1 << 2)
+#define QUIRK_POLL		(1 << 3)
 
 /* Max time to wait for bus to become idle after a xfer (in us) */
 #define S3C2410_IDLE_TIMEOUT	5000
+
+/* Exynos5 Sysreg offset */
+#define EXYNOS5_SYS_I2C_CFG	0x0234
 
 /* i2c controller state */
 enum s3c24xx_i2c_state {
@@ -101,8 +94,7 @@ enum s3c24xx_i2c_state {
 
 struct s3c24xx_i2c {
 	wait_queue_head_t	wait;
-	unsigned int            quirks;
-	unsigned int		suspended:1;
+	kernel_ulong_t		quirks;
 
 	struct i2c_msg		*msg;
 	unsigned int		msg_num;
@@ -121,14 +113,16 @@ struct s3c24xx_i2c {
 	struct i2c_adapter	adap;
 
 	struct s3c2410_platform_i2c	*pdata;
-	int			gpios[2];
+	struct gpio_desc	*gpios[2];
 	struct pinctrl          *pctrl;
-#ifdef CONFIG_CPU_FREQ
+#if defined(CONFIG_ARM_S3C24XX_CPUFREQ)
 	struct notifier_block	freq_transition;
 #endif
+	struct regmap		*sysreg;
+	unsigned int		sys_i2c_cfg;
 };
 
-static struct platform_device_id s3c24xx_driver_ids[] = {
+static const struct platform_device_id s3c24xx_driver_ids[] = {
 	{
 		.name		= "s3c2410-i2c",
 		.driver_data	= 0,
@@ -142,41 +136,40 @@ static struct platform_device_id s3c24xx_driver_ids[] = {
 };
 MODULE_DEVICE_TABLE(platform, s3c24xx_driver_ids);
 
+static int i2c_s3c_irq_nextbyte(struct s3c24xx_i2c *i2c, unsigned long iicstat);
+
 #ifdef CONFIG_OF
 static const struct of_device_id s3c24xx_i2c_match[] = {
 	{ .compatible = "samsung,s3c2410-i2c", .data = (void *)0 },
 	{ .compatible = "samsung,s3c2440-i2c", .data = (void *)QUIRK_S3C2440 },
 	{ .compatible = "samsung,s3c2440-hdmiphy-i2c",
 	  .data = (void *)(QUIRK_S3C2440 | QUIRK_HDMIPHY | QUIRK_NO_GPIO) },
-	{ .compatible = "samsung,exynos5440-i2c",
-	  .data = (void *)(QUIRK_S3C2440 | QUIRK_NO_GPIO) },
+	{ .compatible = "samsung,exynos5-sata-phy-i2c",
+	  .data = (void *)(QUIRK_S3C2440 | QUIRK_POLL | QUIRK_NO_GPIO) },
 	{},
 };
 MODULE_DEVICE_TABLE(of, s3c24xx_i2c_match);
 #endif
 
-/* s3c24xx_get_device_quirks
- *
+/*
  * Get controller type either from device tree or platform device variant.
-*/
-
-static inline unsigned int s3c24xx_get_device_quirks(struct platform_device *pdev)
+ */
+static inline kernel_ulong_t s3c24xx_get_device_quirks(struct platform_device *pdev)
 {
 	if (pdev->dev.of_node) {
 		const struct of_device_id *match;
+
 		match = of_match_node(s3c24xx_i2c_match, pdev->dev.of_node);
-		return (unsigned int)match->data;
+		return (kernel_ulong_t)match->data;
 	}
 
 	return platform_get_device_id(pdev)->driver_data;
 }
 
-/* s3c24xx_i2c_master_complete
- *
- * complete the message and wake up the caller, using the given return code,
+/*
+ * Complete the message and wake up the caller, using the given return code,
  * or zero to mean ok.
-*/
-
+ */
 static inline void s3c24xx_i2c_master_complete(struct s3c24xx_i2c *i2c, int ret)
 {
 	dev_dbg(i2c->dev, "master_complete %d\n", ret);
@@ -188,7 +181,8 @@ static inline void s3c24xx_i2c_master_complete(struct s3c24xx_i2c *i2c, int ret)
 	if (ret)
 		i2c->msg_idx = ret;
 
-	wake_up(&i2c->wait);
+	if (!(i2c->quirks & QUIRK_POLL))
+		wake_up(&i2c->wait);
 }
 
 static inline void s3c24xx_i2c_disable_ack(struct s3c24xx_i2c *i2c)
@@ -208,7 +202,6 @@ static inline void s3c24xx_i2c_enable_ack(struct s3c24xx_i2c *i2c)
 }
 
 /* irq enable/disable functions */
-
 static inline void s3c24xx_i2c_disable_irq(struct s3c24xx_i2c *i2c)
 {
 	unsigned long tmp;
@@ -225,12 +218,26 @@ static inline void s3c24xx_i2c_enable_irq(struct s3c24xx_i2c *i2c)
 	writel(tmp | S3C2410_IICCON_IRQEN, i2c->regs + S3C2410_IICCON);
 }
 
+static bool is_ack(struct s3c24xx_i2c *i2c)
+{
+	int tries;
 
-/* s3c24xx_i2c_message_start
- *
+	for (tries = 50; tries; --tries) {
+		if (readl(i2c->regs + S3C2410_IICCON)
+			& S3C2410_IICCON_IRQPEND) {
+			if (!(readl(i2c->regs + S3C2410_IICSTAT)
+				& S3C2410_IICSTAT_LASTBIT))
+				return true;
+		}
+		usleep_range(1000, 2000);
+	}
+	dev_err(i2c->dev, "ack was not received\n");
+	return false;
+}
+
+/*
  * put the start of a message onto the bus
-*/
-
+ */
 static void s3c24xx_i2c_message_start(struct s3c24xx_i2c *i2c,
 				      struct i2c_msg *msg)
 {
@@ -259,9 +266,10 @@ static void s3c24xx_i2c_message_start(struct s3c24xx_i2c *i2c,
 	dev_dbg(i2c->dev, "START: %08lx to IICSTAT, %02x to DS\n", stat, addr);
 	writeb(addr, i2c->regs + S3C2410_IICDS);
 
-	/* delay here to ensure the data byte has gotten onto the bus
-	 * before the transaction is started */
-
+	/*
+	 * delay here to ensure the data byte has gotten onto the bus
+	 * before the transaction is started
+	 */
 	ndelay(i2c->tx_setup);
 
 	dev_dbg(i2c->dev, "iiccon, %08lx\n", iiccon);
@@ -269,6 +277,16 @@ static void s3c24xx_i2c_message_start(struct s3c24xx_i2c *i2c,
 
 	stat |= S3C2410_IICSTAT_START;
 	writel(stat, i2c->regs + S3C2410_IICSTAT);
+
+	if (i2c->quirks & QUIRK_POLL) {
+		while ((i2c->msg_num != 0) && is_ack(i2c)) {
+			i2c_s3c_irq_nextbyte(i2c, stat);
+			stat = readl(i2c->regs + S3C2410_IICSTAT);
+
+			if (stat & S3C2410_IICSTAT_ARBITR)
+				dev_err(i2c->dev, "deal with arbitration loss\n");
+		}
+	}
 }
 
 static inline void s3c24xx_i2c_stop(struct s3c24xx_i2c *i2c, int ret)
@@ -326,50 +344,46 @@ static inline void s3c24xx_i2c_stop(struct s3c24xx_i2c *i2c, int ret)
 	s3c24xx_i2c_disable_irq(i2c);
 }
 
-/* helper functions to determine the current state in the set of
- * messages we are sending */
+/*
+ * helper functions to determine the current state in the set of
+ * messages we are sending
+ */
 
-/* is_lastmsg()
- *
+/*
  * returns TRUE if the current message is the last in the set
-*/
-
+ */
 static inline int is_lastmsg(struct s3c24xx_i2c *i2c)
 {
 	return i2c->msg_idx >= (i2c->msg_num - 1);
 }
 
-/* is_msglast
- *
+/*
  * returns TRUE if we this is the last byte in the current message
-*/
-
+ */
 static inline int is_msglast(struct s3c24xx_i2c *i2c)
 {
-	/* msg->len is always 1 for the first byte of smbus block read.
+	/*
+	 * msg->len is always 1 for the first byte of smbus block read.
 	 * Actual length will be read from slave. More bytes will be
-	 * read according to the length then. */
+	 * read according to the length then.
+	 */
 	if (i2c->msg->flags & I2C_M_RECV_LEN && i2c->msg->len == 1)
 		return 0;
 
 	return i2c->msg_ptr == i2c->msg->len-1;
 }
 
-/* is_msgend
- *
+/*
  * returns TRUE if we reached the end of the current message
-*/
-
+ */
 static inline int is_msgend(struct s3c24xx_i2c *i2c)
 {
 	return i2c->msg_ptr >= i2c->msg->len;
 }
 
-/* i2c_s3c_irq_nextbyte
- *
+/*
  * process an interrupt and work out what to do
  */
-
 static int i2c_s3c_irq_nextbyte(struct s3c24xx_i2c *i2c, unsigned long iicstat)
 {
 	unsigned long tmp;
@@ -388,14 +402,13 @@ static int i2c_s3c_irq_nextbyte(struct s3c24xx_i2c *i2c, unsigned long iicstat)
 		goto out_ack;
 
 	case STATE_START:
-		/* last thing we did was send a start condition on the
+		/*
+		 * last thing we did was send a start condition on the
 		 * bus, or started a new i2c message
 		 */
-
 		if (iicstat & S3C2410_IICSTAT_LASTBIT &&
 		    !(i2c->msg->flags & I2C_M_IGNORE_NAK)) {
 			/* ack was not received... */
-
 			dev_dbg(i2c->dev, "ack was not received\n");
 			s3c24xx_i2c_stop(i2c, -ENXIO);
 			goto out_ack;
@@ -406,9 +419,10 @@ static int i2c_s3c_irq_nextbyte(struct s3c24xx_i2c *i2c, unsigned long iicstat)
 		else
 			i2c->state = STATE_WRITE;
 
-		/* terminate the transfer if there is nothing to do
-		 * as this is used by the i2c probe to find devices. */
-
+		/*
+		 * Terminate the transfer if there is nothing to do
+		 * as this is used by the i2c probe to find devices.
+		 */
 		if (is_lastmsg(i2c) && i2c->msg->len == 0) {
 			s3c24xx_i2c_stop(i2c, 0);
 			goto out_ack;
@@ -417,14 +431,16 @@ static int i2c_s3c_irq_nextbyte(struct s3c24xx_i2c *i2c, unsigned long iicstat)
 		if (i2c->state == STATE_READ)
 			goto prepare_read;
 
-		/* fall through to the write state, as we will need to
-		 * send a byte as well */
-
+		/*
+		 * fall through to the write state, as we will need to
+		 * send a byte as well
+		 */
+		fallthrough;
 	case STATE_WRITE:
-		/* we are writing data to the device... check for the
+		/*
+		 * we are writing data to the device... check for the
 		 * end of the message, and if so, work out what to do
 		 */
-
 		if (!(i2c->msg->flags & I2C_M_IGNORE_NAK)) {
 			if (iicstat & S3C2410_IICSTAT_LASTBIT) {
 				dev_dbg(i2c->dev, "WRITE: No Ack\n");
@@ -440,12 +456,13 @@ static int i2c_s3c_irq_nextbyte(struct s3c24xx_i2c *i2c, unsigned long iicstat)
 			byte = i2c->msg->buf[i2c->msg_ptr++];
 			writeb(byte, i2c->regs + S3C2410_IICDS);
 
-			/* delay after writing the byte to allow the
+			/*
+			 * delay after writing the byte to allow the
 			 * data setup time on the bus, as writing the
 			 * data to the register causes the first bit
 			 * to appear on SDA, and SCL will change as
-			 * soon as the interrupt is acknowledged */
-
+			 * soon as the interrupt is acknowledged
+			 */
 			ndelay(i2c->tx_setup);
 
 		} else if (!is_lastmsg(i2c)) {
@@ -461,10 +478,11 @@ static int i2c_s3c_irq_nextbyte(struct s3c24xx_i2c *i2c, unsigned long iicstat)
 			if (i2c->msg->flags & I2C_M_NOSTART) {
 
 				if (i2c->msg->flags & I2C_M_RD) {
-					/* cannot do this, the controller
+					/*
+					 * cannot do this, the controller
 					 * forces us to send a new START
-					 * when we change direction */
-
+					 * when we change direction
+					 */
 					s3c24xx_i2c_stop(i2c, -EINVAL);
 				}
 
@@ -477,17 +495,16 @@ static int i2c_s3c_irq_nextbyte(struct s3c24xx_i2c *i2c, unsigned long iicstat)
 
 		} else {
 			/* send stop */
-
 			s3c24xx_i2c_stop(i2c, 0);
 		}
 		break;
 
 	case STATE_READ:
-		/* we have a byte of data in the data register, do
+		/*
+		 * we have a byte of data in the data register, do
 		 * something with it, and then work out whether we are
 		 * going to do any more read/write
 		 */
-
 		byte = readb(i2c->regs + S3C2410_IICDS);
 		i2c->msg->buf[i2c->msg_ptr++] = byte;
 
@@ -502,9 +519,10 @@ static int i2c_s3c_irq_nextbyte(struct s3c24xx_i2c *i2c, unsigned long iicstat)
 				s3c24xx_i2c_disable_ack(i2c);
 
 		} else if (is_msgend(i2c)) {
-			/* ok, we've read the entire buffer, see if there
-			 * is anything else we need to do */
-
+			/*
+			 * ok, we've read the entire buffer, see if there
+			 * is anything else we need to do
+			 */
 			if (is_lastmsg(i2c)) {
 				/* last message, send stop and complete */
 				dev_dbg(i2c->dev, "READ: Send Stop\n");
@@ -533,11 +551,9 @@ static int i2c_s3c_irq_nextbyte(struct s3c24xx_i2c *i2c, unsigned long iicstat)
 	return ret;
 }
 
-/* s3c24xx_i2c_irq
- *
+/*
  * top level IRQ servicing routine
-*/
-
+ */
 static irqreturn_t s3c24xx_i2c_irq(int irqno, void *dev_id)
 {
 	struct s3c24xx_i2c *i2c = dev_id;
@@ -560,21 +576,45 @@ static irqreturn_t s3c24xx_i2c_irq(int irqno, void *dev_id)
 		goto out;
 	}
 
-	/* pretty much this leaves us with the fact that we've
-	 * transmitted or received whatever byte we last sent */
-
+	/*
+	 * pretty much this leaves us with the fact that we've
+	 * transmitted or received whatever byte we last sent
+	 */
 	i2c_s3c_irq_nextbyte(i2c, status);
 
  out:
 	return IRQ_HANDLED;
 }
 
-
-/* s3c24xx_i2c_set_master
+/*
+ * Disable the bus so that we won't get any interrupts from now on, or try
+ * to drive any lines. This is the default state when we don't have
+ * anything to send/receive.
  *
- * get the i2c bus for a master transaction
-*/
+ * If there is an event on the bus, or we have a pre-existing event at
+ * kernel boot time, we may not notice the event and the I2C controller
+ * will lock the bus with the I2C clock line low indefinitely.
+ */
+static inline void s3c24xx_i2c_disable_bus(struct s3c24xx_i2c *i2c)
+{
+	unsigned long tmp;
 
+	/* Stop driving the I2C pins */
+	tmp = readl(i2c->regs + S3C2410_IICSTAT);
+	tmp &= ~S3C2410_IICSTAT_TXRXEN;
+	writel(tmp, i2c->regs + S3C2410_IICSTAT);
+
+	/* We don't expect any interrupts now, and don't want send acks */
+	tmp = readl(i2c->regs + S3C2410_IICCON);
+	tmp &= ~(S3C2410_IICCON_IRQEN | S3C2410_IICCON_IRQPEND |
+		S3C2410_IICCON_ACKEN);
+	writel(tmp, i2c->regs + S3C2410_IICCON);
+}
+
+
+/*
+ * get the i2c bus for a master transaction
+ */
 static int s3c24xx_i2c_set_master(struct s3c24xx_i2c *i2c)
 {
 	unsigned long iicstat;
@@ -592,11 +632,9 @@ static int s3c24xx_i2c_set_master(struct s3c24xx_i2c *i2c)
 	return -ETIMEDOUT;
 }
 
-/* s3c24xx_i2c_wait_idle
- *
+/*
  * wait for the i2c bus to become idle.
-*/
-
+ */
 static void s3c24xx_i2c_wait_idle(struct s3c24xx_i2c *i2c)
 {
 	unsigned long iicstat;
@@ -646,19 +684,14 @@ static void s3c24xx_i2c_wait_idle(struct s3c24xx_i2c *i2c)
 		dev_warn(i2c->dev, "timeout waiting for bus idle\n");
 }
 
-/* s3c24xx_i2c_doxfer
- *
+/*
  * this starts an i2c transfer
-*/
-
+ */
 static int s3c24xx_i2c_doxfer(struct s3c24xx_i2c *i2c,
 			      struct i2c_msg *msgs, int num)
 {
 	unsigned long timeout;
 	int ret;
-
-	if (i2c->suspended)
-		return -EIO;
 
 	ret = s3c24xx_i2c_set_master(i2c);
 	if (ret != 0) {
@@ -676,13 +709,23 @@ static int s3c24xx_i2c_doxfer(struct s3c24xx_i2c *i2c,
 	s3c24xx_i2c_enable_irq(i2c);
 	s3c24xx_i2c_message_start(i2c, msgs);
 
+	if (i2c->quirks & QUIRK_POLL) {
+		ret = i2c->msg_idx;
+
+		if (ret != num)
+			dev_dbg(i2c->dev, "incomplete xfer (%d)\n", ret);
+
+		goto out;
+	}
+
 	timeout = wait_event_timeout(i2c->wait, i2c->msg_num == 0, HZ * 5);
 
 	ret = i2c->msg_idx;
 
-	/* having these next two as dev_err() makes life very
-	 * noisy when doing an i2cdetect */
-
+	/*
+	 * Having these next two as dev_err() makes life very
+	 * noisy when doing an i2cdetect
+	 */
 	if (timeout == 0)
 		dev_dbg(i2c->dev, "timeout\n");
 	else if (ret != num)
@@ -694,16 +737,18 @@ static int s3c24xx_i2c_doxfer(struct s3c24xx_i2c *i2c,
 
 	s3c24xx_i2c_wait_idle(i2c);
 
+	s3c24xx_i2c_disable_bus(i2c);
+
  out:
+	i2c->state = STATE_IDLE;
+
 	return ret;
 }
 
-/* s3c24xx_i2c_xfer
- *
+/*
  * first port of call from the i2c bus code when an message needs
  * transferring across the i2c bus.
-*/
-
+ */
 static int s3c24xx_i2c_xfer(struct i2c_adapter *adap,
 			struct i2c_msg *msgs, int num)
 {
@@ -711,16 +756,16 @@ static int s3c24xx_i2c_xfer(struct i2c_adapter *adap,
 	int retry;
 	int ret;
 
-	pm_runtime_get_sync(&adap->dev);
-	clk_prepare_enable(i2c->clk);
+	ret = clk_enable(i2c->clk);
+	if (ret)
+		return ret;
 
 	for (retry = 0; retry < adap->retries; retry++) {
 
 		ret = s3c24xx_i2c_doxfer(i2c, msgs, num);
 
 		if (ret != -EAGAIN) {
-			clk_disable_unprepare(i2c->clk);
-			pm_runtime_put(&adap->dev);
+			clk_disable(i2c->clk);
 			return ret;
 		}
 
@@ -729,8 +774,7 @@ static int s3c24xx_i2c_xfer(struct i2c_adapter *adap,
 		udelay(100);
 	}
 
-	clk_disable_unprepare(i2c->clk);
-	pm_runtime_put(&adap->dev);
+	clk_disable(i2c->clk);
 	return -EREMOTEIO;
 }
 
@@ -742,17 +786,14 @@ static u32 s3c24xx_i2c_func(struct i2c_adapter *adap)
 }
 
 /* i2c bus registration info */
-
 static const struct i2c_algorithm s3c24xx_i2c_algorithm = {
 	.master_xfer		= s3c24xx_i2c_xfer,
 	.functionality		= s3c24xx_i2c_func,
 };
 
-/* s3c24xx_i2c_calcdivisor
- *
+/*
  * return the divisor settings for a given frequency
-*/
-
+ */
 static int s3c24xx_i2c_calcdivisor(unsigned long clkin, unsigned int wanted,
 				   unsigned int *div1, unsigned int *divs)
 {
@@ -778,13 +819,11 @@ static int s3c24xx_i2c_calcdivisor(unsigned long clkin, unsigned int wanted,
 	return clkin / (calc_divs * calc_div1);
 }
 
-/* s3c24xx_i2c_clockrate
- *
+/*
  * work out a divisor for the user requested frequency setting,
  * either by the requested frequency, or scanning the acceptable
  * range of frequencies until something is found
-*/
-
+ */
 static int s3c24xx_i2c_clockrate(struct s3c24xx_i2c *i2c, unsigned int *got)
 {
 	struct s3c2410_platform_i2c *pdata = i2c->pdata;
@@ -795,11 +834,11 @@ static int s3c24xx_i2c_clockrate(struct s3c24xx_i2c *i2c, unsigned int *got)
 	int freq;
 
 	i2c->clkrate = clkin;
-	clkin /= 1000;		/* clkin now in KHz */
+	clkin /= 1000;	/* clkin now in KHz */
 
 	dev_dbg(i2c->dev, "pdata desired frequency %lu\n", pdata->frequency);
 
-	target_frequency = pdata->frequency ? pdata->frequency : 100000;
+	target_frequency = pdata->frequency ?: I2C_MAX_STANDARD_MODE_FREQ;
 
 	target_frequency /= 1000; /* Target frequency now in KHz */
 
@@ -820,6 +859,9 @@ static int s3c24xx_i2c_clockrate(struct s3c24xx_i2c *i2c, unsigned int *got)
 
 	if (div1 == 512)
 		iiccon |= S3C2410_IICCON_TXDIV_512;
+
+	if (i2c->quirks & QUIRK_POLL)
+		iiccon |= S3C2410_IICCON_SCALE(2);
 
 	writel(iiccon, i2c->regs + S3C2410_IICCON);
 
@@ -843,7 +885,7 @@ static int s3c24xx_i2c_clockrate(struct s3c24xx_i2c *i2c, unsigned int *got)
 	return 0;
 }
 
-#ifdef CONFIG_CPU_FREQ
+#if defined(CONFIG_ARM_S3C24XX_CPUFREQ)
 
 #define freq_to_i2c(_n) container_of(_n, struct s3c24xx_i2c, freq_transition)
 
@@ -864,12 +906,12 @@ static int s3c24xx_i2c_cpufreq_transition(struct notifier_block *nb,
 
 	if ((val == CPUFREQ_POSTCHANGE && delta_f < 0) ||
 	    (val == CPUFREQ_PRECHANGE && delta_f > 0)) {
-		i2c_lock_adapter(&i2c->adap);
+		i2c_lock_bus(&i2c->adap, I2C_LOCK_ROOT_ADAPTER);
 		ret = s3c24xx_i2c_clockrate(i2c, &got);
-		i2c_unlock_adapter(&i2c->adap);
+		i2c_unlock_bus(&i2c->adap, I2C_LOCK_ROOT_ADAPTER);
 
 		if (ret < 0)
-			dev_err(i2c->dev, "cannot find frequency\n");
+			dev_err(i2c->dev, "cannot find frequency (%d)\n", ret);
 		else
 			dev_info(i2c->dev, "setting freq %d\n", got);
 	}
@@ -905,62 +947,34 @@ static inline void s3c24xx_i2c_deregister_cpufreq(struct s3c24xx_i2c *i2c)
 #ifdef CONFIG_OF
 static int s3c24xx_i2c_parse_dt_gpio(struct s3c24xx_i2c *i2c)
 {
-	int idx, gpio, ret;
+	int i;
 
 	if (i2c->quirks & QUIRK_NO_GPIO)
 		return 0;
 
-	for (idx = 0; idx < 2; idx++) {
-		gpio = of_get_gpio(i2c->dev->of_node, idx);
-		if (!gpio_is_valid(gpio)) {
-			dev_err(i2c->dev, "invalid gpio[%d]: %d\n", idx, gpio);
-			goto free_gpio;
-		}
-		i2c->gpios[idx] = gpio;
-
-		ret = gpio_request(gpio, "i2c-bus");
-		if (ret) {
-			dev_err(i2c->dev, "gpio [%d] request failed\n", gpio);
-			goto free_gpio;
+	for (i = 0; i < 2; i++) {
+		i2c->gpios[i] = devm_gpiod_get_index(i2c->dev, NULL,
+						     i, GPIOD_ASIS);
+		if (IS_ERR(i2c->gpios[i])) {
+			dev_err(i2c->dev, "i2c gpio invalid at index %d\n", i);
+			return -EINVAL;
 		}
 	}
 	return 0;
-
-free_gpio:
-	while (--idx >= 0)
-		gpio_free(i2c->gpios[idx]);
-	return -EINVAL;
 }
 
-static void s3c24xx_i2c_dt_gpio_free(struct s3c24xx_i2c *i2c)
-{
-	unsigned int idx;
-
-	if (i2c->quirks & QUIRK_NO_GPIO)
-		return;
-
-	for (idx = 0; idx < 2; idx++)
-		gpio_free(i2c->gpios[idx]);
-}
 #else
 static int s3c24xx_i2c_parse_dt_gpio(struct s3c24xx_i2c *i2c)
 {
 	return 0;
 }
-
-static void s3c24xx_i2c_dt_gpio_free(struct s3c24xx_i2c *i2c)
-{
-}
 #endif
 
-/* s3c24xx_i2c_init
- *
+/*
  * initialise the controller, set the IO lines and frequency
-*/
-
+ */
 static int s3c24xx_i2c_init(struct s3c24xx_i2c *i2c)
 {
-	unsigned long iicon = S3C2410_IICCON_IRQEN | S3C2410_IICCON_ACKEN;
 	struct s3c2410_platform_i2c *pdata;
 	unsigned int freq;
 
@@ -974,12 +988,12 @@ static int s3c24xx_i2c_init(struct s3c24xx_i2c *i2c)
 
 	dev_info(i2c->dev, "slave address 0x%02x\n", pdata->slave_addr);
 
-	writel(iicon, i2c->regs + S3C2410_IICCON);
+	writel(0, i2c->regs + S3C2410_IICCON);
+	writel(0, i2c->regs + S3C2410_IICSTAT);
 
 	/* we need to work out the divisors for the clock... */
 
 	if (s3c24xx_i2c_clockrate(i2c, &freq) != 0) {
-		writel(0, i2c->regs + S3C2410_IICCON);
 		dev_err(i2c->dev, "cannot meet bus frequency required\n");
 		return -EINVAL;
 	}
@@ -987,21 +1001,21 @@ static int s3c24xx_i2c_init(struct s3c24xx_i2c *i2c)
 	/* todo - check that the i2c lines aren't being dragged anywhere */
 
 	dev_info(i2c->dev, "bus frequency set to %d KHz\n", freq);
-	dev_dbg(i2c->dev, "S3C2410_IICCON=0x%02lx\n", iicon);
+	dev_dbg(i2c->dev, "S3C2410_IICCON=0x%02x\n",
+		readl(i2c->regs + S3C2410_IICCON));
 
 	return 0;
 }
 
 #ifdef CONFIG_OF
-/* s3c24xx_i2c_parse_dt
- *
+/*
  * Parse the device tree node and retreive the platform data.
-*/
-
+ */
 static void
 s3c24xx_i2c_parse_dt(struct device_node *np, struct s3c24xx_i2c *i2c)
 {
 	struct s3c2410_platform_i2c *pdata = i2c->pdata;
+	int id;
 
 	if (!np)
 		return;
@@ -1011,19 +1025,26 @@ s3c24xx_i2c_parse_dt(struct device_node *np, struct s3c24xx_i2c *i2c)
 	of_property_read_u32(np, "samsung,i2c-slave-addr", &pdata->slave_addr);
 	of_property_read_u32(np, "samsung,i2c-max-bus-freq",
 				(u32 *)&pdata->frequency);
+	/*
+	 * Exynos5's legacy i2c controller and new high speed i2c
+	 * controller have muxed interrupt sources. By default the
+	 * interrupts for 4-channel HS-I2C controller are enabled.
+	 * If nodes for first four channels of legacy i2c controller
+	 * are available then re-configure the interrupts via the
+	 * system register.
+	 */
+	id = of_alias_get_id(np, "i2c");
+	i2c->sysreg = syscon_regmap_lookup_by_phandle(np,
+			"samsung,sysreg-phandle");
+	if (IS_ERR(i2c->sysreg))
+		return;
+
+	regmap_update_bits(i2c->sysreg, EXYNOS5_SYS_I2C_CFG, BIT(id), 0);
 }
 #else
 static void
-s3c24xx_i2c_parse_dt(struct device_node *np, struct s3c24xx_i2c *i2c)
-{
-	return;
-}
+s3c24xx_i2c_parse_dt(struct device_node *np, struct s3c24xx_i2c *i2c) { }
 #endif
-
-/* s3c24xx_i2c_probe
- *
- * called by the bus driver when a suitable device is found
-*/
 
 static int s3c24xx_i2c_probe(struct platform_device *pdev)
 {
@@ -1033,7 +1054,7 @@ static int s3c24xx_i2c_probe(struct platform_device *pdev)
 	int ret;
 
 	if (!pdev->dev.of_node) {
-		pdata = pdev->dev.platform_data;
+		pdata = dev_get_platdata(&pdev->dev);
 		if (!pdata) {
 			dev_err(&pdev->dev, "no platform data\n");
 			return -EINVAL;
@@ -1041,34 +1062,30 @@ static int s3c24xx_i2c_probe(struct platform_device *pdev)
 	}
 
 	i2c = devm_kzalloc(&pdev->dev, sizeof(struct s3c24xx_i2c), GFP_KERNEL);
-	if (!i2c) {
-		dev_err(&pdev->dev, "no memory for state\n");
+	if (!i2c)
 		return -ENOMEM;
-	}
 
 	i2c->pdata = devm_kzalloc(&pdev->dev, sizeof(*pdata), GFP_KERNEL);
-	if (!i2c->pdata) {
-		dev_err(&pdev->dev, "no memory for platform data\n");
+	if (!i2c->pdata)
 		return -ENOMEM;
-	}
 
 	i2c->quirks = s3c24xx_get_device_quirks(pdev);
+	i2c->sysreg = ERR_PTR(-ENOENT);
 	if (pdata)
 		memcpy(i2c->pdata, pdata, sizeof(*pdata));
 	else
 		s3c24xx_i2c_parse_dt(pdev->dev.of_node, i2c);
 
 	strlcpy(i2c->adap.name, "s3c2410-i2c", sizeof(i2c->adap.name));
-	i2c->adap.owner   = THIS_MODULE;
-	i2c->adap.algo    = &s3c24xx_i2c_algorithm;
+	i2c->adap.owner = THIS_MODULE;
+	i2c->adap.algo = &s3c24xx_i2c_algorithm;
 	i2c->adap.retries = 2;
-	i2c->adap.class   = I2C_CLASS_HWMON | I2C_CLASS_SPD;
-	i2c->tx_setup     = 50;
+	i2c->adap.class = I2C_CLASS_DEPRECATED;
+	i2c->tx_setup = 50;
 
 	init_waitqueue_head(&i2c->wait);
 
 	/* find the clock and enable it */
-
 	i2c->dev = &pdev->dev;
 	i2c->clk = devm_clk_get(&pdev->dev, "i2c");
 	if (IS_ERR(i2c->clk)) {
@@ -1078,9 +1095,7 @@ static int s3c24xx_i2c_probe(struct platform_device *pdev)
 
 	dev_dbg(&pdev->dev, "clock source %p\n", i2c->clk);
 
-
 	/* map the registers */
-
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	i2c->regs = devm_ioremap_resource(&pdev->dev, res);
 
@@ -1091,99 +1106,95 @@ static int s3c24xx_i2c_probe(struct platform_device *pdev)
 		i2c->regs, res);
 
 	/* setup info block for the i2c core */
-
 	i2c->adap.algo_data = i2c;
 	i2c->adap.dev.parent = &pdev->dev;
-
 	i2c->pctrl = devm_pinctrl_get_select_default(i2c->dev);
 
 	/* inititalise the i2c gpio lines */
-
-	if (i2c->pdata->cfg_gpio) {
+	if (i2c->pdata->cfg_gpio)
 		i2c->pdata->cfg_gpio(to_platform_device(i2c->dev));
-	} else if (IS_ERR(i2c->pctrl) && s3c24xx_i2c_parse_dt_gpio(i2c)) {
+	else if (IS_ERR(i2c->pctrl) && s3c24xx_i2c_parse_dt_gpio(i2c))
 		return -EINVAL;
-	}
 
 	/* initialise the i2c controller */
+	ret = clk_prepare_enable(i2c->clk);
+	if (ret) {
+		dev_err(&pdev->dev, "I2C clock enable failed\n");
+		return ret;
+	}
 
-	clk_prepare_enable(i2c->clk);
 	ret = s3c24xx_i2c_init(i2c);
-	clk_disable_unprepare(i2c->clk);
+	clk_disable(i2c->clk);
 	if (ret != 0) {
 		dev_err(&pdev->dev, "I2C controller init failed\n");
+		clk_unprepare(i2c->clk);
 		return ret;
 	}
-	/* find the IRQ for this unit (note, this relies on the init call to
+
+	/*
+	 * find the IRQ for this unit (note, this relies on the init call to
 	 * ensure no current IRQs pending
 	 */
+	if (!(i2c->quirks & QUIRK_POLL)) {
+		i2c->irq = ret = platform_get_irq(pdev, 0);
+		if (ret <= 0) {
+			dev_err(&pdev->dev, "cannot find IRQ\n");
+			clk_unprepare(i2c->clk);
+			return ret;
+		}
 
-	i2c->irq = ret = platform_get_irq(pdev, 0);
-	if (ret <= 0) {
-		dev_err(&pdev->dev, "cannot find IRQ\n");
-		return ret;
-	}
-
-	ret = devm_request_irq(&pdev->dev, i2c->irq, s3c24xx_i2c_irq, 0,
-			       dev_name(&pdev->dev), i2c);
-
-	if (ret != 0) {
-		dev_err(&pdev->dev, "cannot claim IRQ %d\n", i2c->irq);
-		return ret;
+		ret = devm_request_irq(&pdev->dev, i2c->irq, s3c24xx_i2c_irq,
+				       0, dev_name(&pdev->dev), i2c);
+		if (ret != 0) {
+			dev_err(&pdev->dev, "cannot claim IRQ %d\n", i2c->irq);
+			clk_unprepare(i2c->clk);
+			return ret;
+		}
 	}
 
 	ret = s3c24xx_i2c_register_cpufreq(i2c);
 	if (ret < 0) {
 		dev_err(&pdev->dev, "failed to register cpufreq notifier\n");
+		clk_unprepare(i2c->clk);
 		return ret;
 	}
 
-	/* Note, previous versions of the driver used i2c_add_adapter()
+	/*
+	 * Note, previous versions of the driver used i2c_add_adapter()
 	 * to add the bus at any number. We now pass the bus number via
 	 * the platform data, so if unset it will now default to always
 	 * being bus 0.
 	 */
-
 	i2c->adap.nr = i2c->pdata->bus_num;
 	i2c->adap.dev.of_node = pdev->dev.of_node;
 
-	ret = i2c_add_numbered_adapter(&i2c->adap);
-	if (ret < 0) {
-		dev_err(&pdev->dev, "failed to add bus to i2c core\n");
-		s3c24xx_i2c_deregister_cpufreq(i2c);
-		return ret;
-	}
-
-	of_i2c_register_devices(&i2c->adap);
 	platform_set_drvdata(pdev, i2c);
 
 	pm_runtime_enable(&pdev->dev);
-	pm_runtime_enable(&i2c->adap.dev);
+
+	ret = i2c_add_numbered_adapter(&i2c->adap);
+	if (ret < 0) {
+		pm_runtime_disable(&pdev->dev);
+		s3c24xx_i2c_deregister_cpufreq(i2c);
+		clk_unprepare(i2c->clk);
+		return ret;
+	}
 
 	dev_info(&pdev->dev, "%s: S3C I2C adapter\n", dev_name(&i2c->adap.dev));
 	return 0;
 }
 
-/* s3c24xx_i2c_remove
- *
- * called when device is removed from the bus
-*/
-
 static int s3c24xx_i2c_remove(struct platform_device *pdev)
 {
 	struct s3c24xx_i2c *i2c = platform_get_drvdata(pdev);
 
-	pm_runtime_disable(&i2c->adap.dev);
+	clk_unprepare(i2c->clk);
+
 	pm_runtime_disable(&pdev->dev);
 
 	s3c24xx_i2c_deregister_cpufreq(i2c);
 
 	i2c_del_adapter(&i2c->adap);
-
-	clk_disable_unprepare(i2c->clk);
-
-	if (pdev->dev.of_node && IS_ERR(i2c->pctrl))
-		s3c24xx_i2c_dt_gpio_free(i2c);
 
 	return 0;
 }
@@ -1191,23 +1202,30 @@ static int s3c24xx_i2c_remove(struct platform_device *pdev)
 #ifdef CONFIG_PM_SLEEP
 static int s3c24xx_i2c_suspend_noirq(struct device *dev)
 {
-	struct platform_device *pdev = to_platform_device(dev);
-	struct s3c24xx_i2c *i2c = platform_get_drvdata(pdev);
+	struct s3c24xx_i2c *i2c = dev_get_drvdata(dev);
 
-	i2c->suspended = 1;
+	i2c_mark_adapter_suspended(&i2c->adap);
+
+	if (!IS_ERR(i2c->sysreg))
+		regmap_read(i2c->sysreg, EXYNOS5_SYS_I2C_CFG, &i2c->sys_i2c_cfg);
 
 	return 0;
 }
 
-static int s3c24xx_i2c_resume(struct device *dev)
+static int s3c24xx_i2c_resume_noirq(struct device *dev)
 {
-	struct platform_device *pdev = to_platform_device(dev);
-	struct s3c24xx_i2c *i2c = platform_get_drvdata(pdev);
+	struct s3c24xx_i2c *i2c = dev_get_drvdata(dev);
+	int ret;
 
-	clk_prepare_enable(i2c->clk);
+	if (!IS_ERR(i2c->sysreg))
+		regmap_write(i2c->sysreg, EXYNOS5_SYS_I2C_CFG, i2c->sys_i2c_cfg);
+
+	ret = clk_enable(i2c->clk);
+	if (ret)
+		return ret;
 	s3c24xx_i2c_init(i2c);
-	clk_disable_unprepare(i2c->clk);
-	i2c->suspended = 0;
+	clk_disable(i2c->clk);
+	i2c_mark_adapter_resumed(&i2c->adap);
 
 	return 0;
 }
@@ -1215,10 +1233,8 @@ static int s3c24xx_i2c_resume(struct device *dev)
 
 #ifdef CONFIG_PM
 static const struct dev_pm_ops s3c24xx_i2c_dev_pm_ops = {
-#ifdef CONFIG_PM_SLEEP
-	.suspend_noirq = s3c24xx_i2c_suspend_noirq,
-	.resume = s3c24xx_i2c_resume,
-#endif
+	SET_NOIRQ_SYSTEM_SLEEP_PM_OPS(s3c24xx_i2c_suspend_noirq,
+				      s3c24xx_i2c_resume_noirq)
 };
 
 #define S3C24XX_DEV_PM_OPS (&s3c24xx_i2c_dev_pm_ops)
@@ -1226,14 +1242,11 @@ static const struct dev_pm_ops s3c24xx_i2c_dev_pm_ops = {
 #define S3C24XX_DEV_PM_OPS NULL
 #endif
 
-/* device driver for platform bus bits */
-
 static struct platform_driver s3c24xx_i2c_driver = {
 	.probe		= s3c24xx_i2c_probe,
 	.remove		= s3c24xx_i2c_remove,
 	.id_table	= s3c24xx_driver_ids,
 	.driver		= {
-		.owner	= THIS_MODULE,
 		.name	= "s3c-i2c",
 		.pm	= S3C24XX_DEV_PM_OPS,
 		.of_match_table = of_match_ptr(s3c24xx_i2c_match),
@@ -1253,5 +1266,5 @@ static void __exit i2c_adap_s3c_exit(void)
 module_exit(i2c_adap_s3c_exit);
 
 MODULE_DESCRIPTION("S3C24XX I2C Bus driver");
-MODULE_AUTHOR("Ben Dooks, <ben@simtec.co.uk>");
+MODULE_AUTHOR("Ben Dooks <ben@simtec.co.uk>");
 MODULE_LICENSE("GPL");

@@ -1,17 +1,14 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * da732x.h -- Dialog DA732X ALSA SoC Audio Driver Header File
  *
  * Copyright (C) 2012 Dialog Semiconductor GmbH
  *
  * Author: Michal Hajduk <Michal.Hajduk@diasemi.com>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 
 #ifndef __DA732X_H_
-#define __DA732X_H
+#define __DA732X_H_
 
 #include <sound/soc.h>
 
@@ -112,9 +109,6 @@
 #define DA732X_ADC_VOL_DB_INC		-1
 #define	DA732X_EQ_OVERALL_VOL_DB_MIN	-1800
 #define	DA732X_EQ_OVERALL_VOL_DB_INC	600
-
-#define DA732X_SOC_ENUM_DOUBLE_R(xreg, xrreg, xmax, xtext) \
-	{.reg = xreg, .reg2 = xrreg, .max = xmax, .texts = xtext}
 
 enum da732x_sysctl {
 	DA732X_SR_8KHZ		= 0x1,

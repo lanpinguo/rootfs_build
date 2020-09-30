@@ -1,12 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Samsung s3c24xx/s3c64xx SoC CAMIF driver
  *
  * Copyright (C) 2012 Sylwester Nawrocki <sylvester.nawrocki@gmail.com>
  * Copyright (C) 2012 Tomasz Figa <tomasz.figa@gmail.com>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
 */
 #define pr_fmt(fmt) "%s:%d " fmt, __func__, __LINE__
 
@@ -96,25 +93,25 @@ void camif_hw_set_effect(struct camif_dev *camif, unsigned int effect,
 }
 
 static const u32 src_pixfmt_map[8][2] = {
-	{ V4L2_MBUS_FMT_YUYV8_2X8, CISRCFMT_ORDER422_YCBYCR },
-	{ V4L2_MBUS_FMT_YVYU8_2X8, CISRCFMT_ORDER422_YCRYCB },
-	{ V4L2_MBUS_FMT_UYVY8_2X8, CISRCFMT_ORDER422_CBYCRY },
-	{ V4L2_MBUS_FMT_VYUY8_2X8, CISRCFMT_ORDER422_CRYCBY },
+	{ MEDIA_BUS_FMT_YUYV8_2X8, CISRCFMT_ORDER422_YCBYCR },
+	{ MEDIA_BUS_FMT_YVYU8_2X8, CISRCFMT_ORDER422_YCRYCB },
+	{ MEDIA_BUS_FMT_UYVY8_2X8, CISRCFMT_ORDER422_CBYCRY },
+	{ MEDIA_BUS_FMT_VYUY8_2X8, CISRCFMT_ORDER422_CRYCBY },
 };
 
 /* Set camera input pixel format and resolution */
 void camif_hw_set_source_format(struct camif_dev *camif)
 {
 	struct v4l2_mbus_framefmt *mf = &camif->mbus_fmt;
-	unsigned int i = ARRAY_SIZE(src_pixfmt_map);
+	int i;
 	u32 cfg;
 
-	while (i-- >= 0) {
+	for (i = ARRAY_SIZE(src_pixfmt_map) - 1; i >= 0; i--) {
 		if (src_pixfmt_map[i][0] == mf->code)
 			break;
 	}
-
-	if (i == 0 && src_pixfmt_map[i][0] != mf->code) {
+	if (i < 0) {
+		i = 0;
 		dev_err(camif->dev,
 			"Unsupported pixel code, falling back to %#08x\n",
 			src_pixfmt_map[i][0]);
@@ -214,8 +211,8 @@ void camif_hw_set_output_addr(struct camif_vp *vp,
 								paddr->cr);
 	}
 
-	pr_debug("dst_buf[%d]: %#X, cb: %#X, cr: %#X\n",
-		 i, paddr->y, paddr->cb, paddr->cr);
+	pr_debug("dst_buf[%d]: %pad, cb: %pad, cr: %pad\n",
+		 i, &paddr->y, &paddr->cb, &paddr->cr);
 }
 
 static void camif_hw_set_out_dma_size(struct camif_vp *vp)
@@ -379,7 +376,7 @@ static void camif_hw_set_prescaler(struct camif_vp *vp)
 	camif_write(camif, S3C_CAMIF_REG_CISCPREDST(vp->id, vp->offset), cfg);
 }
 
-void camif_s3c244x_hw_set_scaler(struct camif_vp *vp)
+static void camif_s3c244x_hw_set_scaler(struct camif_vp *vp)
 {
 	struct camif_dev *camif = vp->camif;
 	struct camif_scaler *scaler = &vp->scaler;
@@ -426,7 +423,7 @@ void camif_s3c244x_hw_set_scaler(struct camif_vp *vp)
 		 scaler->main_h_ratio, scaler->main_v_ratio);
 }
 
-void camif_s3c64xx_hw_set_scaler(struct camif_vp *vp)
+static void camif_s3c64xx_hw_set_scaler(struct camif_vp *vp)
 {
 	struct camif_dev *camif = vp->camif;
 	struct camif_scaler *scaler = &vp->scaler;
@@ -556,7 +553,7 @@ void camif_hw_disable_capture(struct camif_vp *vp)
 
 void camif_hw_dump_regs(struct camif_dev *camif, const char *label)
 {
-	struct {
+	static const struct {
 		u32 offset;
 		const char * const name;
 	} registers[] = {
@@ -601,6 +598,6 @@ void camif_hw_dump_regs(struct camif_dev *camif, const char *label)
 	pr_info("--- %s ---\n", label);
 	for (i = 0; i < ARRAY_SIZE(registers); i++) {
 		u32 cfg = readl(camif->io_base + registers[i].offset);
-		printk(KERN_INFO "%s:\t0x%08x\n", registers[i].name, cfg);
+		dev_info(camif->dev, "%s:\t0x%08x\n", registers[i].name, cfg);
 	}
 }

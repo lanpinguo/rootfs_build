@@ -1,13 +1,10 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (C) 2010 Pengutronix
  * Uwe Kleine-Koenig <u.kleine-koenig@pengutronix.de>
- *
- * This program is free software; you can redistribute it and/or modify it under
- * the terms of the GNU General Public License version 2 as published by the
- * Free Software Foundation.
  */
 #include <linux/dma-mapping.h>
-#include <asm/sizes.h>
+#include <linux/sizes.h>
 
 #include "../hardware.h"
 #include "devices-common.h"
@@ -19,11 +16,6 @@
 		.irq = soc ## _INT_FEC,					\
 	}
 
-#ifdef CONFIG_SOC_IMX25
-const struct imx_fec_data imx25_fec_data __initconst =
-	imx_fec_data_entry_single(MX25, "imx25-fec");
-#endif /* ifdef CONFIG_SOC_IMX25 */
-
 #ifdef CONFIG_SOC_IMX27
 const struct imx_fec_data imx27_fec_data __initconst =
 	imx_fec_data_entry_single(MX27, "imx27-fec");
@@ -33,18 +25,6 @@ const struct imx_fec_data imx27_fec_data __initconst =
 /* i.mx35 has the i.mx27 type fec */
 const struct imx_fec_data imx35_fec_data __initconst =
 	imx_fec_data_entry_single(MX35, "imx27-fec");
-#endif
-
-#ifdef CONFIG_SOC_IMX51
-/* i.mx51 has the i.mx27 type fec */
-const struct imx_fec_data imx51_fec_data __initconst =
-	imx_fec_data_entry_single(MX51, "imx27-fec");
-#endif
-
-#ifdef CONFIG_SOC_IMX53
-/* i.mx53 has the i.mx25 type fec */
-const struct imx_fec_data imx53_fec_data __initconst =
-	imx_fec_data_entry_single(MX53, "imx25-fec");
 #endif
 
 struct platform_device *__init imx_add_fec(

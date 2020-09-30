@@ -13,7 +13,6 @@
 #include <linux/pci.h>
 #include <linux/slab.h>
 #include "tulip.h"
-#include <linux/init.h>
 #include <asm/unaligned.h>
 
 
@@ -225,9 +224,7 @@ subsequent_board:
 		        return;
 		}
 
-		mtable = kmalloc(sizeof(struct mediatable) +
-				 count * sizeof(struct medialeaf),
-				 GFP_KERNEL);
+		mtable = kmalloc(struct_size(mtable, mleaf, count), GFP_KERNEL);
 		if (mtable == NULL)
 			return;				/* Horrible, impossible failure. */
 		last_mediatable = tp->mtable = mtable;

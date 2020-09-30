@@ -1,164 +1,62 @@
-#menu "ASoC support for SUNXI"
-config SND_SUNXI_SOC_RW
-	bool
-config SND_SUNXI_SOC_AUDIO_DMA
-	bool
-config SND_SUNXI_SOC_SPDIF_UTILS
-	bool
-config SND_SOC_CS4385
-	bool
+# SPDX-License-Identifier: GPL-2.0-only
+menu "Allwinner SoC Audio support"
+	depends on ARCH_SUNXI || COMPILE_TEST
 
-menuconfig SND_SUNXI_SOC
-	tristate "ASoC support for SUNXI"
-	select SND_SUNXI_SOC_AUDIO_DMA
-	#select SND_SUNXI_SOC_RW
-	select SND_SOC_DMAENGINE_PCM
-	---help---
-	  Say Y if you want to add support for sound on sunxi chips.
-
-if SND_SUNXI_SOC
-config SND_SUNXI_SOC_INTERNAL_AUDIOCODEC
-	tristate "ASoC support for audiocodec"
-	depends on ARCH_SUN50IW1P1
-	select SND_SUNXI_SOC_RW
-	help
-	  Say Y or M if you want to add support for codecs attached to the
-	  AUDIOCODEC interface.
-
-config SND_SUNXI_SOC_INTERNAL_I2S
-	tristate "ASoC support for internal-i2s"
-	depends on ARCH_SUN50IW1P1
-	select SND_SUNXI_SOC_RW
-	help
-	  Say Y or M if you want to add support for codecs attached to the
-	  INTERNAL I2S interface.
-
-config SND_SUNXI_SOC_AUDIO_CODEC_MACHINE
-	tristate "ASoC support for audiocodec machine"
-	depends on ARCH_SUN50IW1P1
-	select SND_SUNXI_SOC_RW
-	help
-	  Say Y or M if you want to add support for codecs attached to the
-	  AUDIOCODEC MACHEINE interface.
-
-config SND_SUNXI_SOC_INTERNAL_SUN8IW10_AUDIOCODEC
-	tristate "ASoC support for audiocodec"
-	depends on ARCH_SUN8IW10
-	select SND_SUNXI_SOC_RW
-	help
-	  Say Y or M if you want to add support for codecs attached to the
-	  AUDIOCODEC interface.
-
-config SND_SUNXI_SOC_INTERNAL_SUN8IW11_AUDIOCODEC
-	tristate "ASoC support for audiocodec"
-	depends on ARCH_SUN8IW11
-	select REGMAP_MMIO
-	select SND_SUNXI_SOC_RW
-	help
-	  Say Y or M if you want to add support for codecs attached to the
-	  AUDIOCODEC interface.
-
-config SND_SUNXI_SOC_INTERNAL_SUN50IW2_AUDIOCODEC
-	tristate "ASoC support for audiocodec"
-	depends on ARCH_SUN50IW2
-	select SND_SUNXI_SOC_RW
-	help
-	  Say Y or M if you want to add support for codecs attached to the
-	  AUDIOCODEC interface.
-
-config SND_SUNXI_SOC_CODEC_CPU_DAI
-	tristate "ASoC support for internal-codec cpudai"
-	depends on ARCH_SUN8IW10 || ARCH_SUN8IW11 || ARCH_SUN50IW2
-	select SND_SUNXI_SOC_RW
-	help
-	  Say Y or M if you want to add support for codecs attached to the
-	  INTERNAL I2S interface.
-
-config SND_SUNXI_SOC_SUN8IW10_AUDIO_CODEC_MACHINE
-	tristate "ASoC support for sun8iw10 audiocodec machine"
-	depends on ARCH_SUN8IW10
-	select SND_SUNXI_SOC_RW
-	help
-	  Say Y or M if you want to add support for codecs attached to the
-	  AUDIOCODEC MACHEINE interface.
-
-config SND_SUNXI_SOC_SUN8IW11_AUDIO_CODEC_MACHINE
-	tristate "ASoC support for sun8iw11 audiocodec machine"
-	depends on ARCH_SUN8IW11
-	select SND_SUNXI_SOC_RW
-	help
-	  Say Y or M if you want to add support for codecs attached to the
-	  AUDIOCODEC MACHEINE interface.
-
-config SND_SUNXI_SOC_SUN50IW2_AUDIO_CODEC_MACHINE
-	tristate "ASoC support for sun50iw2 audiocodec machine"
-	depends on ARCH_SUN50IW2
-	select SND_SUNXI_SOC_RW
-	help
-	  Say Y or M if you want to add support for codecs attached to the
-	  AUDIOCODEC MACHEINE interface.
-
-config SND_SUNXI_SOC_DAUDIO_PLATFORM
-	tristate "ASoC support for daudio platform."
+config SND_SUN4I_CODEC
+	tristate "Allwinner A10 Codec Support"
+	select SND_SOC_GENERIC_DMAENGINE_PCM
 	select REGMAP_MMIO
 	help
- 	  Say Y or M if you want to add the daudio platform interface.
+	  Select Y or M to add support for the Codec embedded in the Allwinner
+	  A10 and affiliated SoCs.
 
-config SND_SUNXI_SOC_VIRCODEC
-	tristate "ASoC support for vircodec."
-	help
- 	  Say Y or M if you want to add the vircodec interface.
-
-config SND_SUNXI_SOC_DAUDIO0_MACHINE
-	tristate "ASoC support for daudio0 machine"
-	help
- 	  Say Y or M if you want to add the daudio0 MACHEINE interface.
-
-config SND_SUNXI_SOC_DAUDIO1_MACHINE
-	tristate "ASoC support for daudio1 machine"
-	help
- 	  Say Y or M if you want to add the daudio1 MACHEINE interface.
-
-config SND_SUNXI_SOC_DMIC
-	tristate "ASoC support for dmic."
+config SND_SUN8I_CODEC
+	tristate "Allwinner SUN8I audio codec"
+	depends on OF
+	depends on MACH_SUN8I || (ARM64 && ARCH_SUNXI) || COMPILE_TEST
 	select REGMAP_MMIO
-	select SND_SOC_DMIC
-	depends on ARCH_SUN8IW10
 	help
- 	  Say Y or M if you want to add the dmic interface.
+	  This option enables the digital part of the internal audio codec for
+	  Allwinner sun8i SoC (and particularly A33).
 
-config SND_SUNXI_SOC_DSD
-	tristate "ASoC support for dsd."
-	select SND_SOC_CS4385
-	depends on ARCH_SUN8IW10
+	  Say Y or M if you want to add sun8i digital audio codec support.
+
+config SND_SUN8I_CODEC_ANALOG
+	tristate "Allwinner sun8i Codec Analog Controls Support"
+	depends on MACH_SUN8I || (ARM64 && ARCH_SUNXI) || COMPILE_TEST
+	select SND_SUN8I_ADDA_PR_REGMAP
 	help
- 	  Say Y or M if you want to add the dsd interface.
+	  Say Y or M if you want to add support for the analog controls for
+	  the codec embedded in newer Allwinner SoCs.
 
-config SND_SUNXI_SOC_HDMIAUDIO
-	tristate "ASoC support for hdmiaudio."
-	depends on ARCH_SUN50IW1P1 || ARCH_SUN8IW11 || ARCH_SUN50IW2
-	select SND_SUNXI_SOC_DAUDIO_PLATFORM
+config SND_SUN50I_CODEC_ANALOG
+	tristate "Allwinner sun50i Codec Analog Controls Support"
+	depends on (ARM64 && ARCH_SUNXI) || COMPILE_TEST
+	select SND_SUN8I_ADDA_PR_REGMAP
 	help
- 	  Say Y or M if you want to add the hdmi platform interface.
+	  Say Y or M if you want to add support for the analog controls for
+	  the codec embedded in Allwinner A64 SoC.
 
-config SND_SUNXI_SOC_SPDIF
-	tristate "ASoC support for spdif soundcard"
+config SND_SUN4I_I2S
+	tristate "Allwinner A10 I2S Support"
+	select SND_SOC_GENERIC_DMAENGINE_PCM
 	select REGMAP_MMIO
-	select SND_SUNXI_SOC_SPDIF_UTILS
 	help
- 	  Say Y or M if you want to add the spdif soundcard include macheine plarform.
-config SND_SUNXI_SOC_HUB
-	bool "Support SUNXI AUDIO HUB"
-	depends on (SND_SUNXI_SOC_HDMIAUDIO && SND_SUNXI_SOC_SPDIF)
+	  Say Y or M if you want to add support for codecs attached to
+	  the Allwinner A10 I2S. You will also need to select the
+	  individual machine drivers to support below.
+
+config SND_SUN4I_SPDIF
+	tristate "Allwinner A10 SPDIF Support"
+	depends on OF
+	select SND_SOC_GENERIC_DMAENGINE_PCM
+	select REGMAP_MMIO
 	help
-	  Say Y if you want to add audiohub function.
+	  Say Y or M to add support for the S/PDIF audio block in the Allwinner
+	  A10 and affiliated SoCs.
 
-config SUNXI_AUDIO_DEBUG
-	bool "Support SUNXI AUDIO DEBUG"
-	depends on SND_SUNXI_SOC_AUDIO_DMA
-	help
-	  this is DEBUG function, add by LSH
-endif
+config SND_SUN8I_ADDA_PR_REGMAP
+	tristate
+	select REGMAP
 
-#endmenu
-
+endmenu

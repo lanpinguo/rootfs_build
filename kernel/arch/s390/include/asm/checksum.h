@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 /*
  *    S390 fast network checksum routines
  *
@@ -11,7 +12,7 @@
 #ifndef _S390_CHECKSUM_H
 #define _S390_CHECKSUM_H
 
-#include <asm/uaccess.h>
+#include <linux/uaccess.h>
 
 /*
  * computes the checksum of a memory block at buff, length len,
@@ -37,32 +38,6 @@ csum_partial(const void *buff, int len, __wsum sum)
 		: "+d" (sum), "+d" (reg2), "+d" (reg3) : : "cc", "memory");
 	return sum;
 }
-
-/*
- * the same as csum_partial_copy, but copies from user space.
- *
- * here even more important to align src and dst on a 32-bit (or even
- * better 64-bit) boundary
- *
- * Copy from userspace and compute checksum.  If we catch an exception
- * then zero the rest of the buffer.
- */
-static inline __wsum
-csum_partial_copy_from_user(const void __user *src, void *dst,
-                                          int len, __wsum sum,
-                                          int *err_ptr)
-{
-	int missing;
-
-	missing = copy_from_user(dst, src, len);
-	if (missing) {
-		memset(dst + len - missing, 0, missing);
-		*err_ptr = -EFAULT;
-	}
-		
-	return csum_partial(dst, len, sum);
-}
-
 
 static inline __wsum
 csum_partial_copy_nocheck (const void *src, void *dst, int len, __wsum sum)
@@ -98,8 +73,7 @@ static inline __sum16 ip_fast_csum(const void *iph, unsigned int ihl)
  * returns a 32-bit checksum
  */
 static inline __wsum
-csum_tcpudp_nofold(__be32 saddr, __be32 daddr,
-                   unsigned short len, unsigned short proto,
+csum_tcpudp_nofold(__be32 saddr, __be32 daddr, __u32 len, __u8 proto,
                    __wsum sum)
 {
 	__u32 csum = (__force __u32)sum;
@@ -125,8 +99,7 @@ csum_tcpudp_nofold(__be32 saddr, __be32 daddr,
  */
 
 static inline __sum16
-csum_tcpudp_magic(__be32 saddr, __be32 daddr,
-                  unsigned short len, unsigned short proto,
+csum_tcpudp_magic(__be32 saddr, __be32 daddr, __u32 len, __u8 proto,
                   __wsum sum)
 {
 	return csum_fold(csum_tcpudp_nofold(saddr,daddr,len,proto,sum));

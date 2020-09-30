@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 #include <asm/bug.h>
 #include <linux/rbtree_augmented.h>
 #include "drbd_interval.h"
@@ -12,65 +13,10 @@ sector_t interval_end(struct rb_node *node)
 	return this->end;
 }
 
-/**
- * compute_subtree_last  -  compute end of @node
- *
- * The end of an interval is the highest (start + (size >> 9)) value of this
- * node and of its children.  Called for @node and its parents whenever the end
- * may have changed.
- */
-static inline sector_t
-compute_subtree_last(struct drbd_interval *node)
-{
-	sector_t max = node->sector + (node->size >> 9);
+#define NODE_END(node) ((node)->sector + ((node)->size >> 9))
 
-	if (node->rb.rb_left) {
-		sector_t left = interval_end(node->rb.rb_left);
-		if (left > max)
-			max = left;
-	}
-	if (node->rb.rb_right) {
-		sector_t right = interval_end(node->rb.rb_right);
-		if (right > max)
-			max = right;
-	}
-	return max;
-}
-
-static void augment_propagate(struct rb_node *rb, struct rb_node *stop)
-{
-	while (rb != stop) {
-		struct drbd_interval *node = rb_entry(rb, struct drbd_interval, rb);
-		sector_t subtree_last = compute_subtree_last(node);
-		if (node->end == subtree_last)
-			break;
-		node->end = subtree_last;
-		rb = rb_parent(&node->rb);
-	}
-}
-
-static void augment_copy(struct rb_node *rb_old, struct rb_node *rb_new)
-{
-	struct drbd_interval *old = rb_entry(rb_old, struct drbd_interval, rb);
-	struct drbd_interval *new = rb_entry(rb_new, struct drbd_interval, rb);
-
-	new->end = old->end;
-}
-
-static void augment_rotate(struct rb_node *rb_old, struct rb_node *rb_new)
-{
-	struct drbd_interval *old = rb_entry(rb_old, struct drbd_interval, rb);
-	struct drbd_interval *new = rb_entry(rb_new, struct drbd_interval, rb);
-
-	new->end = old->end;
-	old->end = compute_subtree_last(old);
-}
-
-static const struct rb_augment_callbacks augment_callbacks = {
-	augment_propagate,
-	augment_copy,
-	augment_rotate,
-};
+RB_DECLARE_CALLBACKS_MAX(static, augment_callbacks,
+			 struct drbd_interval, rb, sector_t, end, NODE_END);
 
 /**
  * drbd_insert_interval  -  insert a new interval into a tree

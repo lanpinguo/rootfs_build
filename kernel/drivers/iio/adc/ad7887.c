@@ -1,9 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * AD7887 SPI ADC driver
  *
  * Copyright 2010-2011 Analog Devices Inc.
- *
- * Licensed under the GPL-2.
  */
 
 #include <linux/device.h>
@@ -15,6 +14,7 @@
 #include <linux/err.h>
 #include <linux/module.h>
 #include <linux/interrupt.h>
+#include <linux/bitops.h>
 
 #include <linux/iio/iio.h>
 #include <linux/iio/sysfs.h>
@@ -25,14 +25,14 @@
 
 #include <linux/platform_data/ad7887.h>
 
-#define AD7887_REF_DIS		(1 << 5) /* on-chip reference disable */
-#define AD7887_DUAL		(1 << 4) /* dual-channel mode */
-#define AD7887_CH_AIN1		(1 << 3) /* convert on channel 1, DUAL=1 */
-#define AD7887_CH_AIN0		(0 << 3) /* convert on channel 0, DUAL=0,1 */
-#define AD7887_PM_MODE1		(0)	 /* CS based shutdown */
-#define AD7887_PM_MODE2		(1)	 /* full on */
-#define AD7887_PM_MODE3		(2)	 /* auto shutdown after conversion */
-#define AD7887_PM_MODE4		(3)	 /* standby mode */
+#define AD7887_REF_DIS		BIT(5)	/* on-chip reference disable */
+#define AD7887_DUAL		BIT(4)	/* dual-channel mode */
+#define AD7887_CH_AIN1		BIT(3)	/* convert on channel 1, DUAL=1 */
+#define AD7887_CH_AIN0		0	/* convert on channel 0, DUAL=0,1 */
+#define AD7887_PM_MODE1		0	/* CS based shutdown */
+#define AD7887_PM_MODE2		1	/* full on */
+#define AD7887_PM_MODE3		2	/* auto shutdown after conversion */
+#define AD7887_PM_MODE4		3	/* standby mode */
 
 enum ad7887_channels {
 	AD7887_CH0,
@@ -40,16 +40,20 @@ enum ad7887_channels {
 	AD7887_CH1,
 };
 
-#define RES_MASK(bits)	((1 << (bits)) - 1)
-
 /**
  * struct ad7887_chip_info - chip specifc information
  * @int_vref_mv:	the internal reference voltage
- * @channel:		channel specification
+ * @channels:		channels specification
+ * @num_channels:	number of channels
+ * @dual_channels:	channels specification in dual mode
+ * @num_dual_channels:	number of channels in dual mode
  */
 struct ad7887_chip_info {
 	u16				int_vref_mv;
-	struct iio_chan_spec		channel[3];
+	const struct iio_chan_spec	*channels;
+	unsigned int			num_channels;
+	const struct iio_chan_spec	*dual_channels;
+	unsigned int			num_dual_channels;
 };
 
 struct ad7887_state {
@@ -78,11 +82,6 @@ enum ad7887_supported_device_ids {
 static int ad7887_ring_preenable(struct iio_dev *indio_dev)
 {
 	struct ad7887_state *st = iio_priv(indio_dev);
-	int ret;
-
-	ret = iio_sw_buffer_preenable(indio_dev);
-	if (ret < 0)
-		return ret;
 
 	/* We know this is a single long so can 'cheat' */
 	switch (*indio_dev->active_scan_mask) {
@@ -110,7 +109,7 @@ static int ad7887_ring_postdisable(struct iio_dev *indio_dev)
 	return spi_sync(st->spi, &st->msg[AD7887_CH0]);
 }
 
-/**
+/*
  * ad7887_trigger_handler() bh of trigger launched polling to ring buffer
  *
  * Currently there is no option in this driver to disable the saving of
@@ -121,20 +120,14 @@ static irqreturn_t ad7887_trigger_handler(int irq, void *p)
 	struct iio_poll_func *pf = p;
 	struct iio_dev *indio_dev = pf->indio_dev;
 	struct ad7887_state *st = iio_priv(indio_dev);
-	s64 time_ns;
 	int b_sent;
 
 	b_sent = spi_sync(st->spi, st->ring_msg);
 	if (b_sent)
 		goto done;
 
-	time_ns = iio_get_time_ns();
-
-	if (indio_dev->scan_timestamp)
-		memcpy(st->data + indio_dev->scan_bytes - sizeof(s64),
-		       &time_ns, sizeof(time_ns));
-
-	iio_push_to_buffers(indio_dev, st->data);
+	iio_push_to_buffers_with_timestamp(indio_dev, st->data,
+		iio_get_time_ns(indio_dev));
 done:
 	iio_trigger_notify_done(indio_dev->trig);
 
@@ -143,8 +136,6 @@ done:
 
 static const struct iio_buffer_setup_ops ad7887_ring_setup_ops = {
 	.preenable = &ad7887_ring_preenable,
-	.postenable = &iio_triggered_buffer_postenable,
-	.predisable = &iio_triggered_buffer_predisable,
 	.postdisable = &ad7887_ring_postdisable,
 };
 
@@ -168,17 +159,16 @@ static int ad7887_read_raw(struct iio_dev *indio_dev,
 
 	switch (m) {
 	case IIO_CHAN_INFO_RAW:
-		mutex_lock(&indio_dev->mlock);
-		if (iio_buffer_enabled(indio_dev))
-			ret = -EBUSY;
-		else
-			ret = ad7887_scan_direct(st, chan->address);
-		mutex_unlock(&indio_dev->mlock);
+		ret = iio_device_claim_direct_mode(indio_dev);
+		if (ret)
+			return ret;
+		ret = ad7887_scan_direct(st, chan->address);
+		iio_device_release_direct_mode(indio_dev);
 
 		if (ret < 0)
 			return ret;
 		*val = ret >> chan->scan_type.shift;
-		*val &= RES_MASK(chan->scan_type.realbits);
+		*val &= GENMASK(chan->scan_type.realbits - 1, 0);
 		return IIO_VAL_INT;
 	case IIO_CHAN_INFO_SCALE:
 		if (st->reg) {
@@ -197,77 +187,73 @@ static int ad7887_read_raw(struct iio_dev *indio_dev,
 	return -EINVAL;
 }
 
+#define AD7887_CHANNEL(x) { \
+	.type = IIO_VOLTAGE, \
+	.indexed = 1, \
+	.channel = (x), \
+	.info_mask_separate = BIT(IIO_CHAN_INFO_RAW), \
+	.info_mask_shared_by_type = BIT(IIO_CHAN_INFO_SCALE), \
+	.address = (x), \
+	.scan_index = (x), \
+	.scan_type = { \
+		.sign = 'u', \
+		.realbits = 12, \
+		.storagebits = 16, \
+		.shift = 0, \
+		.endianness = IIO_BE, \
+	}, \
+}
+
+static const struct iio_chan_spec ad7887_channels[] = {
+	AD7887_CHANNEL(0),
+	IIO_CHAN_SOFT_TIMESTAMP(1),
+};
+
+static const struct iio_chan_spec ad7887_dual_channels[] = {
+	AD7887_CHANNEL(0),
+	AD7887_CHANNEL(1),
+	IIO_CHAN_SOFT_TIMESTAMP(2),
+};
 
 static const struct ad7887_chip_info ad7887_chip_info_tbl[] = {
 	/*
 	 * More devices added in future
 	 */
 	[ID_AD7887] = {
-		.channel[0] = {
-			.type = IIO_VOLTAGE,
-			.indexed = 1,
-			.channel = 1,
-			.info_mask_separate = BIT(IIO_CHAN_INFO_RAW),
-			.info_mask_shared_by_type = BIT(IIO_CHAN_INFO_SCALE),
-			.address = 1,
-			.scan_index = 1,
-			.scan_type = {
-				.sign = 'u',
-				.realbits = 12,
-				.storagebits = 16,
-				.shift = 0,
-				.endianness = IIO_BE,
-			},
-		},
-		.channel[1] = {
-			.type = IIO_VOLTAGE,
-			.indexed = 1,
-			.channel = 0,
-			.info_mask_separate = BIT(IIO_CHAN_INFO_RAW),
-			.info_mask_shared_by_type = BIT(IIO_CHAN_INFO_SCALE),
-			.address = 0,
-			.scan_index = 0,
-			.scan_type = {
-				.sign = 'u',
-				.realbits = 12,
-				.storagebits = 16,
-				.shift = 0,
-				.endianness = IIO_BE,
-			},
-		},
-		.channel[2] = IIO_CHAN_SOFT_TIMESTAMP(2),
+		.channels = ad7887_channels,
+		.num_channels = ARRAY_SIZE(ad7887_channels),
+		.dual_channels = ad7887_dual_channels,
+		.num_dual_channels = ARRAY_SIZE(ad7887_dual_channels),
 		.int_vref_mv = 2500,
 	},
 };
 
 static const struct iio_info ad7887_info = {
 	.read_raw = &ad7887_read_raw,
-	.driver_module = THIS_MODULE,
 };
 
 static int ad7887_probe(struct spi_device *spi)
 {
 	struct ad7887_platform_data *pdata = spi->dev.platform_data;
 	struct ad7887_state *st;
-	struct iio_dev *indio_dev = iio_device_alloc(sizeof(*st));
+	struct iio_dev *indio_dev;
 	uint8_t mode;
 	int ret;
 
+	indio_dev = devm_iio_device_alloc(&spi->dev, sizeof(*st));
 	if (indio_dev == NULL)
 		return -ENOMEM;
 
 	st = iio_priv(indio_dev);
 
 	if (!pdata || !pdata->use_onchip_ref) {
-		st->reg = regulator_get(&spi->dev, "vref");
-		if (IS_ERR(st->reg)) {
-			ret = PTR_ERR(st->reg);
-			goto error_free;
-		}
+		st->reg = devm_regulator_get(&spi->dev, "vref");
+		if (IS_ERR(st->reg))
+			return PTR_ERR(st->reg);
 
 		ret = regulator_enable(st->reg);
 		if (ret)
-			goto error_put_reg;
+			return ret;
 	}
 
 	st->chip_info =
@@ -276,8 +262,6 @@ static int ad7887_probe(struct spi_device *spi)
 	spi_set_drvdata(spi, indio_dev);
 	st->spi = spi;
 
-	/* Estabilish that the iio_dev is a child of the spi device */
-	indio_dev->dev.parent = &spi->dev;
 	indio_dev->name = spi_get_device_id(spi)->name;
 	indio_dev->info = &ad7887_info;
 	indio_dev->modes = INDIO_DIRECT_MODE;
@@ -321,11 +305,11 @@ static int ad7887_probe(struct spi_device *spi)
 		spi_message_init(&st->msg[AD7887_CH1]);
 		spi_message_add_tail(&st->xfer[3], &st->msg[AD7887_CH1]);
 
-		indio_dev->channels = st->chip_info->channel;
-		indio_dev->num_channels = 3;
+		indio_dev->channels = st->chip_info->dual_channels;
+		indio_dev->num_channels = st->chip_info->num_dual_channels;
 	} else {
-		indio_dev->channels = &st->chip_info->channel[1];
-		indio_dev->num_channels = 2;
+		indio_dev->channels = st->chip_info->channels;
+		indio_dev->num_channels = st->chip_info->num_channels;
 	}
 
 	ret = iio_triggered_buffer_setup(indio_dev, &iio_pollfunc_store_time,
@@ -343,11 +327,6 @@ error_unregister_ring:
 error_disable_reg:
 	if (st->reg)
 		regulator_disable(st->reg);
-error_put_reg:
-	if (st->reg)
-		regulator_put(st->reg);
-error_free:
-	iio_device_free(indio_dev);
 
 	return ret;
 }
@@ -359,11 +338,8 @@ static int ad7887_remove(struct spi_device *spi)
 
 	iio_device_unregister(indio_dev);
 	iio_triggered_buffer_cleanup(indio_dev);
-	if (st->reg) {
+	if (st->reg)
 		regulator_disable(st->reg);
-		regulator_put(st->reg);
-	}
-	iio_device_free(indio_dev);
 
 	return 0;
 }
@@ -377,7 +353,6 @@ MODULE_DEVICE_TABLE(spi, ad7887_id);
 static struct spi_driver ad7887_driver = {
 	.driver = {
 		.name	= "ad7887",
-		.owner	= THIS_MODULE,
 	},
 	.probe		= ad7887_probe,
 	.remove		= ad7887_remove,
@@ -385,6 +360,6 @@ static struct spi_driver ad7887_driver = {
 };
 module_spi_driver(ad7887_driver);
 
-MODULE_AUTHOR("Michael Hennerich <hennerich@blackfin.uclinux.org>");
+MODULE_AUTHOR("Michael Hennerich <michael.hennerich@analog.com>");
 MODULE_DESCRIPTION("Analog Devices AD7887 ADC");
 MODULE_LICENSE("GPL v2");

@@ -1,8 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or modify it under
- * the terms of the GNU General Public License version 2 as published by the
- * Free Software Foundation.
- */
+// SPDX-License-Identifier: GPL-2.0-only
 #include "../hardware.h"
 #include "devices-common.h"
 
@@ -27,16 +23,6 @@ const struct imx_pata_imx_data imx31_pata_imx_data __initconst =
 const struct imx_pata_imx_data imx35_pata_imx_data __initconst =
 	imx_pata_imx_data_entry_single(MX35, SZ_16K);
 #endif /* ifdef CONFIG_SOC_IMX35 */
-
-#ifdef CONFIG_SOC_IMX51
-const struct imx_pata_imx_data imx51_pata_imx_data __initconst =
-	imx_pata_imx_data_entry_single(MX51, SZ_16K);
-#endif /* ifdef CONFIG_SOC_IMX51 */
-
-#ifdef CONFIG_SOC_IMX53
-const struct imx_pata_imx_data imx53_pata_imx_data __initconst =
-	imx_pata_imx_data_entry_single(MX53, SZ_16K);
-#endif /* ifdef CONFIG_SOC_IMX53 */
 
 struct platform_device *__init imx_add_pata_imx(
 		const struct imx_pata_imx_data *data)

@@ -1,11 +1,10 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (C) STMicroelectronics 2009
  * Copyright (C) ST-Ericsson SA 2010
  *
  * Author: Kumar Sanghvi <kumar.sanghvi@stericsson.com>
  * Author: Sundar Iyer <sundar.iyer@stericsson.com>
- *
- * License Terms: GNU General Public License v2
  *
  * PRCM Unit registers
  */
@@ -16,8 +15,8 @@
 #define BITS(_start, _end) ((BIT(_end) - BIT(_start)) + BIT(_end))
 
 #define PRCM_ACLK_MGT		(0x004)
-#define PRCM_SVACLK_MGT		(0x008)
-#define PRCM_SIACLK_MGT		(0x00C)
+#define PRCM_SVAMMCSPCLK_MGT	(0x008)
+#define PRCM_SIAMMDSPCLK_MGT	(0x00C)
 #define PRCM_SGACLK_MGT		(0x014)
 #define PRCM_UARTCLK_MGT	(0x018)
 #define PRCM_MSP02CLK_MGT	(0x01C)

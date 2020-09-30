@@ -1,16 +1,11 @@
-/*
- * imx-pcm-fiq.c  --  ALSA Soc Audio Layer
- *
- * Copyright 2009 Sascha Hauer <s.hauer@pengutronix.de>
- *
- * This code is based on code copyrighted by Freescale,
- * Liam Girdwood, Javier Martin and probably others.
- *
- *  This program is free software; you can redistribute  it and/or modify it
- *  under  the terms of  the GNU General  Public License as published by the
- *  Free Software Foundation;  either version 2 of the  License, or (at your
- *  option) any later version.
- */
+// SPDX-License-Identifier: GPL-2.0+
+// imx-pcm-fiq.c  --  ALSA Soc Audio Layer
+//
+// Copyright 2009 Sascha Hauer <s.hauer@pengutronix.de>
+//
+// This code is based on code copyrighted by Freescale,
+// Liam Girdwood, Javier Martin and probably others.
+
 #include <linux/clk.h>
 #include <linux/delay.h>
 #include <linux/device.h>
@@ -22,6 +17,7 @@
 #include <linux/slab.h>
 
 #include <sound/core.h>
+#include <sound/dmaengine_pcm.h>
 #include <sound/initval.h>
 #include <sound/pcm.h>
 #include <sound/pcm_params.h>
@@ -32,13 +28,12 @@
 #include <linux/platform_data/asoc-imx-ssi.h>
 
 #include "imx-ssi.h"
+#include "imx-pcm.h"
 
 struct imx_pcm_runtime_data {
 	unsigned int period;
 	int periods;
 	unsigned long offset;
-	unsigned long last_offset;
-	unsigned long size;
 	struct hrtimer hrt;
 	int poll_time_ns;
 	struct snd_pcm_substream *substream;
@@ -51,9 +46,7 @@ static enum hrtimer_restart snd_hrtimer_callback(struct hrtimer *hrt)
 	struct imx_pcm_runtime_data *iprtd =
 		container_of(hrt, struct imx_pcm_runtime_data, hrt);
 	struct snd_pcm_substream *substream = iprtd->substream;
-	struct snd_pcm_runtime *runtime = substream->runtime;
 	struct pt_regs regs;
-	unsigned long delta;
 
 	if (!atomic_read(&iprtd->playing) && !atomic_read(&iprtd->capturing))
 		return HRTIMER_NORESTART;
@@ -65,19 +58,7 @@ static enum hrtimer_restart snd_hrtimer_callback(struct hrtimer *hrt)
 	else
 		iprtd->offset = regs.ARM_r9 & 0xffff;
 
-	/* How much data have we transferred since the last period report? */
-	if (iprtd->offset >= iprtd->last_offset)
-		delta = iprtd->offset - iprtd->last_offset;
-	else
-		delta = runtime->buffer_size + iprtd->offset
-			- iprtd->last_offset;
-
-	/* If we've transferred at least a period then report it and
-	 * reset our poll time */
-	if (delta >= iprtd->period) {
-		snd_pcm_period_elapsed(substream);
-		iprtd->last_offset = iprtd->offset;
-	}
+	snd_pcm_period_elapsed(substream);
 
 	hrtimer_forward_now(hrt, ns_to_ktime(iprtd->poll_time_ns));
 
@@ -88,17 +69,16 @@ static struct fiq_handler fh = {
 	.name		= DRV_NAME,
 };
 
-static int snd_imx_pcm_hw_params(struct snd_pcm_substream *substream,
-				struct snd_pcm_hw_params *params)
+static int snd_imx_pcm_hw_params(struct snd_soc_component *component,
+				 struct snd_pcm_substream *substream,
+				 struct snd_pcm_hw_params *params)
 {
 	struct snd_pcm_runtime *runtime = substream->runtime;
 	struct imx_pcm_runtime_data *iprtd = runtime->private_data;
 
-	iprtd->size = params_buffer_bytes(params);
 	iprtd->periods = params_periods(params);
-	iprtd->period = params_period_bytes(params) ;
+	iprtd->period = params_period_bytes(params);
 	iprtd->offset = 0;
-	iprtd->last_offset = 0;
 	iprtd->poll_time_ns = 1000000000 / params_rate(params) *
 				params_period_size(params);
 	snd_pcm_set_runtime_buffer(substream, &substream->dma_buffer);
@@ -106,7 +86,8 @@ static int snd_imx_pcm_hw_params(struct snd_pcm_substream *substream,
 	return 0;
 }
 
-static int snd_imx_pcm_prepare(struct snd_pcm_substream *substream)
+static int snd_imx_pcm_prepare(struct snd_soc_component *component,
+			       struct snd_pcm_substream *substream)
 {
 	struct snd_pcm_runtime *runtime = substream->runtime;
 	struct imx_pcm_runtime_data *iprtd = runtime->private_data;
@@ -125,7 +106,8 @@ static int snd_imx_pcm_prepare(struct snd_pcm_substream *substream)
 
 static int imx_pcm_fiq;
 
-static int snd_imx_pcm_trigger(struct snd_pcm_substream *substream, int cmd)
+static int snd_imx_pcm_trigger(struct snd_soc_component *component,
+			       struct snd_pcm_substream *substream, int cmd)
 {
 	struct snd_pcm_runtime *runtime = substream->runtime;
 	struct imx_pcm_runtime_data *iprtd = runtime->private_data;
@@ -162,7 +144,9 @@ static int snd_imx_pcm_trigger(struct snd_pcm_substream *substream, int cmd)
 	return 0;
 }
 
-static snd_pcm_uframes_t snd_imx_pcm_pointer(struct snd_pcm_substream *substream)
+static snd_pcm_uframes_t
+snd_imx_pcm_pointer(struct snd_soc_component *component,
+		    struct snd_pcm_substream *substream)
 {
 	struct snd_pcm_runtime *runtime = substream->runtime;
 	struct imx_pcm_runtime_data *iprtd = runtime->private_data;
@@ -170,7 +154,7 @@ static snd_pcm_uframes_t snd_imx_pcm_pointer(struct snd_pcm_substream *substream
 	return bytes_to_frames(substream->runtime, iprtd->offset);
 }
 
-static struct snd_pcm_hardware snd_imx_hardware = {
+static const struct snd_pcm_hardware snd_imx_hardware = {
 	.info = SNDRV_PCM_INFO_INTERLEAVED |
 		SNDRV_PCM_INFO_BLOCK_TRANSFER |
 		SNDRV_PCM_INFO_MMAP |
@@ -178,9 +162,6 @@ static struct snd_pcm_hardware snd_imx_hardware = {
 		SNDRV_PCM_INFO_PAUSE |
 		SNDRV_PCM_INFO_RESUME,
 	.formats = SNDRV_PCM_FMTBIT_S16_LE,
-	.rate_min = 8000,
-	.channels_min = 2,
-	.channels_max = 2,
 	.buffer_bytes_max = IMX_SSI_DMABUF_SIZE,
 	.period_bytes_min = 128,
 	.period_bytes_max = 16 * 1024,
@@ -189,7 +170,8 @@ static struct snd_pcm_hardware snd_imx_hardware = {
 	.fifo_size = 0,
 };
 
-static int snd_imx_open(struct snd_pcm_substream *substream)
+static int snd_imx_open(struct snd_soc_component *component,
+			struct snd_pcm_substream *substream)
 {
 	struct snd_pcm_runtime *runtime = substream->runtime;
 	struct imx_pcm_runtime_data *iprtd;
@@ -218,7 +200,8 @@ static int snd_imx_open(struct snd_pcm_substream *substream)
 	return 0;
 }
 
-static int snd_imx_close(struct snd_pcm_substream *substream)
+static int snd_imx_close(struct snd_soc_component *component,
+			 struct snd_pcm_substream *substream)
 {
 	struct snd_pcm_runtime *runtime = substream->runtime;
 	struct imx_pcm_runtime_data *iprtd = runtime->private_data;
@@ -230,20 +213,71 @@ static int snd_imx_close(struct snd_pcm_substream *substream)
 	return 0;
 }
 
-static struct snd_pcm_ops imx_pcm_ops = {
-	.open		= snd_imx_open,
-	.close		= snd_imx_close,
-	.ioctl		= snd_pcm_lib_ioctl,
-	.hw_params	= snd_imx_pcm_hw_params,
-	.prepare	= snd_imx_pcm_prepare,
-	.trigger	= snd_imx_pcm_trigger,
-	.pointer	= snd_imx_pcm_pointer,
-	.mmap		= snd_imx_pcm_mmap,
-};
+static int snd_imx_pcm_mmap(struct snd_soc_component *component,
+			    struct snd_pcm_substream *substream,
+			    struct vm_area_struct *vma)
+{
+	struct snd_pcm_runtime *runtime = substream->runtime;
+	int ret;
 
-static int ssi_irq = 0;
+	ret = dma_mmap_wc(substream->pcm->card->dev, vma, runtime->dma_area,
+			  runtime->dma_addr, runtime->dma_bytes);
 
-static int imx_pcm_fiq_new(struct snd_soc_pcm_runtime *rtd)
+	pr_debug("%s: ret: %d %p %pad 0x%08zx\n", __func__, ret,
+			runtime->dma_area,
+			&runtime->dma_addr,
+			runtime->dma_bytes);
+	return ret;
+}
+
+static int imx_pcm_preallocate_dma_buffer(struct snd_pcm *pcm, int stream)
+{
+	struct snd_pcm_substream *substream = pcm->streams[stream].substream;
+	struct snd_dma_buffer *buf = &substream->dma_buffer;
+	size_t size = IMX_SSI_DMABUF_SIZE;
+
+	buf->dev.type = SNDRV_DMA_TYPE_DEV;
+	buf->dev.dev = pcm->card->dev;
+	buf->private_data = NULL;
+	buf->area = dma_alloc_wc(pcm->card->dev, size, &buf->addr, GFP_KERNEL);
+	if (!buf->area)
+		return -ENOMEM;
+	buf->bytes = size;
+
+	return 0;
+}
+
+static int imx_pcm_new(struct snd_soc_pcm_runtime *rtd)
+{
+	struct snd_card *card = rtd->card->snd_card;
+	struct snd_pcm *pcm = rtd->pcm;
+	int ret;
+
+	ret = dma_coerce_mask_and_coherent(card->dev, DMA_BIT_MASK(32));
+	if (ret)
+		return ret;
+
+	if (pcm->streams[SNDRV_PCM_STREAM_PLAYBACK].substream) {
+		ret = imx_pcm_preallocate_dma_buffer(pcm,
+			SNDRV_PCM_STREAM_PLAYBACK);
+		if (ret)
+			return ret;
+	}
+
+	if (pcm->streams[SNDRV_PCM_STREAM_CAPTURE].substream) {
+		ret = imx_pcm_preallocate_dma_buffer(pcm,
+			SNDRV_PCM_STREAM_CAPTURE);
+		if (ret)
+			return ret;
+	}
+
+	return 0;
+}
+
+static int ssi_irq;
+
+static int snd_imx_pcm_new(struct snd_soc_component *component,
+			   struct snd_soc_pcm_runtime *rtd)
 {
 	struct snd_pcm *pcm = rtd->pcm;
 	struct snd_pcm_substream *substream;
@@ -273,22 +307,49 @@ static int imx_pcm_fiq_new(struct snd_soc_pcm_runtime *rtd)
 	return 0;
 }
 
-static void imx_pcm_fiq_free(struct snd_pcm *pcm)
+static void imx_pcm_free(struct snd_pcm *pcm)
+{
+	struct snd_pcm_substream *substream;
+	struct snd_dma_buffer *buf;
+	int stream;
+
+	for (stream = 0; stream < 2; stream++) {
+		substream = pcm->streams[stream].substream;
+		if (!substream)
+			continue;
+
+		buf = &substream->dma_buffer;
+		if (!buf->area)
+			continue;
+
+		dma_free_wc(pcm->card->dev, buf->bytes, buf->area, buf->addr);
+		buf->area = NULL;
+	}
+}
+
+static void snd_imx_pcm_free(struct snd_soc_component *component,
+			     struct snd_pcm *pcm)
 {
 	mxc_set_irq_fiq(ssi_irq, 0);
 	release_fiq(&fh);
 	imx_pcm_free(pcm);
 }
 
-static struct snd_soc_platform_driver imx_soc_platform_fiq = {
-	.ops		= &imx_pcm_ops,
-	.pcm_new	= imx_pcm_fiq_new,
-	.pcm_free	= imx_pcm_fiq_free,
+static const struct snd_soc_component_driver imx_soc_component_fiq = {
+	.open		= snd_imx_open,
+	.close		= snd_imx_close,
+	.hw_params	= snd_imx_pcm_hw_params,
+	.prepare	= snd_imx_pcm_prepare,
+	.trigger	= snd_imx_pcm_trigger,
+	.pointer	= snd_imx_pcm_pointer,
+	.mmap		= snd_imx_pcm_mmap,
+	.pcm_construct	= snd_imx_pcm_new,
+	.pcm_destruct	= snd_imx_pcm_free,
 };
 
-int imx_pcm_fiq_init(struct platform_device *pdev)
+int imx_pcm_fiq_init(struct platform_device *pdev,
+		struct imx_pcm_fiq_params *params)
 {
-	struct imx_ssi *ssi = platform_get_drvdata(pdev);
 	int ret;
 
 	ret = claim_fiq(&fh);
@@ -297,17 +358,18 @@ int imx_pcm_fiq_init(struct platform_device *pdev)
 		return ret;
 	}
 
-	mxc_set_irq_fiq(ssi->irq, 1);
-	ssi_irq = ssi->irq;
+	mxc_set_irq_fiq(params->irq, 1);
+	ssi_irq = params->irq;
 
-	imx_pcm_fiq = ssi->irq;
+	imx_pcm_fiq = params->irq;
 
-	imx_ssi_fiq_base = (unsigned long)ssi->base;
+	imx_ssi_fiq_base = (unsigned long)params->base;
 
-	ssi->dma_params_tx.maxburst = 4;
-	ssi->dma_params_rx.maxburst = 6;
+	params->dma_params_tx->maxburst = 4;
+	params->dma_params_rx->maxburst = 6;
 
-	ret = snd_soc_register_platform(&pdev->dev, &imx_soc_platform_fiq);
+	ret = devm_snd_soc_register_component(&pdev->dev, &imx_soc_component_fiq,
+					      NULL, 0);
 	if (ret)
 		goto failed_register;
 
@@ -319,3 +381,11 @@ failed_register:
 
 	return ret;
 }
+EXPORT_SYMBOL_GPL(imx_pcm_fiq_init);
+
+void imx_pcm_fiq_exit(struct platform_device *pdev)
+{
+}
+EXPORT_SYMBOL_GPL(imx_pcm_fiq_exit);
+
+MODULE_LICENSE("GPL");

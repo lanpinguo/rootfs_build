@@ -1,15 +1,10 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
- *  arch/arm/mach-pxa/include/mach/pxafb.h
- *
  *  Support for the xscale frame buffer.
  *
  *  Author:     Jean-Frederic Clere
  *  Created:    Sep 22, 2003
  *  Copyright:  jfclere@sinix.net
- *
- *  This program is free software; you can redistribute it and/or modify
- *  it under the terms of the GNU General Public License version 2 as
- *  published by the Free Software Foundation.
  */
 
 #include <linux/fb.h>

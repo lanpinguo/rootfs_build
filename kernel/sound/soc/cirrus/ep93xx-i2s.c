@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * linux/sound/soc/ep93xx-i2s.c
  * EP93xx I2S driver
@@ -7,11 +8,6 @@
  * Based on the original driver by:
  *   Copyright (C) 2007 Chase Douglas <chasedouglas@gmail>
  *   Copyright (C) 2006 Lennert Buytenhek <buytenh@wantstofly.org>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
- *
  */
 
 #include <linux/module.h>
@@ -21,18 +17,24 @@
 #include <linux/io.h>
 
 #include <sound/core.h>
+#include <sound/dmaengine_pcm.h>
 #include <sound/pcm.h>
 #include <sound/pcm_params.h>
 #include <sound/initval.h>
 #include <sound/soc.h>
 
-#include <mach/hardware.h>
-#include <mach/ep93xx-regs.h>
 #include <linux/platform_data/dma-ep93xx.h>
+#include <linux/soc/cirrus/ep93xx.h>
+
+#include "ep93xx-pcm.h"
 
 #define EP93XX_I2S_TXCLKCFG		0x00
 #define EP93XX_I2S_RXCLKCFG		0x04
+#define EP93XX_I2S_GLSTS		0x08
 #define EP93XX_I2S_GLCTRL		0x0C
+
+#define EP93XX_I2S_I2STX0LFT		0x10
+#define EP93XX_I2S_I2STX0RT		0x14
 
 #define EP93XX_I2S_TXLINCTRLDATA	0x28
 #define EP93XX_I2S_TXCTRL		0x2C
@@ -48,7 +50,17 @@
 #define EP93XX_I2S_WRDLEN_24		(1 << 0)
 #define EP93XX_I2S_WRDLEN_32		(2 << 0)
 
-#define EP93XX_I2S_LINCTRLDATA_R_JUST	(1 << 2) /* Right justify */
+#define EP93XX_I2S_RXLINCTRLDATA_R_JUST	BIT(1) /* Right justify */
+
+#define EP93XX_I2S_TXLINCTRLDATA_R_JUST	BIT(2) /* Right justify */
+
+/*
+ * Transmit empty interrupt level select:
+ * 0 - Generate interrupt when FIFO is half empty
+ * 1 - Generate interrupt when FIFO is empty
+ */
+#define EP93XX_I2S_TXCTRL_TXEMPTY_LVL	BIT(0)
+#define EP93XX_I2S_TXCTRL_TXUFIE	BIT(1) /* Transmit interrupt enable */
 
 #define EP93XX_I2S_CLKCFG_LRS		(1 << 0) /* lrclk polarity */
 #define EP93XX_I2S_CLKCFG_CKP		(1 << 1) /* Bit clock polarity */
@@ -56,15 +68,18 @@
 #define EP93XX_I2S_CLKCFG_MASTER	(1 << 3) /* Master mode */
 #define EP93XX_I2S_CLKCFG_NBCG		(1 << 4) /* Not bit clock gating */
 
+#define EP93XX_I2S_GLSTS_TX0_FIFO_FULL	BIT(12)
+
 struct ep93xx_i2s_info {
 	struct clk			*mclk;
 	struct clk			*sclk;
 	struct clk			*lrclk;
-	struct ep93xx_dma_data		*dma_data;
 	void __iomem			*regs;
+	struct snd_dmaengine_dai_dma_data dma_params_rx;
+	struct snd_dmaengine_dai_dma_data dma_params_tx;
 };
 
-struct ep93xx_dma_data ep93xx_i2s_dma_data[] = {
+static struct ep93xx_dma_data ep93xx_i2s_dma_data[] = {
 	[SNDRV_PCM_STREAM_PLAYBACK] = {
 		.name		= "i2s-pcm-out",
 		.port		= EP93XX_DMA_I2S1,
@@ -92,7 +107,6 @@ static inline unsigned ep93xx_i2s_read_reg(struct ep93xx_i2s_info *info,
 static void ep93xx_i2s_enable(struct ep93xx_i2s_info *info, int stream)
 {
 	unsigned base_reg;
-	int i;
 
 	if ((ep93xx_i2s_read_reg(info, EP93XX_I2S_TX0EN) & 0x1) == 0 &&
 	    (ep93xx_i2s_read_reg(info, EP93XX_I2S_RX0EN) & 0x1) == 0) {
@@ -105,27 +119,36 @@ static void ep93xx_i2s_enable(struct ep93xx_i2s_info *info, int stream)
 		ep93xx_i2s_write_reg(info, EP93XX_I2S_GLCTRL, 1);
 	}
 
-	/* Enable fifos */
+	/* Enable fifo */
 	if (stream == SNDRV_PCM_STREAM_PLAYBACK)
 		base_reg = EP93XX_I2S_TX0EN;
 	else
 		base_reg = EP93XX_I2S_RX0EN;
-	for (i = 0; i < 3; i++)
-		ep93xx_i2s_write_reg(info, base_reg + (i * 4), 1);
+	ep93xx_i2s_write_reg(info, base_reg, 1);
+
+	/* Enable TX IRQs (FIFO empty or underflow) */
+	if (IS_ENABLED(CONFIG_SND_EP93XX_SOC_I2S_WATCHDOG) &&
+	    stream == SNDRV_PCM_STREAM_PLAYBACK)
+		ep93xx_i2s_write_reg(info, EP93XX_I2S_TXCTRL,
+				     EP93XX_I2S_TXCTRL_TXEMPTY_LVL |
+				     EP93XX_I2S_TXCTRL_TXUFIE);
 }
 
 static void ep93xx_i2s_disable(struct ep93xx_i2s_info *info, int stream)
 {
 	unsigned base_reg;
-	int i;
 
-	/* Disable fifos */
+	/* Disable IRQs */
+	if (IS_ENABLED(CONFIG_SND_EP93XX_SOC_I2S_WATCHDOG) &&
+	    stream == SNDRV_PCM_STREAM_PLAYBACK)
+		ep93xx_i2s_write_reg(info, EP93XX_I2S_TXCTRL, 0);
+
+	/* Disable fifo */
 	if (stream == SNDRV_PCM_STREAM_PLAYBACK)
 		base_reg = EP93XX_I2S_TX0EN;
 	else
 		base_reg = EP93XX_I2S_RX0EN;
-	for (i = 0; i < 3; i++)
-		ep93xx_i2s_write_reg(info, base_reg + (i * 4), 0);
+	ep93xx_i2s_write_reg(info, base_reg, 0);
 
 	if ((ep93xx_i2s_read_reg(info, EP93XX_I2S_TX0EN) & 0x1) == 0 &&
 	    (ep93xx_i2s_read_reg(info, EP93XX_I2S_RX0EN) & 0x1) == 0) {
@@ -139,15 +162,49 @@ static void ep93xx_i2s_disable(struct ep93xx_i2s_info *info, int stream)
 	}
 }
 
-static int ep93xx_i2s_startup(struct snd_pcm_substream *substream,
-			      struct snd_soc_dai *dai)
+/*
+ * According to documentation I2S controller can handle underflow conditions
+ * just fine, but in reality the state machine is sometimes confused so that
+ * the whole stream is shifted by one byte. The watchdog below disables the TX
+ * FIFO, fills the buffer with zeroes and re-enables the FIFO. State machine
+ * is being reset and by filling the buffer we get some time before next
+ * underflow happens.
+ */
+static irqreturn_t ep93xx_i2s_interrupt(int irq, void *dev_id)
 {
-	struct snd_soc_pcm_runtime *rtd = substream->private_data;
-	struct ep93xx_i2s_info *info = snd_soc_dai_get_drvdata(dai);
-	struct snd_soc_dai *cpu_dai = rtd->cpu_dai;
+	struct ep93xx_i2s_info *info = dev_id;
 
-	snd_soc_dai_set_dma_data(cpu_dai, substream,
-				 &info->dma_data[substream->stream]);
+	/* Disable FIFO */
+	ep93xx_i2s_write_reg(info, EP93XX_I2S_TX0EN, 0);
+	/*
+	 * Fill TX FIFO with zeroes, this way we can defer next IRQs as much as
+	 * possible and get more time for DMA to catch up. Actually there are
+	 * only 8 samples in this FIFO, so even on 8kHz maximum deferral here is
+	 * 1ms.
+	 */
+	while (!(ep93xx_i2s_read_reg(info, EP93XX_I2S_GLSTS) &
+		 EP93XX_I2S_GLSTS_TX0_FIFO_FULL)) {
+		ep93xx_i2s_write_reg(info, EP93XX_I2S_I2STX0LFT, 0);
+		ep93xx_i2s_write_reg(info, EP93XX_I2S_I2STX0RT, 0);
+	}
+	/* Re-enable FIFO */
+	ep93xx_i2s_write_reg(info, EP93XX_I2S_TX0EN, 1);
+
+	return IRQ_HANDLED;
+}
+
+static int ep93xx_i2s_dai_probe(struct snd_soc_dai *dai)
+{
+	struct ep93xx_i2s_info *info = snd_soc_dai_get_drvdata(dai);
+
+	info->dma_params_tx.filter_data =
+		&ep93xx_i2s_dma_data[SNDRV_PCM_STREAM_PLAYBACK];
+	info->dma_params_rx.filter_data =
+		&ep93xx_i2s_dma_data[SNDRV_PCM_STREAM_CAPTURE];
+
+	dai->playback_dma_data = &info->dma_params_tx;
+	dai->capture_dma_data = &info->dma_params_rx;
+
 	return 0;
 }
 
@@ -163,25 +220,25 @@ static int ep93xx_i2s_set_dai_fmt(struct snd_soc_dai *cpu_dai,
 				  unsigned int fmt)
 {
 	struct ep93xx_i2s_info *info = snd_soc_dai_get_drvdata(cpu_dai);
-	unsigned int clk_cfg, lin_ctrl;
+	unsigned int clk_cfg;
+	unsigned int txlin_ctrl = 0;
+	unsigned int rxlin_ctrl = 0;
 
 	clk_cfg  = ep93xx_i2s_read_reg(info, EP93XX_I2S_RXCLKCFG);
-	lin_ctrl = ep93xx_i2s_read_reg(info, EP93XX_I2S_RXLINCTRLDATA);
 
 	switch (fmt & SND_SOC_DAIFMT_FORMAT_MASK) {
 	case SND_SOC_DAIFMT_I2S:
 		clk_cfg |= EP93XX_I2S_CLKCFG_REL;
-		lin_ctrl &= ~EP93XX_I2S_LINCTRLDATA_R_JUST;
 		break;
 
 	case SND_SOC_DAIFMT_LEFT_J:
 		clk_cfg &= ~EP93XX_I2S_CLKCFG_REL;
-		lin_ctrl &= ~EP93XX_I2S_LINCTRLDATA_R_JUST;
 		break;
 
 	case SND_SOC_DAIFMT_RIGHT_J:
 		clk_cfg &= ~EP93XX_I2S_CLKCFG_REL;
-		lin_ctrl |= EP93XX_I2S_LINCTRLDATA_R_JUST;
+		rxlin_ctrl |= EP93XX_I2S_RXLINCTRLDATA_R_JUST;
+		txlin_ctrl |= EP93XX_I2S_TXLINCTRLDATA_R_JUST;
 		break;
 
 	default:
@@ -206,32 +263,32 @@ static int ep93xx_i2s_set_dai_fmt(struct snd_soc_dai *cpu_dai,
 	switch (fmt & SND_SOC_DAIFMT_INV_MASK) {
 	case SND_SOC_DAIFMT_NB_NF:
 		/* Negative bit clock, lrclk low on left word */
-		clk_cfg &= ~(EP93XX_I2S_CLKCFG_CKP | EP93XX_I2S_CLKCFG_REL);
+		clk_cfg &= ~(EP93XX_I2S_CLKCFG_CKP | EP93XX_I2S_CLKCFG_LRS);
 		break;
 
 	case SND_SOC_DAIFMT_NB_IF:
 		/* Negative bit clock, lrclk low on right word */
 		clk_cfg &= ~EP93XX_I2S_CLKCFG_CKP;
-		clk_cfg |= EP93XX_I2S_CLKCFG_REL;
+		clk_cfg |= EP93XX_I2S_CLKCFG_LRS;
 		break;
 
 	case SND_SOC_DAIFMT_IB_NF:
 		/* Positive bit clock, lrclk low on left word */
 		clk_cfg |= EP93XX_I2S_CLKCFG_CKP;
-		clk_cfg &= ~EP93XX_I2S_CLKCFG_REL;
+		clk_cfg &= ~EP93XX_I2S_CLKCFG_LRS;
 		break;
 
 	case SND_SOC_DAIFMT_IB_IF:
 		/* Positive bit clock, lrclk low on right word */
-		clk_cfg |= EP93XX_I2S_CLKCFG_CKP | EP93XX_I2S_CLKCFG_REL;
+		clk_cfg |= EP93XX_I2S_CLKCFG_CKP | EP93XX_I2S_CLKCFG_LRS;
 		break;
 	}
 
 	/* Write new register values */
 	ep93xx_i2s_write_reg(info, EP93XX_I2S_RXCLKCFG, clk_cfg);
 	ep93xx_i2s_write_reg(info, EP93XX_I2S_TXCLKCFG, clk_cfg);
-	ep93xx_i2s_write_reg(info, EP93XX_I2S_RXLINCTRLDATA, lin_ctrl);
-	ep93xx_i2s_write_reg(info, EP93XX_I2S_TXLINCTRLDATA, lin_ctrl);
+	ep93xx_i2s_write_reg(info, EP93XX_I2S_RXLINCTRLDATA, rxlin_ctrl);
+	ep93xx_i2s_write_reg(info, EP93XX_I2S_TXLINCTRLDATA, txlin_ctrl);
 	return 0;
 }
 
@@ -307,11 +364,11 @@ static int ep93xx_i2s_set_sysclk(struct snd_soc_dai *cpu_dai, int clk_id,
 }
 
 #ifdef CONFIG_PM
-static int ep93xx_i2s_suspend(struct snd_soc_dai *dai)
+static int ep93xx_i2s_suspend(struct snd_soc_component *component)
 {
-	struct ep93xx_i2s_info *info = snd_soc_dai_get_drvdata(dai);
+	struct ep93xx_i2s_info *info = snd_soc_component_get_drvdata(component);
 
-	if (!dai->active)
+	if (!snd_soc_component_active(component))
 		return 0;
 
 	ep93xx_i2s_disable(info, SNDRV_PCM_STREAM_PLAYBACK);
@@ -320,11 +377,11 @@ static int ep93xx_i2s_suspend(struct snd_soc_dai *dai)
 	return 0;
 }
 
-static int ep93xx_i2s_resume(struct snd_soc_dai *dai)
+static int ep93xx_i2s_resume(struct snd_soc_component *component)
 {
-	struct ep93xx_i2s_info *info = snd_soc_dai_get_drvdata(dai);
+	struct ep93xx_i2s_info *info = snd_soc_component_get_drvdata(component);
 
-	if (!dai->active)
+	if (!snd_soc_component_active(component))
 		return 0;
 
 	ep93xx_i2s_enable(info, SNDRV_PCM_STREAM_PLAYBACK);
@@ -338,7 +395,6 @@ static int ep93xx_i2s_resume(struct snd_soc_dai *dai)
 #endif
 
 static const struct snd_soc_dai_ops ep93xx_i2s_dai_ops = {
-	.startup	= ep93xx_i2s_startup,
 	.shutdown	= ep93xx_i2s_shutdown,
 	.hw_params	= ep93xx_i2s_hw_params,
 	.set_sysclk	= ep93xx_i2s_set_sysclk,
@@ -349,8 +405,7 @@ static const struct snd_soc_dai_ops ep93xx_i2s_dai_ops = {
 
 static struct snd_soc_dai_driver ep93xx_i2s_dai = {
 	.symmetric_rates= 1,
-	.suspend	= ep93xx_i2s_suspend,
-	.resume		= ep93xx_i2s_resume,
+	.probe		= ep93xx_i2s_dai_probe,
 	.playback	= {
 		.channels_min	= 2,
 		.channels_max	= 2,
@@ -368,25 +423,33 @@ static struct snd_soc_dai_driver ep93xx_i2s_dai = {
 
 static const struct snd_soc_component_driver ep93xx_i2s_component = {
 	.name		= "ep93xx-i2s",
+	.suspend	= ep93xx_i2s_suspend,
+	.resume		= ep93xx_i2s_resume,
 };
 
 static int ep93xx_i2s_probe(struct platform_device *pdev)
 {
 	struct ep93xx_i2s_info *info;
-	struct resource *res;
 	int err;
 
 	info = devm_kzalloc(&pdev->dev, sizeof(*info), GFP_KERNEL);
 	if (!info)
 		return -ENOMEM;
 
-	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	if (!res)
-		return -ENODEV;
-
-	info->regs = devm_ioremap_resource(&pdev->dev, res);
+	info->regs = devm_platform_ioremap_resource(pdev, 0);
 	if (IS_ERR(info->regs))
 		return PTR_ERR(info->regs);
+
+	if (IS_ENABLED(CONFIG_SND_EP93XX_SOC_I2S_WATCHDOG)) {
+		int irq = platform_get_irq(pdev, 0);
+		if (irq <= 0)
+			return irq < 0 ? irq : -ENODEV;
+
+		err = devm_request_irq(&pdev->dev, irq, ep93xx_i2s_interrupt, 0,
+				       pdev->name, info);
+		if (err)
+			return err;
+	}
 
 	info->mclk = clk_get(&pdev->dev, "mclk");
 	if (IS_ERR(info->mclk)) {
@@ -407,17 +470,19 @@ static int ep93xx_i2s_probe(struct platform_device *pdev)
 	}
 
 	dev_set_drvdata(&pdev->dev, info);
-	info->dma_data = ep93xx_i2s_dma_data;
 
-	err = snd_soc_register_component(&pdev->dev, &ep93xx_i2s_component,
+	err = devm_snd_soc_register_component(&pdev->dev, &ep93xx_i2s_component,
 					 &ep93xx_i2s_dai, 1);
+	if (err)
+		goto fail_put_lrclk;
+
+	err = devm_ep93xx_pcm_platform_register(&pdev->dev);
 	if (err)
 		goto fail_put_lrclk;
 
 	return 0;
 
 fail_put_lrclk:
-	dev_set_drvdata(&pdev->dev, NULL);
 	clk_put(info->lrclk);
 fail_put_sclk:
 	clk_put(info->sclk);
@@ -431,8 +496,6 @@ static int ep93xx_i2s_remove(struct platform_device *pdev)
 {
 	struct ep93xx_i2s_info *info = dev_get_drvdata(&pdev->dev);
 
-	snd_soc_unregister_component(&pdev->dev);
-	dev_set_drvdata(&pdev->dev, NULL);
 	clk_put(info->lrclk);
 	clk_put(info->sclk);
 	clk_put(info->mclk);
@@ -444,7 +507,6 @@ static struct platform_driver ep93xx_i2s_driver = {
 	.remove	= ep93xx_i2s_remove,
 	.driver	= {
 		.name	= "ep93xx-i2s",
-		.owner	= THIS_MODULE,
 	},
 };
 

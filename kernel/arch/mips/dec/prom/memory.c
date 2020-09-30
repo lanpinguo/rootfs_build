@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * memory.c: memory initialisation code.
  *
@@ -7,7 +8,7 @@
 #include <linux/init.h>
 #include <linux/kernel.h>
 #include <linux/mm.h>
-#include <linux/bootmem.h>
+#include <linux/memblock.h>
 #include <linux/types.h>
 
 #include <asm/addrspace.h>
@@ -22,7 +23,7 @@ volatile unsigned long mem_err;		/* So we know an error occurred */
 
 /*
  * Probe memory in 4MB chunks, waiting for an error to tell us we've fallen
- * off the end of real memory.	Only suitable for the 2100/3100's (PMAX).
+ * off the end of real memory.  Only suitable for the 2100/3100's (PMAX).
  */
 
 #define CHUNK_SIZE 0x400000

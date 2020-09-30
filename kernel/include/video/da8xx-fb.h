@@ -23,11 +23,15 @@ enum raster_load_mode {
 	LOAD_PALETTE,
 };
 
+enum da8xx_frame_complete {
+	DA8XX_FRAME_WAIT,
+	DA8XX_FRAME_NOWAIT,
+};
+
 struct da8xx_lcdc_platform_data {
 	const char manu_name[10];
 	void *controller_data;
 	const char type[25];
-	void (*panel_power_ctrl)(int);
 };
 
 struct lcd_ctrl_config {

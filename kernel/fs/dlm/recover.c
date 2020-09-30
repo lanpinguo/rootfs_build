@@ -1,12 +1,10 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /******************************************************************************
 *******************************************************************************
 **
 **  Copyright (C) Sistina Software, Inc.  1997-2003  All rights reserved.
 **  Copyright (C) 2004-2005 Red Hat, Inc.  All rights reserved.
 **
-**  This copyrighted material is made available to anyone wishing to use,
-**  modify, copy, or redistribute it subject to the terms and conditions
-**  of the GNU General Public License v.2.
 **
 *******************************************************************************
 ******************************************************************************/
@@ -52,6 +50,10 @@ int dlm_wait_function(struct dlm_ls *ls, int (*testfn) (struct dlm_ls *ls))
 					dlm_config.ci_recover_timer * HZ);
 		if (rv)
 			break;
+		if (test_bit(LSFL_RCOM_WAIT, &ls->ls_flags)) {
+			log_debug(ls, "dlm_wait_function timed out");
+			return -ETIMEDOUT;
+		}
 	}
 
 	if (dlm_recovery_stopped(ls)) {
@@ -526,7 +528,7 @@ int dlm_recover_masters(struct dlm_ls *ls)
 	int nodir = dlm_no_directory(ls);
 	int error;
 
-	log_debug(ls, "dlm_recover_masters");
+	log_rinfo(ls, "dlm_recover_masters");
 
 	down_read(&ls->ls_root_sem);
 	list_for_each_entry(r, &ls->ls_root_list, res_root_list) {
@@ -552,7 +554,7 @@ int dlm_recover_masters(struct dlm_ls *ls)
 	}
 	up_read(&ls->ls_root_sem);
 
-	log_debug(ls, "dlm_recover_masters %u of %u", count, total);
+	log_rinfo(ls, "dlm_recover_masters %u of %u", count, total);
 
 	error = dlm_wait_function(ls, &recover_idr_empty);
  out:
@@ -685,7 +687,7 @@ int dlm_recover_locks(struct dlm_ls *ls)
 	}
 	up_read(&ls->ls_root_sem);
 
-	log_debug(ls, "dlm_recover_locks %d out", count);
+	log_rinfo(ls, "dlm_recover_locks %d out", count);
 
 	error = dlm_wait_function(ls, &recover_list_empty);
  out:
@@ -883,7 +885,7 @@ void dlm_recover_rsbs(struct dlm_ls *ls)
 	up_read(&ls->ls_root_sem);
 
 	if (count)
-		log_debug(ls, "dlm_recover_rsbs %d done", count);
+		log_rinfo(ls, "dlm_recover_rsbs %d done", count);
 }
 
 /* Create a single list of all root rsb's to be used during recovery */
@@ -950,6 +952,6 @@ void dlm_clear_toss(struct dlm_ls *ls)
 	}
 
 	if (count)
-		log_debug(ls, "dlm_clear_toss %u done", count);
+		log_rinfo(ls, "dlm_clear_toss %u done", count);
 }
 

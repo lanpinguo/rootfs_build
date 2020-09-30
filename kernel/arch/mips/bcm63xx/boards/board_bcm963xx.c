@@ -7,6 +7,8 @@
  * Copyright (C) 2008 Florian Fainelli <florian@openwrt.org>
  */
 
+#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
+
 #include <linux/init.h>
 #include <linux/kernel.h>
 #include <linux/string.h>
@@ -21,16 +23,51 @@
 #include <bcm63xx_nvram.h>
 #include <bcm63xx_dev_pci.h>
 #include <bcm63xx_dev_enet.h>
-#include <bcm63xx_dev_dsp.h>
 #include <bcm63xx_dev_flash.h>
+#include <bcm63xx_dev_hsspi.h>
 #include <bcm63xx_dev_pcmcia.h>
 #include <bcm63xx_dev_spi.h>
 #include <bcm63xx_dev_usb_usbd.h>
 #include <board_bcm963xx.h>
 
-#define PFX	"board_bcm963xx: "
+#include <uapi/linux/bcm933xx_hcs.h>
+
+
+#define HCS_OFFSET_128K			0x20000
 
 static struct board_info board;
+
+/*
+ * known 3368 boards
+ */
+#ifdef CONFIG_BCM63XX_CPU_3368
+static struct board_info __initdata board_cvg834g = {
+	.name				= "CVG834G_E15R3921",
+	.expected_cpu_id		= 0x3368,
+
+	.has_uart0			= 1,
+	.has_uart1			= 1,
+
+	.has_enet0			= 1,
+	.has_pci			= 1,
+
+	.enet0 = {
+		.has_phy		= 1,
+		.use_internal_phy	= 1,
+	},
+
+	.leds = {
+		{
+			.name		= "CVG834G:green:power",
+			.gpio		= 37,
+			.default_trigger= "default-on",
+		},
+	},
+
+	.ephy_reset_gpio		= 36,
+	.ephy_reset_gpio_flags		= GPIOF_INIT_HIGH,
+};
+#endif /* CONFIG_BCM63XX_CPU_3368 */
 
 /*
  * known 6328 boards
@@ -78,7 +115,7 @@ static struct board_info __initdata board_96328avng = {
 		},
 	},
 };
-#endif
+#endif /* CONFIG_BCM63XX_CPU_6328 */
 
 /*
  * known 6338 boards
@@ -167,7 +204,7 @@ static struct board_info __initdata board_96338w = {
 		},
 	},
 };
-#endif
+#endif /* CONFIG_BCM63XX_CPU_6338 */
 
 /*
  * known 6345 boards
@@ -179,7 +216,7 @@ static struct board_info __initdata board_96345gw2 = {
 
 	.has_uart0			= 1,
 };
-#endif
+#endif /* CONFIG_BCM63XX_CPU_6345 */
 
 /*
  * known 6348 boards
@@ -250,14 +287,6 @@ static struct board_info __initdata board_96348gw_10 = {
 	.has_ohci0			= 1,
 	.has_pccard			= 1,
 	.has_ehci0			= 1,
-
-	.has_dsp			= 1,
-	.dsp = {
-		.gpio_rst		= 6,
-		.gpio_int		= 34,
-		.cs			= 2,
-		.ext_irq		= 2,
-	},
 
 	.leds = {
 		{
@@ -363,14 +392,6 @@ static struct board_info __initdata board_96348gw = {
 
 	.has_ohci0 = 1,
 
-	.has_dsp			= 1,
-	.dsp = {
-		.gpio_rst		= 6,
-		.gpio_int		= 34,
-		.ext_irq		= 2,
-		.cs			= 2,
-	},
-
 	.leds = {
 		{
 			.name		= "adsl-fail",
@@ -443,7 +464,6 @@ static struct board_info __initdata board_rta1025w_16 = {
 	},
 };
 
-
 static struct board_info __initdata board_DV201AMR = {
 	.name				= "DV201AMR",
 	.expected_cpu_id		= 0x6348,
@@ -484,7 +504,7 @@ static struct board_info __initdata board_96348gw_a = {
 
 	.has_ohci0 = 1,
 };
-#endif
+#endif /* CONFIG_BCM63XX_CPU_6348 */
 
 /*
  * known 6358 boards
@@ -508,7 +528,6 @@ static struct board_info __initdata board_96358vw = {
 		.force_speed_100	= 1,
 		.force_duplex_full	= 1,
 	},
-
 
 	.has_ohci0 = 1,
 	.has_pccard = 1,
@@ -633,22 +652,25 @@ static struct board_info __initdata board_DWVS0 = {
 
 	.has_ohci0			= 1,
 };
-#endif
+#endif /* CONFIG_BCM63XX_CPU_6358 */
 
 /*
  * all boards
  */
 static const struct board_info __initconst *bcm963xx_boards[] = {
+#ifdef CONFIG_BCM63XX_CPU_3368
+	&board_cvg834g,
+#endif /* CONFIG_BCM63XX_CPU_3368 */
 #ifdef CONFIG_BCM63XX_CPU_6328
 	&board_96328avng,
-#endif
+#endif /* CONFIG_BCM63XX_CPU_6328 */
 #ifdef CONFIG_BCM63XX_CPU_6338
 	&board_96338gw,
 	&board_96338w,
-#endif
+#endif /* CONFIG_BCM63XX_CPU_6338 */
 #ifdef CONFIG_BCM63XX_CPU_6345
 	&board_96345gw2,
-#endif
+#endif /* CONFIG_BCM63XX_CPU_6345 */
 #ifdef CONFIG_BCM63XX_CPU_6348
 	&board_96348r,
 	&board_96348gw,
@@ -658,14 +680,13 @@ static const struct board_info __initconst *bcm963xx_boards[] = {
 	&board_DV201AMR,
 	&board_96348gw_a,
 	&board_rta1025w_16,
-#endif
-
+#endif /* CONFIG_BCM63XX_CPU_6348 */
 #ifdef CONFIG_BCM63XX_CPU_6358
 	&board_96358vw,
 	&board_96358vw2,
 	&board_AGPFS0,
 	&board_DWVS0,
-#endif
+#endif /* CONFIG_BCM63XX_CPU_6358 */
 };
 
 /*
@@ -700,11 +721,11 @@ int bcm63xx_get_fallback_sprom(struct ssb_bus *bus, struct ssb_sprom *out)
 		memcpy(out, &bcm63xx_sprom, sizeof(struct ssb_sprom));
 		return 0;
 	} else {
-		printk(KERN_ERR PFX "unable to fill SPROM for given bustype.\n");
+		pr_err("unable to fill SPROM for given bustype\n");
 		return -EINVAL;
 	}
 }
-#endif
+#endif /* CONFIG_SSB_PCIHOST */
 
 /*
  * return board name for /proc/cpuinfo
@@ -722,8 +743,9 @@ void __init board_prom_init(void)
 	unsigned int i;
 	u8 *boot_addr, *cfe;
 	char cfe_version[32];
-	char *board_name;
+	char *board_name = NULL;
 	u32 val;
+	struct bcm_hcs *hcs;
 
 	/* read base address of boot chip select (0)
 	 * 6328/6362 do not have MPI but boot from a fixed address
@@ -738,16 +760,35 @@ void __init board_prom_init(void)
 
 	/* dump cfe version */
 	cfe = boot_addr + BCM963XX_CFE_VERSION_OFFSET;
-	if (!memcmp(cfe, "cfe-v", 5))
-		snprintf(cfe_version, sizeof(cfe_version), "%u.%u.%u-%u.%u",
-			 cfe[5], cfe[6], cfe[7], cfe[8], cfe[9]);
-	else
+	if (strstarts(cfe, "cfe-")) {
+		if(cfe[4] == 'v') {
+			if(cfe[5] == 'd')
+				snprintf(cfe_version, 11, "%s",
+					 (char *) &cfe[5]);
+			else if (cfe[10] > 0)
+				snprintf(cfe_version, sizeof(cfe_version),
+					 "%u.%u.%u-%u.%u-%u", cfe[5], cfe[6],
+					 cfe[7], cfe[8], cfe[9], cfe[10]);
+			else
+				snprintf(cfe_version, sizeof(cfe_version),
+					 "%u.%u.%u-%u.%u", cfe[5], cfe[6],
+					 cfe[7], cfe[8], cfe[9]);
+		} else {
+			snprintf(cfe_version, 12, "%s", (char *) &cfe[4]);
+		}
+	} else {
 		strcpy(cfe_version, "unknown");
-	printk(KERN_INFO PFX "CFE version: %s\n", cfe_version);
+	}
+	pr_info("CFE version: %s\n", cfe_version);
 
 	bcm63xx_nvram_init(boot_addr + BCM963XX_NVRAM_OFFSET);
 
-	board_name = bcm63xx_nvram_get_name();
+	if (BCMCPU_IS_3368()) {
+		hcs = (struct bcm_hcs *)boot_addr;
+		board_name = hcs->filename;
+	} else {
+		board_name = bcm63xx_nvram_get_name();
+	}
 	/* find board by name */
 	for (i = 0; i < ARRAY_SIZE(bcm963xx_boards); i++) {
 		if (strncmp(board_name, bcm963xx_boards[i]->name, 16))
@@ -762,8 +803,7 @@ void __init board_prom_init(void)
 		char name[17];
 		memcpy(name, board_name, 16);
 		name[16] = 0;
-		printk(KERN_ERR PFX "unknown bcm963xx board: %s\n",
-		       name);
+		pr_err("unknown bcm963xx board: %s\n", name);
 		return;
 	}
 
@@ -778,7 +818,7 @@ void __init board_prom_init(void)
 		if (BCMCPU_IS_6348())
 			val |= GPIO_MODE_6348_G2_PCI;
 	}
-#endif
+#endif /* CONFIG_PCI */
 
 	if (board.has_pccard) {
 		if (BCMCPU_IS_6348())
@@ -808,7 +848,7 @@ void __init board_setup(void)
 {
 	if (!board.name[0])
 		panic("unable to detect bcm963xx board");
-	printk(KERN_INFO PFX "board name: %s\n", board.name);
+	pr_info("board name: %s\n", board.name);
 
 	/* make sure we're running on expected cpu */
 	if (bcm63xx_get_cpu_id() != board.expected_cpu_id)
@@ -845,11 +885,12 @@ int __init board_register_devices(void)
 	    !bcm63xx_nvram_get_mac_address(board.enet1.mac_addr))
 		bcm63xx_enet_register(1, &board.enet1);
 
+	if (board.has_enetsw &&
+	    !bcm63xx_nvram_get_mac_address(board.enetsw.mac_addr))
+		bcm63xx_enetsw_register(&board.enetsw);
+
 	if (board.has_usbd)
 		bcm63xx_usbd_register(&board.usbd);
-
-	if (board.has_dsp)
-		bcm63xx_dsp_register(&board.dsp);
 
 	/* Generate MAC address for WLAN and register our SPROM,
 	 * do this after registering enet devices
@@ -860,11 +901,13 @@ int __init board_register_devices(void)
 		memcpy(bcm63xx_sprom.et1mac, bcm63xx_sprom.il0mac, ETH_ALEN);
 		if (ssb_arch_register_fallback_sprom(
 				&bcm63xx_get_fallback_sprom) < 0)
-			pr_err(PFX "failed to register fallback SPROM\n");
+			pr_err("failed to register fallback SPROM\n");
 	}
-#endif
+#endif /* CONFIG_SSB_PCIHOST */
 
 	bcm63xx_spi_register();
+
+	bcm63xx_hsspi_register();
 
 	bcm63xx_flash_register();
 
@@ -872,6 +915,10 @@ int __init board_register_devices(void)
 	bcm63xx_led_data.leds = board.leds;
 
 	platform_device_register(&bcm63xx_gpio_leds);
+
+	if (board.ephy_reset_gpio && board.ephy_reset_gpio_flags)
+		gpio_request_one(board.ephy_reset_gpio,
+				board.ephy_reset_gpio_flags, "ephy-reset");
 
 	return 0;
 }

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * IBM/3270 Driver - fullscreen driver.
  *
@@ -7,17 +8,17 @@
  *     Copyright IBM Corp. 2003, 2009
  */
 
-#include <linux/bootmem.h>
+#include <linux/memblock.h>
 #include <linux/console.h>
 #include <linux/init.h>
 #include <linux/interrupt.h>
 #include <linux/compat.h>
+#include <linux/sched/signal.h>
 #include <linux/module.h>
 #include <linux/list.h>
 #include <linux/slab.h>
 #include <linux/types.h>
 
-#include <asm/compat.h>
 #include <asm/ccwdev.h>
 #include <asm/cio.h>
 #include <asm/ebcdic.h>
@@ -217,7 +218,7 @@ fs3270_deactivate(struct raw3270_view *view)
 		fp->init->callback(fp->init, NULL);
 }
 
-static int
+static void
 fs3270_irq(struct fs3270 *fp, struct raw3270_request *rq, struct irb *irb)
 {
 	/* Handle ATTN. Set indication and wake waiters for attention. */
@@ -233,7 +234,6 @@ fs3270_irq(struct fs3270 *fp, struct raw3270_request *rq, struct irb *irb)
 			/* Normal end. Copy residual count. */
 			rq->rescnt = irb->scsw.cmd.count;
 	}
-	return RAW3270_IO_DONE;
 }
 
 /*
@@ -463,7 +463,8 @@ fs3270_open(struct inode *inode, struct file *filp)
 
 	init_waitqueue_head(&fp->wait);
 	fp->fs_pid = get_pid(task_pid(current));
-	rc = raw3270_add_view(&fp->view, &fs3270_fn, minor);
+	rc = raw3270_add_view(&fp->view, &fs3270_fn, minor,
+			      RAW3270_VIEW_LOCK_BH);
 	if (rc) {
 		fs3270_free_view(&fp->view);
 		goto out;
@@ -485,7 +486,7 @@ fs3270_open(struct inode *inode, struct file *filp)
 		raw3270_del_view(&fp->view);
 		goto out;
 	}
-	nonseekable_open(inode, filp);
+	stream_open(inode, filp);
 	filp->private_data = fp;
 out:
 	mutex_unlock(&fs3270_mutex);
@@ -524,20 +525,20 @@ static const struct file_operations fs3270_fops = {
 	.llseek		= no_llseek,
 };
 
-void fs3270_create_cb(int minor)
+static void fs3270_create_cb(int minor)
 {
 	__register_chrdev(IBM_FS3270_MAJOR, minor, 1, "tub", &fs3270_fops);
 	device_create(class3270, NULL, MKDEV(IBM_FS3270_MAJOR, minor),
 		      NULL, "3270/tub%d", minor);
 }
 
-void fs3270_destroy_cb(int minor)
+static void fs3270_destroy_cb(int minor)
 {
 	device_destroy(class3270, MKDEV(IBM_FS3270_MAJOR, minor));
 	__unregister_chrdev(IBM_FS3270_MAJOR, minor, 1, "tub");
 }
 
-struct raw3270_notifier fs3270_notifier =
+static struct raw3270_notifier fs3270_notifier =
 {
 	.create = fs3270_create_cb,
 	.destroy = fs3270_destroy_cb,
@@ -564,6 +565,7 @@ static void __exit
 fs3270_exit(void)
 {
 	raw3270_unregister_notifier(&fs3270_notifier);
+	device_destroy(class3270, MKDEV(IBM_FS3270_MAJOR, 0));
 	__unregister_chrdev(IBM_FS3270_MAJOR, 0, 1, "fs3270");
 }
 

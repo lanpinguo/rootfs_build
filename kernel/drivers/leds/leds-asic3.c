@@ -1,13 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  *  Copyright (C) 2011 Paul Parsons <lost.distance@yahoo.com>
- *
- *  This program is free software; you can redistribute it and/or modify
- *  it under the terms of the GNU General Public License version 2 as
- *  published by the Free Software Foundation.
  */
 
 #include <linux/kernel.h>
-#include <linux/init.h>
 #include <linux/platform_device.h>
 #include <linux/leds.h>
 #include <linux/slab.h>
@@ -94,7 +90,7 @@ static int blink_set(struct led_classdev *cdev,
 
 static int asic3_led_probe(struct platform_device *pdev)
 {
-	struct asic3_led *led = pdev->dev.platform_data;
+	struct asic3_led *led = dev_get_platdata(&pdev->dev);
 	int ret;
 
 	ret = mfd_cell_enable(pdev);
@@ -127,7 +123,7 @@ out:
 
 static int asic3_led_remove(struct platform_device *pdev)
 {
-	struct asic3_led *led = pdev->dev.platform_data;
+	struct asic3_led *led = dev_get_platdata(&pdev->dev);
 
 	led_classdev_unregister(led->cdev);
 
@@ -169,7 +165,6 @@ static struct platform_driver asic3_led_driver = {
 	.remove		= asic3_led_remove,
 	.driver		= {
 		.name	= "leds-asic3",
-		.owner	= THIS_MODULE,
 		.pm	= &asic3_led_pm_ops,
 	},
 };

@@ -1,9 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * I2C bus driver for CSR SiRFprimaII
  *
  * Copyright (c) 2011 Cambridge Silicon Radio Limited, a CSR plc group company.
- *
- * Licensed under GPLv2 or later.
  */
 
 #include <linux/interrupt.h>
@@ -12,7 +11,6 @@
 #include <linux/slab.h>
 #include <linux/platform_device.h>
 #include <linux/i2c.h>
-#include <linux/of_i2c.h>
 #include <linux/clk.h>
 #include <linux/err.h>
 #include <linux/io.h>
@@ -64,7 +62,8 @@
 #define SIRFSOC_I2C_STOP		BIT(6)
 #define SIRFSOC_I2C_START		BIT(7)
 
-#define SIRFSOC_I2C_DEFAULT_SPEED 100000
+#define SIRFSOC_I2C_ERR_NOACK      1
+#define SIRFSOC_I2C_ERR_TIMEOUT    2
 
 struct sirfsoc_i2c {
 	void __iomem *base;
@@ -143,13 +142,23 @@ static irqreturn_t i2c_sirfsoc_irq(int irq, void *dev_id)
 
 	if (i2c_stat & SIRFSOC_I2C_STAT_ERR) {
 		/* Error conditions */
-		siic->err_status = 1;
+		siic->err_status = SIRFSOC_I2C_ERR_NOACK;
 		writel(SIRFSOC_I2C_STAT_ERR, siic->base + SIRFSOC_I2C_STATUS);
 
 		if (i2c_stat & SIRFSOC_I2C_STAT_NACK)
-			dev_err(&siic->adapter.dev, "ACK not received\n");
+			dev_dbg(&siic->adapter.dev, "ACK not received\n");
 		else
 			dev_err(&siic->adapter.dev, "I2C error\n");
+
+		/*
+		 * Due to hardware ANOMALY, we need to reset I2C earlier after
+		 * we get NOACK while accessing non-existing clients, otherwise
+		 * we will get errors even we access existing clients later
+		 */
+		writel(readl(siic->base + SIRFSOC_I2C_CTRL) | SIRFSOC_I2C_RESET,
+				siic->base + SIRFSOC_I2C_CTRL);
+		while (readl(siic->base + SIRFSOC_I2C_CTRL) & SIRFSOC_I2C_RESET)
+			cpu_relax();
 
 		complete(&siic->done);
 	} else if (i2c_stat & SIRFSOC_I2C_STAT_CMD_DONE) {
@@ -179,9 +188,11 @@ static void i2c_sirfsoc_set_address(struct sirfsoc_i2c *siic,
 
 	writel(regval, siic->base + SIRFSOC_I2C_CMD(siic->cmd_ptr++));
 
-	addr = msg->addr << 1;	/* Generate address */
-	if (msg->flags & I2C_M_RD)
-		addr |= 1;
+	addr = i2c_8bit_addr_from_msg(msg);
+
+	/* Reverse direction bit */
+	if (msg->flags & I2C_M_REV_DIR_ADDR)
+		addr ^= 1;
 
 	writel(addr, siic->base + SIRFSOC_I2C_CMD(siic->cmd_ptr++));
 }
@@ -191,7 +202,6 @@ static int i2c_sirfsoc_xfer_msg(struct sirfsoc_i2c *siic, struct i2c_msg *msg)
 	u32 regval = readl(siic->base + SIRFSOC_I2C_CTRL);
 	/* timeout waiting for the xfer to finish or fail */
 	int timeout = msecs_to_jiffies((msg->len + 1) * 50);
-	int ret = 0;
 
 	i2c_sirfsoc_set_address(siic, msg);
 
@@ -200,7 +210,7 @@ static int i2c_sirfsoc_xfer_msg(struct sirfsoc_i2c *siic, struct i2c_msg *msg)
 	i2c_sirfsoc_queue_cmd(siic);
 
 	if (wait_for_completion_timeout(&siic->done, timeout) == 0) {
-		siic->err_status = 1;
+		siic->err_status = SIRFSOC_I2C_ERR_TIMEOUT;
 		dev_err(&siic->adapter.dev, "Transfer timeout\n");
 	}
 
@@ -208,16 +218,14 @@ static int i2c_sirfsoc_xfer_msg(struct sirfsoc_i2c *siic, struct i2c_msg *msg)
 		siic->base + SIRFSOC_I2C_CTRL);
 	writel(0, siic->base + SIRFSOC_I2C_CMD_START);
 
-	if (siic->err_status) {
+	/* i2c control doesn't response, reset it */
+	if (siic->err_status == SIRFSOC_I2C_ERR_TIMEOUT) {
 		writel(readl(siic->base + SIRFSOC_I2C_CTRL) | SIRFSOC_I2C_RESET,
 			siic->base + SIRFSOC_I2C_CTRL);
 		while (readl(siic->base + SIRFSOC_I2C_CTRL) & SIRFSOC_I2C_RESET)
 			cpu_relax();
-
-		ret = -EIO;
 	}
-
-	return ret;
+	return siic->err_status ? -EAGAIN : 0;
 }
 
 static u32 i2c_sirfsoc_func(struct i2c_adapter *adap)
@@ -263,7 +271,6 @@ static int i2c_sirfsoc_probe(struct platform_device *pdev)
 {
 	struct sirfsoc_i2c *siic;
 	struct i2c_adapter *adap;
-	struct resource *mem_res;
 	struct clk *clk;
 	int bitrate;
 	int ctrl_speed;
@@ -295,15 +302,13 @@ static int i2c_sirfsoc_probe(struct platform_device *pdev)
 
 	siic = devm_kzalloc(&pdev->dev, sizeof(*siic), GFP_KERNEL);
 	if (!siic) {
-		dev_err(&pdev->dev, "Can't allocate driver data\n");
 		err = -ENOMEM;
 		goto out;
 	}
 	adap = &siic->adapter;
-	adap->class = I2C_CLASS_HWMON;
+	adap->class = I2C_CLASS_DEPRECATED;
 
-	mem_res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	siic->base = devm_ioremap_resource(&pdev->dev, mem_res);
+	siic->base = devm_platform_ioremap_resource(pdev, 0);
 	if (IS_ERR(siic->base)) {
 		err = PTR_ERR(siic->base);
 		goto out;
@@ -321,6 +326,7 @@ static int i2c_sirfsoc_probe(struct platform_device *pdev)
 
 	adap->algo = &i2c_sirfsoc_algo;
 	adap->algo_data = siic;
+	adap->retries = 3;
 
 	adap->dev.of_node = pdev->dev.of_node;
 	adap->dev.parent = &pdev->dev;
@@ -331,7 +337,7 @@ static int i2c_sirfsoc_probe(struct platform_device *pdev)
 	platform_set_drvdata(pdev, adap);
 	init_completion(&siic->done);
 
-	/* Controller Initalisation */
+	/* Controller initialisation */
 
 	writel(SIRFSOC_I2C_RESET, siic->base + SIRFSOC_I2C_CTRL);
 	while (readl(siic->base + SIRFSOC_I2C_CTRL) & SIRFSOC_I2C_RESET)
@@ -344,13 +350,31 @@ static int i2c_sirfsoc_probe(struct platform_device *pdev)
 	err = of_property_read_u32(pdev->dev.of_node,
 		"clock-frequency", &bitrate);
 	if (err < 0)
-		bitrate = SIRFSOC_I2C_DEFAULT_SPEED;
+		bitrate = I2C_MAX_STANDARD_MODE_FREQ;
 
-	if (bitrate < 100000)
-		regval =
-			(2 * ctrl_speed) / (2 * bitrate * 11);
-	else
+	/*
+	 * Due to some hardware design issues, we need to tune the formula.
+	 * Since i2c is open drain interface that allows the slave to
+	 * stall the transaction by holding the SCL line at '0', the RTL
+	 * implementation is waiting for SCL feedback from the pin after
+	 * setting it to High-Z ('1'). This wait adds to the high-time
+	 * interval counter few cycles of the input synchronization
+	 * (depending on the SCL_FILTER_REG field), and also the time it
+	 * takes for the board pull-up resistor to rise the SCL line.
+	 * For slow SCL settings these additions are negligible,
+	 * but they start to affect the speed when clock is set to faster
+	 * frequencies.
+	 * Through the actual tests, use the different user_div value(which
+	 * in the divider formula 'Fio / (Fi2c * user_div)') to adapt
+	 * the different ranges of i2c bus clock frequency, to make the SCL
+	 * more accurate.
+	 */
+	if (bitrate <= 30000)
 		regval = ctrl_speed / (bitrate * 5);
+	else if (bitrate > 30000 && bitrate <= 280000)
+		regval = (2 * ctrl_speed) / (bitrate * 11);
+	else
+		regval = ctrl_speed / (bitrate * 6);
 
 	writel(regval, siic->base + SIRFSOC_I2C_CLK_CTRL);
 	if (regval > 0xFF)
@@ -359,14 +383,10 @@ static int i2c_sirfsoc_probe(struct platform_device *pdev)
 		writel(regval, siic->base + SIRFSOC_I2C_SDA_DELAY);
 
 	err = i2c_add_numbered_adapter(adap);
-	if (err < 0) {
-		dev_err(&pdev->dev, "Can't add new i2c adapter\n");
+	if (err < 0)
 		goto out;
-	}
 
 	clk_disable(clk);
-
-	of_i2c_register_devices(adap);
 
 	dev_info(&pdev->dev, " I2C adapter ready to operate\n");
 
@@ -397,8 +417,7 @@ static int i2c_sirfsoc_remove(struct platform_device *pdev)
 #ifdef CONFIG_PM
 static int i2c_sirfsoc_suspend(struct device *dev)
 {
-	struct platform_device *pdev = to_platform_device(dev);
-	struct i2c_adapter *adapter = platform_get_drvdata(pdev);
+	struct i2c_adapter *adapter = dev_get_drvdata(dev);
 	struct sirfsoc_i2c *siic = adapter->algo_data;
 
 	clk_enable(siic->clk);
@@ -410,12 +429,13 @@ static int i2c_sirfsoc_suspend(struct device *dev)
 
 static int i2c_sirfsoc_resume(struct device *dev)
 {
-	struct platform_device *pdev = to_platform_device(dev);
-	struct i2c_adapter *adapter = platform_get_drvdata(pdev);
+	struct i2c_adapter *adapter = dev_get_drvdata(dev);
 	struct sirfsoc_i2c *siic = adapter->algo_data;
 
 	clk_enable(siic->clk);
 	writel(SIRFSOC_I2C_RESET, siic->base + SIRFSOC_I2C_CTRL);
+	while (readl(siic->base + SIRFSOC_I2C_CTRL) & SIRFSOC_I2C_RESET)
+		cpu_relax();
 	writel(SIRFSOC_I2C_CORE_EN | SIRFSOC_I2C_MASTER_MODE,
 		siic->base + SIRFSOC_I2C_CTRL);
 	writel(siic->clk_div, siic->base + SIRFSOC_I2C_CLK_CTRL);
@@ -439,7 +459,6 @@ MODULE_DEVICE_TABLE(of, sirfsoc_i2c_of_match);
 static struct platform_driver i2c_sirfsoc_driver = {
 	.driver = {
 		.name = "sirfsoc_i2c",
-		.owner = THIS_MODULE,
 #ifdef CONFIG_PM
 		.pm = &i2c_sirfsoc_pm_ops,
 #endif
@@ -451,6 +470,6 @@ static struct platform_driver i2c_sirfsoc_driver = {
 module_platform_driver(i2c_sirfsoc_driver);
 
 MODULE_DESCRIPTION("SiRF SoC I2C master controller driver");
-MODULE_AUTHOR("Zhiwu Song <Zhiwu.Song@csr.com>, "
-	"Xiangzhen Ye <Xiangzhen.Ye@csr.com>");
+MODULE_AUTHOR("Zhiwu Song <Zhiwu.Song@csr.com>");
+MODULE_AUTHOR("Xiangzhen Ye <Xiangzhen.Ye@csr.com>");
 MODULE_LICENSE("GPL v2");

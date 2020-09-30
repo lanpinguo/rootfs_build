@@ -121,24 +121,11 @@
  * operate correctly if the internal data cache refill buffer is empty.	 These
  * CACHE instructions should be separated from any potential data cache miss
  * by a load instruction to an uncached address to empty the response buffer."
- * (Revision 2.0 device errata from IDT available on http://www.idt.com/
+ * (Revision 2.0 device errata from IDT available on https://www.idt.com/
  * in .pdf format.)
  */
 #ifndef R4600_V2_HIT_CACHEOP_WAR
 #error Check setting of R4600_V2_HIT_CACHEOP_WAR for your platform
-#endif
-
-/*
- * When an interrupt happens on a CP0 register read instruction, CPU may
- * lock up or read corrupted values of CP0 registers after it enters
- * the exception handler.
- *
- * This workaround makes sure that we read a "safe" CP0 register as the
- * first thing in the exception handler, which breaks one of the
- * pre-conditions for this problem.
- */
-#ifndef R5432_CP0_INTERRUPT_WAR
-#error Check setting of R5432_CP0_INTERRUPT_WAR for your platform
 #endif
 
 /*

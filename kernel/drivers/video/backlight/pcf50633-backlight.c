@@ -1,16 +1,7 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *  Copyright (C) 2009-2010, Lars-Peter Clausen <lars@metafoo.de>
  *      PCF50633 backlight device driver
- *
- *  This program is free software; you can redistribute	 it and/or modify it
- *  under  the terms of	 the GNU General  Public License as published by the
- *  Free Software Foundation;  either version 2 of the	License, or (at your
- *  option) any later version.
- *
- *  You should have received a copy of the  GNU General Public License along
- *  with this program; if not, write  to the Free Software Foundation, Inc.,
- *  675 Mass Ave, Cambridge, MA 02139, USA.
- *
  */
 
 #include <linux/kernel.h>
@@ -90,6 +81,7 @@ static int pcf50633_bl_update_status(struct backlight_device *bl)
 static int pcf50633_bl_get_brightness(struct backlight_device *bl)
 {
 	struct pcf50633_bl *pcf_bl = bl_get_data(bl);
+
 	return pcf_bl->brightness;
 }
 
@@ -103,7 +95,7 @@ static int pcf50633_bl_probe(struct platform_device *pdev)
 {
 	struct pcf50633_bl *pcf_bl;
 	struct device *parent = pdev->dev.parent;
-	struct pcf50633_platform_data *pcf50633_data = parent->platform_data;
+	struct pcf50633_platform_data *pcf50633_data = dev_get_platdata(parent);
 	struct pcf50633_bl_platform_data *pdata = pcf50633_data->backlight_data;
 	struct backlight_properties bl_props;
 
@@ -126,7 +118,8 @@ static int pcf50633_bl_probe(struct platform_device *pdev)
 
 	pcf_bl->pcf = dev_to_pcf50633(pdev->dev.parent);
 
-	pcf_bl->bl = backlight_device_register(pdev->name, &pdev->dev, pcf_bl,
+	pcf_bl->bl = devm_backlight_device_register(&pdev->dev, pdev->name,
+						&pdev->dev, pcf_bl,
 						&pcf50633_bl_ops, &bl_props);
 
 	if (IS_ERR(pcf_bl->bl))
@@ -147,20 +140,8 @@ static int pcf50633_bl_probe(struct platform_device *pdev)
 	return 0;
 }
 
-static int pcf50633_bl_remove(struct platform_device *pdev)
-{
-	struct pcf50633_bl *pcf_bl = platform_get_drvdata(pdev);
-
-	backlight_device_unregister(pcf_bl->bl);
-
-	platform_set_drvdata(pdev, NULL);
-
-	return 0;
-}
-
 static struct platform_driver pcf50633_bl_driver = {
 	.probe =	pcf50633_bl_probe,
-	.remove =	pcf50633_bl_remove,
 	.driver = {
 		.name = "pcf50633-backlight",
 	},

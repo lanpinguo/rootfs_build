@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *  platform.c: platform support for PNX833X.
  *
@@ -7,20 +8,6 @@
  *
  *  Based on software written by:
  *	Nikita Youshchenko <yoush@debian.org>, based on PNX8550 code.
- *
- *  This program is free software; you can redistribute it and/or modify
- *  it under the terms of the GNU General Public License as published by
- *  the Free Software Foundation; either version 2 of the License, or
- *  (at your option) any later version.
- *
- *  This program is distributed in the hope that it will be useful,
- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *  GNU General Public License for more details.
- *
- *  You should have received a copy of the GNU General Public License
- *  along with this program; if not, write to the Free Software
- *  Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
 #include <linux/device.h>
 #include <linux/dma-mapping.h>
@@ -30,13 +17,7 @@
 #include <linux/resource.h>
 #include <linux/serial.h>
 #include <linux/serial_pnx8xxx.h>
-#include <linux/mtd/nand.h>
-#include <linux/mtd/partitions.h>
-
-#ifdef CONFIG_I2C_PNX0105
-/* Until i2c driver available in kernel.*/
-#include <linux/i2c-pnx0105.h>
-#endif
+#include <linux/mtd/platnand.h>
 
 #include <irq.h>
 #include <irq-mapping.h>
@@ -134,70 +115,6 @@ static struct platform_device pnx833x_usb_ehci_device = {
 	.resource	= pnx833x_usb_ehci_resources,
 };
 
-#ifdef CONFIG_I2C_PNX0105
-static struct resource pnx833x_i2c0_resources[] = {
-	{
-		.start		= PNX833X_I2C0_PORTS_START,
-		.end		= PNX833X_I2C0_PORTS_END,
-		.flags		= IORESOURCE_MEM,
-	},
-	{
-		.start		= PNX833X_PIC_I2C0_INT,
-		.end		= PNX833X_PIC_I2C0_INT,
-		.flags		= IORESOURCE_IRQ,
-	},
-};
-
-static struct resource pnx833x_i2c1_resources[] = {
-	{
-		.start		= PNX833X_I2C1_PORTS_START,
-		.end		= PNX833X_I2C1_PORTS_END,
-		.flags		= IORESOURCE_MEM,
-	},
-	{
-		.start		= PNX833X_PIC_I2C1_INT,
-		.end		= PNX833X_PIC_I2C1_INT,
-		.flags		= IORESOURCE_IRQ,
-	},
-};
-
-static struct i2c_pnx0105_dev pnx833x_i2c_dev[] = {
-	{
-		.base = PNX833X_I2C0_PORTS_START,
-		.irq = -1, /* should be PNX833X_PIC_I2C0_INT but polling is faster */
-		.clock = 6,	/* 0 == 400 kHz, 4 == 100 kHz(Maximum HDMI), 6 = 50kHz(Preferred HDCP) */
-		.bus_addr = 0,	/* no slave support */
-	},
-	{
-		.base = PNX833X_I2C1_PORTS_START,
-		.irq = -1,	/* on high freq, polling is faster */
-		/*.irq = PNX833X_PIC_I2C1_INT,*/
-		.clock = 4,	/* 0 == 400 kHz, 4 == 100 kHz. 100 kHz seems a safe default for now */
-		.bus_addr = 0,	/* no slave support */
-	},
-};
-
-static struct platform_device pnx833x_i2c0_device = {
-	.name		= "i2c-pnx0105",
-	.id		= 0,
-	.dev = {
-		.platform_data = &pnx833x_i2c_dev[0],
-	},
-	.num_resources	= ARRAY_SIZE(pnx833x_i2c0_resources),
-	.resource	= pnx833x_i2c0_resources,
-};
-
-static struct platform_device pnx833x_i2c1_device = {
-	.name		= "i2c-pnx0105",
-	.id		= 1,
-	.dev = {
-		.platform_data = &pnx833x_i2c_dev[1],
-	},
-	.num_resources	= ARRAY_SIZE(pnx833x_i2c1_resources),
-	.resource	= pnx833x_i2c1_resources,
-};
-#endif
-
 static u64 ethernet_dmamask = DMA_BIT_MASK(32);
 
 static struct resource pnx833x_ethernet_resources[] = {
@@ -206,11 +123,13 @@ static struct resource pnx833x_ethernet_resources[] = {
 		.end   = PNX8335_IP3902_PORTS_END,
 		.flags = IORESOURCE_MEM,
 	},
+#ifdef CONFIG_SOC_PNX8335
 	[1] = {
 		.start = PNX8335_PIC_ETHERNET_INT,
 		.end   = PNX8335_PIC_ETHERNET_INT,
 		.flags = IORESOURCE_IRQ,
 	},
+#endif
 };
 
 static struct platform_device pnx833x_ethernet_device = {
@@ -245,10 +164,9 @@ static struct platform_device pnx833x_sata_device = {
 };
 
 static void
-pnx833x_flash_nand_cmd_ctrl(struct mtd_info *mtd, int cmd, unsigned int ctrl)
+pnx833x_flash_nand_cmd_ctrl(struct nand_chip *this, int cmd, unsigned int ctrl)
 {
-	struct nand_chip *this = mtd->priv;
-	unsigned long nandaddr = (unsigned long)this->IO_ADDR_W;
+	unsigned long nandaddr = (unsigned long)this->legacy.IO_ADDR_W;
 
 	if (cmd == NAND_CMD_NONE)
 		return;
@@ -292,10 +210,6 @@ static struct platform_device pnx833x_flash_nand = {
 static struct platform_device *pnx833x_platform_devices[] __initdata = {
 	&pnx833x_uart_device,
 	&pnx833x_usb_ehci_device,
-#ifdef CONFIG_I2C_PNX0105
-	&pnx833x_i2c0_device,
-	&pnx833x_i2c1_device,
-#endif
 	&pnx833x_ethernet_device,
 	&pnx833x_sata_device,
 	&pnx833x_flash_nand,
@@ -303,12 +217,8 @@ static struct platform_device *pnx833x_platform_devices[] __initdata = {
 
 static int __init pnx833x_platform_init(void)
 {
-	int res;
-
-	res = platform_add_devices(pnx833x_platform_devices,
-				   ARRAY_SIZE(pnx833x_platform_devices));
-
-	return res;
+	return platform_add_devices(pnx833x_platform_devices,
+				    ARRAY_SIZE(pnx833x_platform_devices));
 }
 
 arch_initcall(pnx833x_platform_init);
