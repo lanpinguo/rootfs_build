@@ -114,11 +114,3 @@
 	cs-gpios = <&gpio 56 GPIO_ACTIVE_LOW>;
 	status = "okay";
 };
-
-&gpu_2d {
-	status = "okay";
-};
-
-&gpu_3d {
-	status = "okay";
-};

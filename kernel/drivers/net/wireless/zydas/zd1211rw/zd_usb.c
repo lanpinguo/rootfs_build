@@ -600,7 +600,9 @@ void zd_usb_disable_int(struct zd_usb *usb)
 	dev_dbg_f(zd_usb_dev(usb), "urb %p killed\n", urb);
 	usb_free_urb(urb);
 
-	usb_free_coherent(udev, USB_MAX_EP_INT_BUFFER, buffer, buffer_dma);
+	if (buffer)
+		usb_free_coherent(udev, USB_MAX_EP_INT_BUFFER,
+				  buffer, buffer_dma);
 }
 
 static void handle_rx_packet(struct zd_usb *usb, const u8 *buffer,

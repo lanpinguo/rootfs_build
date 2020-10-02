@@ -112,14 +112,9 @@ static int gpio_charger_get_irq(struct device *dev, void *dev_id,
 	return irq;
 }
 
-/*
- * The entries will be overwritten by driver's probe routine depending
- * on the available features. This list ensures, that the array is big
- * enough for all optional features.
- */
 static enum power_supply_property gpio_charger_properties[] = {
 	POWER_SUPPLY_PROP_ONLINE,
-	POWER_SUPPLY_PROP_STATUS,
+	POWER_SUPPLY_PROP_STATUS /* Must always be last in the array. */
 };
 
 static int gpio_charger_probe(struct platform_device *pdev)
@@ -133,7 +128,6 @@ static int gpio_charger_probe(struct platform_device *pdev)
 	int charge_status_irq;
 	unsigned long flags;
 	int ret;
-	int num_props = 0;
 
 	if (!pdata && !dev->of_node) {
 		dev_err(dev, "No platform data\n");
@@ -148,13 +142,13 @@ static int gpio_charger_probe(struct platform_device *pdev)
 	 * This will fetch a GPIO descriptor from device tree, ACPI or
 	 * boardfile descriptor tables. It's good to try this first.
 	 */
-	gpio_charger->gpiod = devm_gpiod_get_optional(dev, NULL, GPIOD_IN);
+	gpio_charger->gpiod = devm_gpiod_get(dev, NULL, GPIOD_IN);
 
 	/*
-	 * Fallback to legacy platform data method, if no GPIO is specified
-	 * using boardfile descriptor tables.
+	 * If this fails and we're not using device tree, try the
+	 * legacy platform data method.
 	 */
-	if (!gpio_charger->gpiod && pdata) {
+	if (IS_ERR(gpio_charger->gpiod) && !dev->of_node) {
 		/* Non-DT: use legacy GPIO numbers */
 		if (!gpio_is_valid(pdata->gpio)) {
 			dev_err(dev, "Invalid gpio pin in pdata\n");
@@ -179,23 +173,17 @@ static int gpio_charger_probe(struct platform_device *pdev)
 		return PTR_ERR(gpio_charger->gpiod);
 	}
 
-	if (gpio_charger->gpiod) {
-		gpio_charger_properties[num_props] = POWER_SUPPLY_PROP_ONLINE;
-		num_props++;
-	}
-
 	charge_status = devm_gpiod_get_optional(dev, "charge-status", GPIOD_IN);
-	if (IS_ERR(charge_status))
-		return PTR_ERR(charge_status);
-	if (charge_status) {
-		gpio_charger->charge_status = charge_status;
-		gpio_charger_properties[num_props] = POWER_SUPPLY_PROP_STATUS;
-		num_props++;
-	}
+	gpio_charger->charge_status = charge_status;
+	if (IS_ERR(gpio_charger->charge_status))
+		return PTR_ERR(gpio_charger->charge_status);
 
 	charger_desc = &gpio_charger->charger_desc;
 	charger_desc->properties = gpio_charger_properties;
-	charger_desc->num_properties = num_props;
+	charger_desc->num_properties = ARRAY_SIZE(gpio_charger_properties);
+	/* Remove POWER_SUPPLY_PROP_STATUS from the supported properties. */
+	if (!gpio_charger->charge_status)
+		charger_desc->num_properties -= 1;
 	charger_desc->get_property = gpio_charger_get_property;
 
 	psy_cfg.of_node = dev->of_node;
@@ -281,6 +269,6 @@ static struct platform_driver gpio_charger_driver = {
 module_platform_driver(gpio_charger_driver);
 
 MODULE_AUTHOR("Lars-Peter Clausen <lars@metafoo.de>");
-MODULE_DESCRIPTION("Driver for chargers only communicating via GPIO(s)");
+MODULE_DESCRIPTION("Driver for chargers which report their online status through a GPIO");
 MODULE_LICENSE("GPL");
 MODULE_ALIAS("platform:gpio-charger");

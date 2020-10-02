@@ -563,8 +563,7 @@ xfs_ag_get_geometry(
 	error = xfs_alloc_read_agf(mp, NULL, agno, 0, &agf_bp);
 	if (error)
 		goto out_agi;
-
-	pag = agi_bp->b_pag;
+	pag = xfs_perag_get(mp, agno);
 
 	/* Fill out form. */
 	memset(ageo, 0, sizeof(*ageo));
@@ -584,6 +583,7 @@ xfs_ag_get_geometry(
 	xfs_ag_geom_health(pag, ageo);
 
 	/* Release resources. */
+	xfs_perag_put(pag);
 	xfs_buf_relse(agf_bp);
 out_agi:
 	xfs_buf_relse(agi_bp);

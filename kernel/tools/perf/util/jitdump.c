@@ -26,7 +26,6 @@
 #include "jit.h"
 #include "jitdump.h"
 #include "genelf.h"
-#include "thread.h"
 
 #include <linux/ctype.h>
 #include <linux/zalloc.h>
@@ -750,28 +749,6 @@ jit_detect(char *mmap_name, pid_t pid)
 	return 0;
 }
 
-static void jit_add_pid(struct machine *machine, pid_t pid)
-{
-	struct thread *thread = machine__findnew_thread(machine, pid, pid);
-
-	if (!thread) {
-		pr_err("%s: thread %d not found or created\n", __func__, pid);
-		return;
-	}
-
-	thread->priv = (void *)1;
-}
-
-static bool jit_has_pid(struct machine *machine, pid_t pid)
-{
-	struct thread *thread = machine__find_thread(machine, pid, pid);
-
-	if (!thread)
-		return 0;
-
-	return (bool)thread->priv;
-}
-
 int
 jit_process(struct perf_session *session,
 	    struct perf_data *output,
@@ -787,13 +764,8 @@ jit_process(struct perf_session *session,
 	/*
 	 * first, detect marker mmap (i.e., the jitdump mmap)
 	 */
-	if (jit_detect(filename, pid)) {
-		// Strip //anon* mmaps if we processed a jitdump for this pid
-		if (jit_has_pid(machine, pid) && (strncmp(filename, "//anon", 6) == 0))
-			return 1;
-
+	if (jit_detect(filename, pid))
 		return 0;
-	}
 
 	memset(&jd, 0, sizeof(jd));
 
@@ -812,7 +784,6 @@ jit_process(struct perf_session *session,
 
 	ret = jit_inject(&jd, filename);
 	if (!ret) {
-		jit_add_pid(machine, pid);
 		*nbytes = jd.bytes_written;
 		ret = 1;
 	}

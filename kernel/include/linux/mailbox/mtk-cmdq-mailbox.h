@@ -17,7 +17,6 @@
 #define CMDQ_JUMP_PASS			CMDQ_INST_SIZE
 
 #define CMDQ_WFE_UPDATE			BIT(31)
-#define CMDQ_WFE_UPDATE_VALUE		BIT(16)
 #define CMDQ_WFE_WAIT			BIT(15)
 #define CMDQ_WFE_WAIT_VALUE		0x1
 
@@ -60,7 +59,6 @@ enum cmdq_code {
 	CMDQ_CODE_JUMP = 0x10,
 	CMDQ_CODE_WFE = 0x20,
 	CMDQ_CODE_EOC = 0x40,
-	CMDQ_CODE_LOGIC = 0xa0,
 };
 
 enum cmdq_cb_status {
@@ -89,7 +87,5 @@ struct cmdq_pkt {
 	struct cmdq_task_cb	async_cb;
 	void			*cl;
 };
-
-u8 cmdq_get_shift_pa(struct mbox_chan *chan);
 
 #endif /* __MTK_CMDQ_MAILBOX_H__ */

@@ -1,6 +1,7 @@
-// SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
+// SPDX-License-Identifier: GPL-2.0
 // Copyright (c) 2020 Facebook
-#include <vmlinux.h>
+#include "profiler.h"
+#include <linux/bpf.h>
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_tracing.h>
 
@@ -115,4 +116,4 @@ int BPF_PROG(fexit_XXX)
 	return 0;
 }
 
-char LICENSE[] SEC("license") = "Dual BSD/GPL";
+char LICENSE[] SEC("license") = "GPL";

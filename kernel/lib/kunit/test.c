@@ -8,7 +8,6 @@
 
 #include <kunit/test.h>
 #include <linux/kernel.h>
-#include <linux/kref.h>
 #include <linux/sched/debug.h>
 
 #include "debugfs.h"
@@ -407,69 +406,11 @@ void __kunit_test_suites_exit(struct kunit_suite **suites)
 }
 EXPORT_SYMBOL_GPL(__kunit_test_suites_exit);
 
-/*
- * Used for static resources and when a kunit_resource * has been created by
- * kunit_alloc_resource().  When an init function is supplied, @data is passed
- * into the init function; otherwise, we simply set the resource data field to
- * the data value passed in.
- */
-int kunit_add_resource(struct kunit *test,
-		       kunit_resource_init_t init,
-		       kunit_resource_free_t free,
-		       struct kunit_resource *res,
-		       void *data)
-{
-	int ret = 0;
-
-	res->free = free;
-	kref_init(&res->refcount);
-
-	if (init) {
-		ret = init(res, data);
-		if (ret)
-			return ret;
-	} else {
-		res->data = data;
-	}
-
-	spin_lock(&test->lock);
-	list_add_tail(&res->node, &test->resources);
-	/* refcount for list is established by kref_init() */
-	spin_unlock(&test->lock);
-
-	return ret;
-}
-EXPORT_SYMBOL_GPL(kunit_add_resource);
-
-int kunit_add_named_resource(struct kunit *test,
-			     kunit_resource_init_t init,
-			     kunit_resource_free_t free,
-			     struct kunit_resource *res,
-			     const char *name,
-			     void *data)
-{
-	struct kunit_resource *existing;
-
-	if (!name)
-		return -EINVAL;
-
-	existing = kunit_find_named_resource(test, name);
-	if (existing) {
-		kunit_put_resource(existing);
-		return -EEXIST;
-	}
-
-	res->name = name;
-
-	return kunit_add_resource(test, init, free, res, data);
-}
-EXPORT_SYMBOL_GPL(kunit_add_named_resource);
-
 struct kunit_resource *kunit_alloc_and_get_resource(struct kunit *test,
 						    kunit_resource_init_t init,
 						    kunit_resource_free_t free,
 						    gfp_t internal_gfp,
-						    void *data)
+						    void *context)
 {
 	struct kunit_resource *res;
 	int ret;
@@ -478,45 +419,77 @@ struct kunit_resource *kunit_alloc_and_get_resource(struct kunit *test,
 	if (!res)
 		return NULL;
 
-	ret = kunit_add_resource(test, init, free, res, data);
-	if (!ret) {
-		/*
-		 * bump refcount for get; kunit_resource_put() should be called
-		 * when done.
-		 */
-		kunit_get_resource(res);
-		return res;
-	}
-	return NULL;
+	ret = init(res, context);
+	if (ret)
+		return NULL;
+
+	res->free = free;
+	spin_lock(&test->lock);
+	list_add_tail(&res->node, &test->resources);
+	spin_unlock(&test->lock);
+
+	return res;
 }
 EXPORT_SYMBOL_GPL(kunit_alloc_and_get_resource);
 
-void kunit_remove_resource(struct kunit *test, struct kunit_resource *res)
+static void kunit_resource_free(struct kunit *test, struct kunit_resource *res)
 {
-	spin_lock(&test->lock);
-	list_del(&res->node);
-	spin_unlock(&test->lock);
-	kunit_put_resource(res);
+	res->free(res);
+	kfree(res);
 }
-EXPORT_SYMBOL_GPL(kunit_remove_resource);
 
-int kunit_destroy_resource(struct kunit *test, kunit_resource_match_t match,
+static struct kunit_resource *kunit_resource_find(struct kunit *test,
+						  kunit_resource_match_t match,
+						  kunit_resource_free_t free,
+						  void *match_data)
+{
+	struct kunit_resource *resource;
+
+	lockdep_assert_held(&test->lock);
+
+	list_for_each_entry_reverse(resource, &test->resources, node) {
+		if (resource->free != free)
+			continue;
+		if (match(test, resource->allocation, match_data))
+			return resource;
+	}
+
+	return NULL;
+}
+
+static struct kunit_resource *kunit_resource_remove(
+		struct kunit *test,
+		kunit_resource_match_t match,
+		kunit_resource_free_t free,
+		void *match_data)
+{
+	struct kunit_resource *resource;
+
+	spin_lock(&test->lock);
+	resource = kunit_resource_find(test, match, free, match_data);
+	if (resource)
+		list_del(&resource->node);
+	spin_unlock(&test->lock);
+
+	return resource;
+}
+
+int kunit_resource_destroy(struct kunit *test,
+			   kunit_resource_match_t match,
+			   kunit_resource_free_t free,
 			   void *match_data)
 {
-	struct kunit_resource *res = kunit_find_resource(test, match,
-							 match_data);
+	struct kunit_resource *resource;
 
-	if (!res)
+	resource = kunit_resource_remove(test, match, free, match_data);
+
+	if (!resource)
 		return -ENOENT;
 
-	kunit_remove_resource(test, res);
-
-	/* We have a reference also via _find(); drop it. */
-	kunit_put_resource(res);
-
+	kunit_resource_free(test, resource);
 	return 0;
 }
-EXPORT_SYMBOL_GPL(kunit_destroy_resource);
+EXPORT_SYMBOL_GPL(kunit_resource_destroy);
 
 struct kunit_kmalloc_params {
 	size_t size;
@@ -527,8 +500,8 @@ static int kunit_kmalloc_init(struct kunit_resource *res, void *context)
 {
 	struct kunit_kmalloc_params *params = context;
 
-	res->data = kmalloc(params->size, params->gfp);
-	if (!res->data)
+	res->allocation = kmalloc(params->size, params->gfp);
+	if (!res->allocation)
 		return -ENOMEM;
 
 	return 0;
@@ -536,7 +509,7 @@ static int kunit_kmalloc_init(struct kunit_resource *res, void *context)
 
 static void kunit_kmalloc_free(struct kunit_resource *res)
 {
-	kfree(res->data);
+	kfree(res->allocation);
 }
 
 void *kunit_kmalloc(struct kunit *test, size_t size, gfp_t gfp)
@@ -556,25 +529,20 @@ EXPORT_SYMBOL_GPL(kunit_kmalloc);
 
 void kunit_kfree(struct kunit *test, const void *ptr)
 {
-	struct kunit_resource *res;
+	int rc;
 
-	res = kunit_find_resource(test, kunit_resource_instance_match,
-				  (void *)ptr);
+	rc = kunit_resource_destroy(test,
+				    kunit_resource_instance_match,
+				    kunit_kmalloc_free,
+				    (void *)ptr);
 
-	/*
-	 * Removing the resource from the list of resources drops the
-	 * reference count to 1; the final put will trigger the free.
-	 */
-	kunit_remove_resource(test, res);
-
-	kunit_put_resource(res);
-
+	WARN_ON(rc);
 }
 EXPORT_SYMBOL_GPL(kunit_kfree);
 
 void kunit_cleanup(struct kunit *test)
 {
-	struct kunit_resource *res;
+	struct kunit_resource *resource;
 
 	/*
 	 * test->resources is a stack - each allocation must be freed in the
@@ -591,16 +559,13 @@ void kunit_cleanup(struct kunit *test)
 			spin_unlock(&test->lock);
 			break;
 		}
-		res = list_last_entry(&test->resources,
-				      struct kunit_resource,
-				      node);
-		/*
-		 * Need to unlock here as a resource may remove another
-		 * resource, and this can't happen if the test->lock
-		 * is held.
-		 */
+		resource = list_last_entry(&test->resources,
+					   struct kunit_resource,
+					   node);
+		list_del(&resource->node);
 		spin_unlock(&test->lock);
-		kunit_remove_resource(test, res);
+
+		kunit_resource_free(test, resource);
 	}
 }
 EXPORT_SYMBOL_GPL(kunit_cleanup);

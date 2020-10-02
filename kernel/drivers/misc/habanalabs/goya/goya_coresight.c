@@ -6,9 +6,9 @@
  */
 
 #include "goyaP.h"
-#include "../include/goya/goya_coresight.h"
-#include "../include/goya/asic_reg/goya_regs.h"
-#include "../include/goya/asic_reg/goya_masks.h"
+#include "include/goya/goya_coresight.h"
+#include "include/goya/asic_reg/goya_regs.h"
+#include "include/goya/asic_reg/goya_masks.h"
 
 #include <uapi/misc/habanalabs.h>
 
@@ -232,7 +232,6 @@ static int goya_config_stm(struct hl_device *hdev,
 {
 	struct hl_debug_params_stm *input;
 	u64 base_reg;
-	u32 frequency;
 	int rc;
 
 	if (params->reg_idx >= ARRAY_SIZE(debug_stm_regs)) {
@@ -265,10 +264,7 @@ static int goya_config_stm(struct hl_device *hdev,
 		WREG32(base_reg + 0xE20, 0xFFFFFFFF);
 		WREG32(base_reg + 0xEF4, input->id);
 		WREG32(base_reg + 0xDF4, 0x80);
-		frequency = hdev->asic_prop.psoc_timestamp_frequency;
-		if (frequency == 0)
-			frequency = input->frequency;
-		WREG32(base_reg + 0xE8C, frequency);
+		WREG32(base_reg + 0xE8C, input->frequency);
 		WREG32(base_reg + 0xE90, 0x7FF);
 		WREG32(base_reg + 0xE80, 0x27 | (input->id << 16));
 	} else {
@@ -650,6 +646,7 @@ static int goya_config_spmu(struct hl_device *hdev,
 int goya_debug_coresight(struct hl_device *hdev, void *data)
 {
 	struct hl_debug_params *params = data;
+	u32 val;
 	int rc = 0;
 
 	switch (params->op) {
@@ -681,7 +678,7 @@ int goya_debug_coresight(struct hl_device *hdev, void *data)
 	}
 
 	/* Perform read from the device to flush all configuration */
-	RREG32(mmPCIE_DBI_DEVICE_ID_VENDOR_ID_REG);
+	val = RREG32(mmPCIE_DBI_DEVICE_ID_VENDOR_ID_REG);
 
 	return rc;
 }

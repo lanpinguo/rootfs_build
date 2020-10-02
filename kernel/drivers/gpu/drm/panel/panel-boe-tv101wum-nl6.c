@@ -594,6 +594,7 @@ static const struct drm_display_mode boe_tv101wum_nl6_default_mode = {
 	.vsync_start = 1920 + 10,
 	.vsync_end = 1920 + 10 + 14,
 	.vtotal = 1920 + 10 + 14 + 4,
+	.vrefresh = 60,
 };
 
 static const struct panel_desc boe_tv101wum_nl6_desc = {
@@ -621,6 +622,7 @@ static const struct drm_display_mode auo_kd101n80_45na_default_mode = {
 	.vsync_start = 1920 + 16,
 	.vsync_end = 1920 + 16 + 4,
 	.vtotal = 1920 + 16 + 4 + 16,
+	.vrefresh = 60,
 };
 
 static const struct panel_desc auo_kd101n80_45na_desc = {
@@ -648,6 +650,7 @@ static const struct drm_display_mode boe_tv101wum_n53_default_mode = {
 	.vsync_start = 1920 + 20,
 	.vsync_end = 1920 + 20 + 4,
 	.vtotal = 1920 + 20 + 4 + 10,
+	.vrefresh = 60,
 	.type = DRM_MODE_TYPE_DRIVER | DRM_MODE_TYPE_PREFERRED,
 };
 
@@ -675,6 +678,7 @@ static const struct drm_display_mode auo_b101uan08_3_default_mode = {
 	.vsync_start = 1920 + 34,
 	.vsync_end = 1920 + 34 + 2,
 	.vtotal = 1920 + 34 + 2 + 24,
+	.vrefresh = 60,
 	.type = DRM_MODE_TYPE_DRIVER | DRM_MODE_TYPE_PREFERRED,
 };
 
@@ -702,6 +706,7 @@ static const struct drm_display_mode boe_tv105wum_nw0_default_mode = {
 	.vsync_start = 1920 + 20,
 	.vsync_end = 1920 + 20 + 4,
 	.vtotal = 1920 + 20 + 4 + 10,
+	.vrefresh = 60,
 	.type = DRM_MODE_TYPE_DRIVER | DRM_MODE_TYPE_PREFERRED,
 };
 
@@ -729,7 +734,7 @@ static int boe_panel_get_modes(struct drm_panel *panel,
 	mode = drm_mode_duplicate(connector->dev, m);
 	if (!mode) {
 		dev_err(panel->dev, "failed to add mode %ux%u@%u\n",
-			m->hdisplay, m->vdisplay, drm_mode_vrefresh(m));
+			m->hdisplay, m->vdisplay, m->vrefresh);
 		return -ENOMEM;
 	}
 

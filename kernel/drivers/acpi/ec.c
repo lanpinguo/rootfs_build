@@ -2059,13 +2059,13 @@ static int param_get_event_clearing(char *buffer,
 {
 	switch (ec_event_clearing) {
 	case ACPI_EC_EVT_TIMING_STATUS:
-		return sprintf(buffer, "status\n");
+		return sprintf(buffer, "status");
 	case ACPI_EC_EVT_TIMING_QUERY:
-		return sprintf(buffer, "query\n");
+		return sprintf(buffer, "query");
 	case ACPI_EC_EVT_TIMING_EVENT:
-		return sprintf(buffer, "event\n");
+		return sprintf(buffer, "event");
 	default:
-		return sprintf(buffer, "invalid\n");
+		return sprintf(buffer, "invalid");
 	}
 	return 0;
 }

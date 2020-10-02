@@ -449,15 +449,15 @@ static bool jpeg_v2_5_is_idle(void *handle)
 static int jpeg_v2_5_wait_for_idle(void *handle)
 {
 	struct amdgpu_device *adev = (struct amdgpu_device *)handle;
-	int i, ret;
+	int i, ret = 0;
 
 	for (i = 0; i < adev->jpeg.num_jpeg_inst; ++i) {
 		if (adev->jpeg.harvest_config & (1 << i))
 			continue;
 
-		ret = SOC15_WAIT_ON_RREG(JPEG, i, mmUVD_JRBC_STATUS,
+		SOC15_WAIT_ON_RREG(JPEG, i, mmUVD_JRBC_STATUS,
 			UVD_JRBC_STATUS__RB_JOB_DONE_MASK,
-			UVD_JRBC_STATUS__RB_JOB_DONE_MASK);
+			UVD_JRBC_STATUS__RB_JOB_DONE_MASK, ret);
 		if (ret)
 			return ret;
 	}

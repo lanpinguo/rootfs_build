@@ -1422,9 +1422,11 @@ out_0:
 	return result;
 }
 
-static int __maybe_unused smsc9420_suspend(struct device *dev_d)
+#ifdef CONFIG_PM
+
+static int smsc9420_suspend(struct pci_dev *pdev, pm_message_t state)
 {
-	struct net_device *dev = dev_get_drvdata(dev_d);
+	struct net_device *dev = pci_get_drvdata(pdev);
 	struct smsc9420_pdata *pd = netdev_priv(dev);
 	u32 int_cfg;
 	ulong flags;
@@ -1449,21 +1451,34 @@ static int __maybe_unused smsc9420_suspend(struct device *dev_d)
 		netif_device_detach(dev);
 	}
 
-	device_wakeup_disable(dev_d);
+	pci_save_state(pdev);
+	pci_enable_wake(pdev, pci_choose_state(pdev, state), 0);
+	pci_disable_device(pdev);
+	pci_set_power_state(pdev, pci_choose_state(pdev, state));
 
 	return 0;
 }
 
-static int __maybe_unused smsc9420_resume(struct device *dev_d)
+static int smsc9420_resume(struct pci_dev *pdev)
 {
-	struct net_device *dev = dev_get_drvdata(dev_d);
+	struct net_device *dev = pci_get_drvdata(pdev);
+	struct smsc9420_pdata *pd = netdev_priv(dev);
 	int err;
 
-	pci_set_master(to_pci_dev(dev_d));
+	pci_set_power_state(pdev, PCI_D0);
+	pci_restore_state(pdev);
 
-	device_wakeup_disable(dev_d);
+	err = pci_enable_device(pdev);
+	if (err)
+		return err;
 
-	err = 0;
+	pci_set_master(pdev);
+
+	err = pci_enable_wake(pdev, PCI_D0, 0);
+	if (err)
+		netif_warn(pd, ifup, pd->dev, "pci_enable_wake failed: %d\n",
+			   err);
+
 	if (netif_running(dev)) {
 		/* FIXME: gross. It looks like ancient PM relic.*/
 		err = smsc9420_open(dev);
@@ -1471,6 +1486,8 @@ static int __maybe_unused smsc9420_resume(struct device *dev_d)
 	}
 	return err;
 }
+
+#endif /* CONFIG_PM */
 
 static const struct net_device_ops smsc9420_netdev_ops = {
 	.ndo_open		= smsc9420_open,
@@ -1641,14 +1658,15 @@ static void smsc9420_remove(struct pci_dev *pdev)
 	pci_disable_device(pdev);
 }
 
-static SIMPLE_DEV_PM_OPS(smsc9420_pm_ops, smsc9420_suspend, smsc9420_resume);
-
 static struct pci_driver smsc9420_driver = {
 	.name = DRV_NAME,
 	.id_table = smsc9420_id_table,
 	.probe = smsc9420_probe,
 	.remove = smsc9420_remove,
-	.driver.pm = &smsc9420_pm_ops,
+#ifdef CONFIG_PM
+	.suspend = smsc9420_suspend,
+	.resume = smsc9420_resume,
+#endif /* CONFIG_PM */
 };
 
 static int __init smsc9420_init_module(void)

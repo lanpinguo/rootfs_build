@@ -113,9 +113,9 @@ static inline __sum16 csum_fold(__wsum csum)
 	u32 sum = (__force u32)csum;
 
 	sum += (sum << 16);
-	csum = (__force __wsum)(sum < (__force u32)csum);
+	csum = (sum < csum);
 	sum >>= 16;
-	sum += (__force u32)csum;
+	sum += csum;
 
 	return (__force __sum16)~sum;
 }

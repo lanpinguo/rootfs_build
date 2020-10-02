@@ -1081,6 +1081,7 @@ next_zone:
 		readop = psz_ftrace_read;
 		break;
 	case PSTORE_TYPE_CONSOLE:
+		fallthrough;
 	case PSTORE_TYPE_PMSG:
 		readop = psz_record_read;
 		break;

@@ -324,7 +324,6 @@ static int intel_dvo_get_modes(struct drm_connector *connector)
 	struct drm_i915_private *dev_priv = to_i915(connector->dev);
 	const struct drm_display_mode *fixed_mode =
 		to_intel_connector(connector)->panel.fixed_mode;
-	int num_modes;
 
 	/*
 	 * We should probably have an i2c driver get_modes function for those
@@ -332,22 +331,21 @@ static int intel_dvo_get_modes(struct drm_connector *connector)
 	 * (TV-out, for example), but for now with just TMDS and LVDS,
 	 * that's not the case.
 	 */
-	num_modes = intel_ddc_get_modes(connector,
-					intel_gmbus_get_adapter(dev_priv, GMBUS_PIN_DPC));
-	if (num_modes)
-		return num_modes;
+	intel_ddc_get_modes(connector,
+			    intel_gmbus_get_adapter(dev_priv, GMBUS_PIN_DPC));
+	if (!list_empty(&connector->probed_modes))
+		return 1;
 
 	if (fixed_mode) {
 		struct drm_display_mode *mode;
-
 		mode = drm_mode_duplicate(connector->dev, fixed_mode);
 		if (mode) {
 			drm_mode_probed_add(connector, mode);
-			num_modes++;
+			return 1;
 		}
 	}
 
-	return num_modes;
+	return 0;
 }
 
 static const struct drm_connector_funcs intel_dvo_connector_funcs = {

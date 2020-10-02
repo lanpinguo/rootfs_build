@@ -2115,12 +2115,12 @@ offload_to_thread:
 		dio->in_flight = (atomic_t)ATOMIC_INIT(1);
 		dio->completion = NULL;
 
-		submit_bio_noacct(bio);
+		generic_make_request(bio);
 
 		return;
 	}
 
-	submit_bio_noacct(bio);
+	generic_make_request(bio);
 
 	if (need_sync_io) {
 		wait_for_completion_io(&read_comp);
@@ -3417,8 +3417,8 @@ static struct scatterlist **dm_integrity_alloc_journal_scatterlist(struct dm_int
 
 static void free_alg(struct alg_spec *a)
 {
-	kfree_sensitive(a->alg_string);
-	kfree_sensitive(a->key);
+	kzfree(a->alg_string);
+	kzfree(a->key);
 	memset(a, 0, sizeof *a);
 }
 
@@ -4349,7 +4349,7 @@ static void dm_integrity_dtr(struct dm_target *ti)
 		for (i = 0; i < ic->journal_sections; i++) {
 			struct skcipher_request *req = ic->sk_requests[i];
 			if (req) {
-				kfree_sensitive(req->iv);
+				kzfree(req->iv);
 				skcipher_request_free(req);
 			}
 		}

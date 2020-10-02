@@ -20,7 +20,6 @@
 #include <linux/mod_devicetable.h>
 #include <linux/dma-mapping.h>
 #include <linux/of.h>
-#include <linux/slab.h>
 
 #include "sf-pdma.h"
 

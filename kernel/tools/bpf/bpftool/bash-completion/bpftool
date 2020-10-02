@@ -479,7 +479,7 @@ _bpftool()
                                 cgroup/post_bind4 cgroup/post_bind6 \
                                 cgroup/sysctl cgroup/getsockopt \
                                 cgroup/setsockopt struct_ops \
-                                fentry fexit freplace sk_lookup" -- \
+                                fentry fexit freplace" -- \
                                                    "$cur" ) )
                             return 0
                             ;;
@@ -615,23 +615,7 @@ _bpftool()
         iter)
             case $command in
                 pin)
-                    case $prev in
-                        $command)
-                            _filedir
-                            ;;
-                        id)
-                            _bpftool_get_map_ids
-                            ;;
-                        name)
-                            _bpftool_get_map_names
-                            ;;
-                        pinned)
-                            _filedir
-                            ;;
-                        *)
-                            _bpftool_one_of_list $MAP_TYPE
-                            ;;
-                    esac
+                    _filedir
                     return 0
                     ;;
                 *)
@@ -1122,7 +1106,7 @@ _bpftool()
             ;;
         link)
             case $command in
-                show|list|pin|detach)
+                show|list|pin)
                     case $prev in
                         id)
                             _bpftool_get_link_ids
@@ -1139,7 +1123,7 @@ _bpftool()
                     COMPREPLY=( $( compgen -W "$LINK_TYPE" -- "$cur" ) )
                     return 0
                     ;;
-                pin|detach)
+                pin)
                     if [[ $prev == "$command" ]]; then
                         COMPREPLY=( $( compgen -W "$LINK_TYPE" -- "$cur" ) )
                     else

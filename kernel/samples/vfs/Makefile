@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: GPL-2.0-only
-userprogs-always-y += test-fsmount test-statx
+userprogs := test-fsmount test-statx
+always-y := $(userprogs)
 
 userccflags += -I usr/include

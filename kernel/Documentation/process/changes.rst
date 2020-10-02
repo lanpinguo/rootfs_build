@@ -129,7 +129,7 @@ Architectural changes
 ---------------------
 
 DevFS has been obsoleted in favour of udev
-(https://www.kernel.org/pub/linux/utils/kernel/hotplug/)
+(http://www.kernel.org/pub/linux/utils/kernel/hotplug/)
 
 32-bit UID support is now in place.  Have fun!
 
@@ -421,7 +421,7 @@ Intel P6 microcode
 udev
 ----
 
-- <https://www.freedesktop.org/software/systemd/man/udev.html>
+- <http://www.freedesktop.org/software/systemd/man/udev.html>
 
 FUSE
 ----
@@ -474,4 +474,4 @@ Kernel documentation
 Sphinx
 ------
 
-- <https://www.sphinx-doc.org/>
+- <http://www.sphinx-doc.org/>

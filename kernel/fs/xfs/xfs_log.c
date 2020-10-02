@@ -433,7 +433,7 @@ xfs_log_reserve(
 	XFS_STATS_INC(mp, xs_try_logspace);
 
 	ASSERT(*ticp == NULL);
-	tic = xlog_ticket_alloc(log, unit_bytes, cnt, client, permanent);
+	tic = xlog_ticket_alloc(log, unit_bytes, cnt, client, permanent, 0);
 	*ticp = tic;
 
 	xlog_grant_push_ail(log, tic->t_cnt ? tic->t_unit_res * tic->t_cnt
@@ -3408,12 +3408,15 @@ xlog_ticket_alloc(
 	int			unit_bytes,
 	int			cnt,
 	char			client,
-	bool			permanent)
+	bool			permanent,
+	xfs_km_flags_t		alloc_flags)
 {
 	struct xlog_ticket	*tic;
 	int			unit_res;
 
-	tic = kmem_cache_zalloc(xfs_log_ticket_zone, GFP_NOFS | __GFP_NOFAIL);
+	tic = kmem_zone_zalloc(xfs_log_ticket_zone, alloc_flags);
+	if (!tic)
+		return NULL;
 
 	unit_res = xfs_log_calc_unit_res(log->l_mp, unit_bytes);
 

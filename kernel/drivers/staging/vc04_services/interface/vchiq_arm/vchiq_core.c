@@ -1,17 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause
 /* Copyright (c) 2010-2012 Broadcom. All rights reserved. */
 
-#include <linux/types.h>
-#include <linux/completion.h>
-#include <linux/mutex.h>
-#include <linux/bitops.h>
-#include <linux/kthread.h>
-#include <linux/wait.h>
-#include <linux/delay.h>
-#include <linux/slab.h>
 #include <linux/kref.h>
 #include <linux/rcupdate.h>
-#include <linux/sched/signal.h>
 
 #include "vchiq_core.h"
 
@@ -48,9 +39,9 @@ struct vchiq_openack_payload {
 };
 
 enum {
-	QMFLAGS_IS_BLOCKING     = BIT(0),
-	QMFLAGS_NO_MUTEX_LOCK   = BIT(1),
-	QMFLAGS_NO_MUTEX_UNLOCK = BIT(2)
+	QMFLAGS_IS_BLOCKING     = (1 << 0),
+	QMFLAGS_NO_MUTEX_LOCK   = (1 << 1),
+	QMFLAGS_NO_MUTEX_UNLOCK = (1 << 2)
 };
 
 /* we require this for consistency between endpoints */
@@ -332,7 +323,6 @@ vchiq_get_service_userdata(unsigned int handle)
 	rcu_read_unlock();
 	return userdata;
 }
-EXPORT_SYMBOL(vchiq_get_service_userdata);
 
 static void
 mark_service_closing_internal(struct vchiq_service *service, int sh_thread)
@@ -536,14 +526,14 @@ request_poll(struct vchiq_state *state, struct vchiq_service *service,
 		do {
 			value = atomic_read(&service->poll_flags);
 		} while (atomic_cmpxchg(&service->poll_flags, value,
-			value | BIT(poll_type)) != value);
+			value | (1 << poll_type)) != value);
 
 		do {
 			value = atomic_read(&state->poll_services[
 				service->localport>>5]);
 		} while (atomic_cmpxchg(
 			&state->poll_services[service->localport>>5],
-			value, value | BIT(service->localport & 0x1f))
+			value, value | (1 << (service->localport & 0x1f)))
 			!= value);
 	}
 
@@ -1297,19 +1287,19 @@ poll_services(struct vchiq_state *state)
 
 		flags = atomic_xchg(&state->poll_services[group], 0);
 		for (i = 0; flags; i++) {
-			if (flags & BIT(i)) {
+			if (flags & (1 << i)) {
 				struct vchiq_service *service =
 					find_service_by_port(state,
 						(group<<5) + i);
 				u32 service_flags;
 
-				flags &= ~BIT(i);
+				flags &= ~(1 << i);
 				if (!service)
 					continue;
 				service_flags =
 					atomic_xchg(&service->poll_flags, 0);
 				if (service_flags &
-					BIT(VCHIQ_POLL_REMOVE)) {
+					(1 << VCHIQ_POLL_REMOVE)) {
 					vchiq_log_info(vchiq_core_log_level,
 						"%d: ps - remove %d<->%d",
 						state->id, service->localport,
@@ -1327,7 +1317,7 @@ poll_services(struct vchiq_state *state)
 						request_poll(state, service,
 							VCHIQ_POLL_REMOVE);
 				} else if (service_flags &
-					BIT(VCHIQ_POLL_TERMINATE)) {
+					(1 << VCHIQ_POLL_TERMINATE)) {
 					vchiq_log_info(vchiq_core_log_level,
 						"%d: ps - terminate %d<->%d",
 						state->id, service->localport,
@@ -1338,11 +1328,11 @@ poll_services(struct vchiq_state *state)
 						request_poll(state, service,
 							VCHIQ_POLL_TERMINATE);
 				}
-				if (service_flags & BIT(VCHIQ_POLL_TXNOTIFY))
+				if (service_flags & (1 << VCHIQ_POLL_TXNOTIFY))
 					notify_bulks(service,
 						&service->bulk_tx,
 						1/*retry_poll*/);
-				if (service_flags & BIT(VCHIQ_POLL_RXNOTIFY))
+				if (service_flags & (1 << VCHIQ_POLL_RXNOTIFY))
 					notify_bulks(service,
 						&service->bulk_rx,
 						1/*retry_poll*/);
@@ -2275,57 +2265,6 @@ fail_free_handler_thread:
 	return VCHIQ_ERROR;
 }
 
-void vchiq_msg_queue_push(unsigned int handle, struct vchiq_header *header)
-{
-	struct vchiq_service *service = find_service_by_handle(handle);
-	int pos;
-
-	while (service->msg_queue_write == service->msg_queue_read +
-		VCHIQ_MAX_SLOTS) {
-		if (wait_for_completion_interruptible(&service->msg_queue_pop))
-			flush_signals(current);
-	}
-
-	pos = service->msg_queue_write++ & (VCHIQ_MAX_SLOTS - 1);
-	service->msg_queue[pos] = header;
-
-	complete(&service->msg_queue_push);
-}
-EXPORT_SYMBOL(vchiq_msg_queue_push);
-
-struct vchiq_header *vchiq_msg_hold(unsigned int handle)
-{
-	struct vchiq_service *service = find_service_by_handle(handle);
-	struct vchiq_header *header;
-	int pos;
-
-	if (service->msg_queue_write == service->msg_queue_read)
-		return NULL;
-
-	while (service->msg_queue_write == service->msg_queue_read) {
-		if (wait_for_completion_interruptible(&service->msg_queue_push))
-			flush_signals(current);
-	}
-
-	pos = service->msg_queue_read++ & (VCHIQ_MAX_SLOTS - 1);
-	header = service->msg_queue[pos];
-
-	complete(&service->msg_queue_pop);
-
-	return header;
-}
-EXPORT_SYMBOL(vchiq_msg_hold);
-
-static int vchiq_validate_params(const struct vchiq_service_params *params)
-{
-	if (!params->callback || !params->fourcc) {
-		vchiq_loud_error("Can't add service, invalid params\n");
-		return -EINVAL;
-	}
-
-	return 0;
-}
-
 /* Called from application thread when a client or server service is created. */
 struct vchiq_service *
 vchiq_add_service_internal(struct vchiq_state *state,
@@ -2336,12 +2275,7 @@ vchiq_add_service_internal(struct vchiq_state *state,
 	struct vchiq_service *service;
 	struct vchiq_service __rcu **pservice = NULL;
 	struct vchiq_service_quota *service_quota;
-	int ret;
 	int i;
-
-	ret = vchiq_validate_params(params);
-	if (ret)
-		return NULL;
 
 	service = kmalloc(sizeof(*service), GFP_KERNEL);
 	if (!service)
@@ -2370,17 +2304,12 @@ vchiq_add_service_internal(struct vchiq_state *state,
 	service->state         = state;
 	service->instance      = instance;
 	service->service_use_count = 0;
-	service->msg_queue_read = 0;
-	service->msg_queue_write = 0;
 	init_bulk_queue(&service->bulk_tx);
 	init_bulk_queue(&service->bulk_rx);
 	init_completion(&service->remove_event);
 	init_completion(&service->bulk_remove_event);
-	init_completion(&service->msg_queue_pop);
-	init_completion(&service->msg_queue_push);
 	mutex_init(&service->bulk_mutex);
 	memset(&service->stats, 0, sizeof(service->stats));
-	memset(&service->msg_queue, 0, sizeof(service->msg_queue));
 
 	/* Although it is perfectly possible to use a spinlock
 	** to protect the creation of services, it is overkill as it
@@ -2710,7 +2639,7 @@ vchiq_close_service_internal(struct vchiq_service *service, int close_recvd)
 
 	case VCHIQ_SRVSTATE_OPENSYNC:
 		mutex_lock(&state->sync_mutex);
-		fallthrough;
+		/* fall through */
 	case VCHIQ_SRVSTATE_OPEN:
 		if (close_recvd) {
 			if (!do_abort_bulks(service))
@@ -2946,7 +2875,6 @@ vchiq_close_service(unsigned int handle)
 
 	return status;
 }
-EXPORT_SYMBOL(vchiq_close_service);
 
 enum vchiq_status
 vchiq_remove_service(unsigned int handle)
@@ -3214,28 +3142,11 @@ error_exit:
 	return status;
 }
 
-int vchiq_queue_kernel_message(unsigned int handle, void *data, unsigned int size)
+enum vchiq_status vchiq_queue_kernel_message(unsigned int handle, void *context,
+				      size_t size)
 {
-	enum vchiq_status status;
-
-	while (1) {
-		status = vchiq_queue_message(handle, memcpy_copy_callback,
-					     data, size);
-
-		/*
-		 * vchiq_queue_message() may return VCHIQ_RETRY, so we need to
-		 * implement a retry mechanism since this function is supposed
-		 * to block until queued
-		 */
-		if (status != VCHIQ_RETRY)
-			break;
-
-		msleep(1);
-	}
-
-	return status;
+	return vchiq_queue_message(handle, memcpy_copy_callback, context, size);
 }
-EXPORT_SYMBOL(vchiq_queue_kernel_message);
 
 void
 vchiq_release_message(unsigned int handle,
@@ -3269,7 +3180,6 @@ vchiq_release_message(unsigned int handle,
 
 	unlock_service(service);
 }
-EXPORT_SYMBOL(vchiq_release_message);
 
 static void
 release_message_sync(struct vchiq_state *state, struct vchiq_header *header)
@@ -3296,7 +3206,6 @@ exit:
 		unlock_service(service);
 	return status;
 }
-EXPORT_SYMBOL(vchiq_get_peer_version);
 
 void vchiq_get_config(struct vchiq_config *config)
 {

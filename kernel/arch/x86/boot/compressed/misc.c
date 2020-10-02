@@ -30,9 +30,12 @@
 #define STATIC		static
 
 /*
- * Provide definitions of memzero and memmove as some of the decompressors will
- * try to define their own functions if these are not defined as macros.
+ * Use normal definitions of mem*() from string.c. There are already
+ * included header files which expect a definition of memset() and by
+ * the time we define memset macro, it is too late.
  */
+#undef memcpy
+#undef memset
 #define memzero(s, n)	memset((s), 0, (n))
 #define memmove		memmove
 
@@ -73,10 +76,6 @@ static int lines, cols;
 
 #ifdef CONFIG_KERNEL_LZ4
 #include "../../../../lib/decompress_unlz4.c"
-#endif
-
-#ifdef CONFIG_KERNEL_ZSTD
-#include "../../../../lib/decompress_unzstd.c"
 #endif
 /*
  * NOTE: When adding a new decompressor, please update the analysis in

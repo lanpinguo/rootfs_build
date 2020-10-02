@@ -521,8 +521,6 @@ static void increase_dsc_bpp(struct drm_atomic_state *state,
 	int link_timeslots_used;
 	int fair_pbn_alloc;
 
-	pbn_per_timeslot = dm_mst_get_pbn_divider(dc_link);
-
 	for (i = 0; i < count; i++) {
 		if (vars[i].dsc_enabled) {
 			initial_slack[i] = kbps_to_peak_pbn(params[i].bw_range.max_kbps) - vars[i].pbn;
@@ -533,6 +531,9 @@ static void increase_dsc_bpp(struct drm_atomic_state *state,
 			bpp_increased[i] = true;
 		}
 	}
+
+	pbn_per_timeslot = dc_link_bandwidth_kbps(dc_link,
+			dc_link_get_link_cap(dc_link)) / (8 * 1000 * 54);
 
 	while (remaining_to_increase) {
 		next_index = -1;
@@ -562,7 +563,7 @@ static void increase_dsc_bpp(struct drm_atomic_state *state,
 							  params[next_index].port->mgr,
 							  params[next_index].port,
 							  vars[next_index].pbn,
-							  pbn_per_timeslot) < 0)
+							  dm_mst_get_pbn_divider(dc_link)) < 0)
 				return;
 			if (!drm_dp_mst_atomic_check(state)) {
 				vars[next_index].bpp_x16 = bpp_x16_from_pbn(params[next_index], vars[next_index].pbn);
@@ -572,7 +573,7 @@ static void increase_dsc_bpp(struct drm_atomic_state *state,
 								  params[next_index].port->mgr,
 								  params[next_index].port,
 								  vars[next_index].pbn,
-								  pbn_per_timeslot) < 0)
+								  dm_mst_get_pbn_divider(dc_link)) < 0)
 					return;
 			}
 		} else {
@@ -581,7 +582,7 @@ static void increase_dsc_bpp(struct drm_atomic_state *state,
 							  params[next_index].port->mgr,
 							  params[next_index].port,
 							  vars[next_index].pbn,
-							  pbn_per_timeslot) < 0)
+							  dm_mst_get_pbn_divider(dc_link)) < 0)
 				return;
 			if (!drm_dp_mst_atomic_check(state)) {
 				vars[next_index].bpp_x16 = params[next_index].bw_range.max_target_bpp_x16;
@@ -591,7 +592,7 @@ static void increase_dsc_bpp(struct drm_atomic_state *state,
 								  params[next_index].port->mgr,
 								  params[next_index].port,
 								  vars[next_index].pbn,
-								  pbn_per_timeslot) < 0)
+								  dm_mst_get_pbn_divider(dc_link)) < 0)
 					return;
 			}
 		}
@@ -645,7 +646,7 @@ static void try_disable_dsc(struct drm_atomic_state *state,
 						  params[next_index].port->mgr,
 						  params[next_index].port,
 						  vars[next_index].pbn,
-						  dm_mst_get_pbn_divider(dc_link)) < 0)
+						  0) < 0)
 			return;
 
 		if (!drm_dp_mst_atomic_check(state)) {
@@ -716,7 +717,7 @@ static bool compute_mst_dsc_configs_for_link(struct drm_atomic_state *state,
 						 params[i].port->mgr,
 						 params[i].port,
 						 vars[i].pbn,
-						 dm_mst_get_pbn_divider(dc_link)) < 0)
+						 0) < 0)
 			return false;
 	}
 	if (!drm_dp_mst_atomic_check(state)) {
@@ -744,7 +745,7 @@ static bool compute_mst_dsc_configs_for_link(struct drm_atomic_state *state,
 							  params[i].port->mgr,
 							  params[i].port,
 							  vars[i].pbn,
-							  dm_mst_get_pbn_divider(dc_link)) < 0)
+							  0) < 0)
 				return false;
 		}
 	}
@@ -806,7 +807,7 @@ bool compute_mst_dsc_configs_for_state(struct drm_atomic_state *state,
 		stream = dc_state->streams[i];
 
 		if (stream->timing.flags.DSC == 1)
-			dc_stream_add_dsc_to_resource(stream->ctx->dc, dc_state, stream);
+			dcn20_add_dsc_to_stream_resource(stream->ctx->dc, dc_state, stream);
 	}
 
 	return true;

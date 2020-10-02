@@ -941,7 +941,7 @@ void cfg80211_cac_event(struct net_device *netdev,
 		       sizeof(struct cfg80211_chan_def));
 		queue_work(cfg80211_wq, &rdev->propagate_cac_done_wk);
 		cfg80211_sched_dfs_chan_update(rdev);
-		fallthrough;
+		/* fall through */
 	case NL80211_RADAR_CAC_ABORTED:
 		wdev->cac_started = false;
 		break;

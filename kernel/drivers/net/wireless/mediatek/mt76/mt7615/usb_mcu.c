@@ -28,8 +28,7 @@ mt7663u_mcu_send_message(struct mt76_dev *mdev, struct sk_buff *skb,
 	else
 		ep = MT_EP_OUT_AC_BE;
 
-	put_unaligned_le32(skb->len, skb_push(skb, sizeof(skb->len)));
-	ret = mt76_skb_adjust_pad(skb);
+	ret = mt76u_skb_dma_info(skb, skb->len);
 	if (ret < 0)
 		goto out;
 
@@ -61,8 +60,6 @@ int mt7663u_mcu_init(struct mt7615_dev *dev)
 
 	dev->mt76.mcu_ops = &mt7663u_mcu_ops,
 
-	/* usb does not support runtime-pm */
-	clear_bit(MT76_STATE_PM, &dev->mphy.state);
 	mt76_set(dev, MT_UDMA_TX_QSEL, MT_FW_DL_EN);
 
 	if (test_and_clear_bit(MT76_STATE_POWER_OFF, &dev->mphy.state)) {

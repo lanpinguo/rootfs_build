@@ -554,7 +554,7 @@ bool of_console_check(struct device_node *dn, char *name, int index);
 
 extern int of_cpu_node_to_id(struct device_node *np);
 
-int of_map_id(struct device_node *np, u32 id,
+int of_map_rid(struct device_node *np, u32 rid,
 	       const char *map_name, const char *map_mask_name,
 	       struct device_node **target, u32 *id_out);
 
@@ -626,11 +626,6 @@ static inline struct device_node *of_find_node_by_phandle(phandle handle)
 }
 
 static inline struct device_node *of_get_parent(const struct device_node *node)
-{
-	return NULL;
-}
-
-static inline struct device_node *of_get_next_parent(struct device_node *node)
 {
 	return NULL;
 }
@@ -983,7 +978,7 @@ static inline int of_cpu_node_to_id(struct device_node *np)
 	return -ENODEV;
 }
 
-static inline int of_map_id(struct device_node *np, u32 id,
+static inline int of_map_rid(struct device_node *np, u32 rid,
 			     const char *map_name, const char *map_mask_name,
 			     struct device_node **target, u32 *id_out)
 {

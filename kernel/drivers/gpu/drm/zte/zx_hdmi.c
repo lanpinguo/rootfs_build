@@ -439,8 +439,8 @@ static int zx_hdmi_audio_hw_params(struct device *dev,
 	return zx_hdmi_infoframe_trans(hdmi, &frame, FSEL_AUDIO);
 }
 
-static int zx_hdmi_audio_mute(struct device *dev, void *data,
-			      bool enable, int direction)
+static int zx_hdmi_audio_digital_mute(struct device *dev, void *data,
+				      bool enable)
 {
 	struct zx_hdmi *hdmi = dev_get_drvdata(dev);
 
@@ -468,9 +468,8 @@ static const struct hdmi_codec_ops zx_hdmi_codec_ops = {
 	.audio_startup = zx_hdmi_audio_startup,
 	.hw_params = zx_hdmi_audio_hw_params,
 	.audio_shutdown = zx_hdmi_audio_shutdown,
-	.mute_stream = zx_hdmi_audio_mute,
+	.digital_mute = zx_hdmi_audio_digital_mute,
 	.get_eld = zx_hdmi_audio_get_eld,
-	.no_capture_mute = 1,
 };
 
 static struct hdmi_codec_pdata zx_hdmi_codec_pdata = {

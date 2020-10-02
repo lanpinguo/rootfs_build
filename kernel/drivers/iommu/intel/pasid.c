@@ -19,7 +19,7 @@
 #include <linux/pci-ats.h>
 #include <linux/spinlock.h>
 
-#include "pasid.h"
+#include "intel-pasid.h"
 
 /*
  * Intel IOMMU system wide PASID name space:
@@ -486,16 +486,7 @@ devtlb_invalidation_with_pasid(struct intel_iommu *iommu,
 	qdep = info->ats_qdep;
 	pfsid = info->pfsid;
 
-	/*
-	 * When PASID 0 is used, it indicates RID2PASID(DMA request w/o PASID),
-	 * devTLB flush w/o PASID should be used. For non-zero PASID under
-	 * SVA usage, device could do DMA with multiple PASIDs. It is more
-	 * efficient to flush devTLB specific to the PASID.
-	 */
-	if (pasid == PASID_RID2PASID)
-		qi_flush_dev_iotlb(iommu, sid, pfsid, qdep, 0, 64 - VTD_PAGE_SHIFT);
-	else
-		qi_flush_dev_iotlb_pasid(iommu, sid, pfsid, pasid, qdep, 0, 64 - VTD_PAGE_SHIFT);
+	qi_flush_dev_iotlb(iommu, sid, pfsid, qdep, 0, 64 - VTD_PAGE_SHIFT);
 }
 
 void intel_pasid_tear_down_entry(struct intel_iommu *iommu, struct device *dev,

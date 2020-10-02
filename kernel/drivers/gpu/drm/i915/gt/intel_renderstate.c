@@ -61,7 +61,7 @@ render_state_get_rodata(const struct intel_engine_cs *engine)
 #define OUT_BATCH(batch, i, val)				\
 	do {							\
 		if ((i) >= PAGE_SIZE / sizeof(u32))		\
-			goto out;				\
+			goto err;				\
 		(batch)[(i)++] = (val);				\
 	} while(0)
 
@@ -70,12 +70,15 @@ static int render_state_setup(struct intel_renderstate *so,
 {
 	const struct intel_renderstate_rodata *rodata = so->rodata;
 	unsigned int i = 0, reloc_index = 0;
-	int ret = -EINVAL;
+	unsigned int needs_clflush;
 	u32 *d;
+	int ret;
 
-	d = i915_gem_object_pin_map(so->vma->obj, I915_MAP_WB);
-	if (IS_ERR(d))
-		return PTR_ERR(d);
+	ret = i915_gem_object_prepare_write(so->vma->obj, &needs_clflush);
+	if (ret)
+		return ret;
+
+	d = kmap_atomic(i915_gem_object_get_dirty_page(so->vma->obj, 0));
 
 	while (i < rodata->batch_items) {
 		u32 s = rodata->batch[i];
@@ -86,7 +89,7 @@ static int render_state_setup(struct intel_renderstate *so,
 			if (HAS_64BIT_RELOC(i915)) {
 				if (i + 1 >= rodata->batch_items ||
 				    rodata->batch[i + 1] != 0)
-					goto out;
+					goto err;
 
 				d[i++] = s;
 				s = upper_32_bits(r);
@@ -100,7 +103,7 @@ static int render_state_setup(struct intel_renderstate *so,
 
 	if (rodata->reloc[reloc_index] != -1) {
 		drm_err(&i915->drm, "only %d relocs resolved\n", reloc_index);
-		goto out;
+		goto err;
 	}
 
 	so->batch_offset = i915_ggtt_offset(so->vma);
@@ -147,11 +150,19 @@ static int render_state_setup(struct intel_renderstate *so,
 	 */
 	so->aux_size = ALIGN(so->aux_size, 8);
 
+	if (needs_clflush)
+		drm_clflush_virt_range(d, i * sizeof(u32));
+	kunmap_atomic(d);
+
 	ret = 0;
 out:
-	__i915_gem_object_flush_map(so->vma->obj, 0, i * sizeof(u32));
-	__i915_gem_object_release_map(so->vma->obj);
+	i915_gem_object_finish_access(so->vma->obj);
 	return ret;
+
+err:
+	kunmap_atomic(d);
+	ret = -EINVAL;
+	goto out;
 }
 
 #undef OUT_BATCH

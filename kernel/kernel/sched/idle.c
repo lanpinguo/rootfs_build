@@ -54,18 +54,17 @@ __setup("hlt", cpu_idle_nopoll_setup);
 
 static noinline int __cpuidle cpu_idle_poll(void)
 {
-	trace_cpu_idle(0, smp_processor_id());
-	stop_critical_timings();
 	rcu_idle_enter();
+	trace_cpu_idle_rcuidle(0, smp_processor_id());
 	local_irq_enable();
+	stop_critical_timings();
 
 	while (!tif_need_resched() &&
-	       (cpu_idle_force_poll || tick_check_broadcast_expired()))
+		(cpu_idle_force_poll || tick_check_broadcast_expired()))
 		cpu_relax();
-
-	rcu_idle_exit();
 	start_critical_timings();
-	trace_cpu_idle(PWR_EVENT_EXIT, smp_processor_id());
+	trace_cpu_idle_rcuidle(PWR_EVENT_EXIT, smp_processor_id());
+	rcu_idle_exit();
 
 	return 1;
 }
@@ -91,14 +90,9 @@ void __cpuidle default_idle_call(void)
 	if (current_clr_polling_and_test()) {
 		local_irq_enable();
 	} else {
-
-		trace_cpu_idle(1, smp_processor_id());
 		stop_critical_timings();
-		rcu_idle_enter();
 		arch_cpu_idle();
-		rcu_idle_exit();
 		start_critical_timings();
-		trace_cpu_idle(PWR_EVENT_EXIT, smp_processor_id());
 	}
 }
 
@@ -164,6 +158,7 @@ static void cpuidle_idle_call(void)
 
 	if (cpuidle_not_available(drv, dev)) {
 		tick_nohz_idle_stop_tick();
+		rcu_idle_enter();
 
 		default_idle_call();
 		goto exit_idle;
@@ -183,10 +178,13 @@ static void cpuidle_idle_call(void)
 		u64 max_latency_ns;
 
 		if (idle_should_enter_s2idle()) {
+			rcu_idle_enter();
 
 			entered_state = call_cpuidle_s2idle(drv, dev);
 			if (entered_state > 0)
 				goto exit_idle;
+
+			rcu_idle_exit();
 
 			max_latency_ns = U64_MAX;
 		} else {
@@ -194,6 +192,7 @@ static void cpuidle_idle_call(void)
 		}
 
 		tick_nohz_idle_stop_tick();
+		rcu_idle_enter();
 
 		next_state = cpuidle_find_deepest_state(drv, dev, max_latency_ns);
 		call_cpuidle(drv, dev, next_state);
@@ -210,6 +209,8 @@ static void cpuidle_idle_call(void)
 		else
 			tick_nohz_idle_retain_tick();
 
+		rcu_idle_enter();
+
 		entered_state = call_cpuidle(drv, dev, next_state);
 		/*
 		 * Give the governor an opportunity to reflect on the outcome
@@ -225,6 +226,8 @@ exit_idle:
 	 */
 	if (WARN_ON_ONCE(irqs_disabled()))
 		local_irq_enable();
+
+	rcu_idle_exit();
 }
 
 /*
@@ -450,6 +453,11 @@ prio_changed_idle(struct rq *rq, struct task_struct *p, int oldprio)
 	BUG();
 }
 
+static unsigned int get_rr_interval_idle(struct rq *rq, struct task_struct *task)
+{
+	return 0;
+}
+
 static void update_curr_idle(struct rq *rq)
 {
 }
@@ -457,8 +465,8 @@ static void update_curr_idle(struct rq *rq)
 /*
  * Simple, special scheduling class for the per-CPU idle tasks:
  */
-const struct sched_class idle_sched_class
-	__attribute__((section("__idle_sched_class"))) = {
+const struct sched_class idle_sched_class = {
+	/* .next is NULL */
 	/* no enqueue/yield_task for idle tasks */
 
 	/* dequeue is not valid, we print a debug message there: */
@@ -477,6 +485,8 @@ const struct sched_class idle_sched_class
 #endif
 
 	.task_tick		= task_tick_idle,
+
+	.get_rr_interval	= get_rr_interval_idle,
 
 	.prio_changed		= prio_changed_idle,
 	.switched_to		= switched_to_idle,

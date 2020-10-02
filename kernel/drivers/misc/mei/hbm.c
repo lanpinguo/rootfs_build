@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * Copyright (c) 2003-2020, Intel Corporation. All rights reserved.
+ * Copyright (c) 2003-2019, Intel Corporation. All rights reserved.
  * Intel Management Engine Interface (Intel MEI) Linux driver
  */
 #include <linux/export.h>
@@ -257,21 +257,22 @@ int mei_hbm_start_wait(struct mei_device *dev)
 int mei_hbm_start_req(struct mei_device *dev)
 {
 	struct mei_msg_hdr mei_hdr;
-	struct hbm_host_version_request req;
+	struct hbm_host_version_request start_req;
+	const size_t len = sizeof(struct hbm_host_version_request);
 	int ret;
 
 	mei_hbm_reset(dev);
 
-	mei_hbm_hdr(&mei_hdr, sizeof(req));
+	mei_hbm_hdr(&mei_hdr, len);
 
 	/* host start message */
-	memset(&req, 0, sizeof(req));
-	req.hbm_cmd = HOST_START_REQ_CMD;
-	req.host_version.major_version = HBM_MAJOR_VERSION;
-	req.host_version.minor_version = HBM_MINOR_VERSION;
+	memset(&start_req, 0, len);
+	start_req.hbm_cmd = HOST_START_REQ_CMD;
+	start_req.host_version.major_version = HBM_MAJOR_VERSION;
+	start_req.host_version.minor_version = HBM_MINOR_VERSION;
 
 	dev->hbm_state = MEI_HBM_IDLE;
-	ret = mei_hbm_write_message(dev, &mei_hdr, &req);
+	ret = mei_hbm_write_message(dev, &mei_hdr, &start_req);
 	if (ret) {
 		dev_err(dev->dev, "version message write failed: ret = %d\n",
 			ret);
@@ -294,12 +295,13 @@ static int mei_hbm_dma_setup_req(struct mei_device *dev)
 {
 	struct mei_msg_hdr mei_hdr;
 	struct hbm_dma_setup_request req;
+	const size_t len = sizeof(struct hbm_dma_setup_request);
 	unsigned int i;
 	int ret;
 
-	mei_hbm_hdr(&mei_hdr, sizeof(req));
+	mei_hbm_hdr(&mei_hdr, len);
 
-	memset(&req, 0, sizeof(req));
+	memset(&req, 0, len);
 	req.hbm_cmd = MEI_HBM_DMA_SETUP_REQ_CMD;
 	for (i = 0; i < DMA_DSCR_NUM; i++) {
 		phys_addr_t paddr;
@@ -335,19 +337,21 @@ static int mei_hbm_dma_setup_req(struct mei_device *dev)
 static int mei_hbm_enum_clients_req(struct mei_device *dev)
 {
 	struct mei_msg_hdr mei_hdr;
-	struct hbm_host_enum_request req;
+	struct hbm_host_enum_request enum_req;
+	const size_t len = sizeof(struct hbm_host_enum_request);
 	int ret;
 
 	/* enumerate clients */
-	mei_hbm_hdr(&mei_hdr, sizeof(req));
+	mei_hbm_hdr(&mei_hdr, len);
 
-	memset(&req, 0, sizeof(req));
-	req.hbm_cmd = HOST_ENUM_REQ_CMD;
-	req.flags |= dev->hbm_f_dc_supported ? MEI_HBM_ENUM_F_ALLOW_ADD : 0;
-	req.flags |= dev->hbm_f_ie_supported ?
+	memset(&enum_req, 0, len);
+	enum_req.hbm_cmd = HOST_ENUM_REQ_CMD;
+	enum_req.flags |= dev->hbm_f_dc_supported ?
+			  MEI_HBM_ENUM_F_ALLOW_ADD : 0;
+	enum_req.flags |= dev->hbm_f_ie_supported ?
 			  MEI_HBM_ENUM_F_IMMEDIATE_ENUM : 0;
 
-	ret = mei_hbm_write_message(dev, &mei_hdr, &req);
+	ret = mei_hbm_write_message(dev, &mei_hdr, &enum_req);
 	if (ret) {
 		dev_err(dev->dev, "enumeration request write failed: ret = %d.\n",
 			ret);
@@ -376,7 +380,7 @@ static int mei_hbm_me_cl_add(struct mei_device *dev,
 
 	mei_me_cl_rm_by_uuid(dev, uuid);
 
-	me_cl = kzalloc(sizeof(*me_cl), GFP_KERNEL);
+	me_cl = kzalloc(sizeof(struct mei_me_client), GFP_KERNEL);
 	if (!me_cl)
 		return -ENOMEM;
 
@@ -404,13 +408,14 @@ static int mei_hbm_add_cl_resp(struct mei_device *dev, u8 addr, u8 status)
 {
 	struct mei_msg_hdr mei_hdr;
 	struct hbm_add_client_response resp;
+	const size_t len = sizeof(struct hbm_add_client_response);
 	int ret;
 
 	dev_dbg(dev->dev, "adding client response\n");
 
-	mei_hbm_hdr(&mei_hdr, sizeof(resp));
+	mei_hbm_hdr(&mei_hdr, len);
 
-	memset(&resp, 0, sizeof(resp));
+	memset(&resp, 0, sizeof(struct hbm_add_client_response));
 	resp.hbm_cmd = MEI_HBM_ADD_CLIENT_RES_CMD;
 	resp.me_addr = addr;
 	resp.status  = status;
@@ -464,10 +469,11 @@ int mei_hbm_cl_notify_req(struct mei_device *dev,
 
 	struct mei_msg_hdr mei_hdr;
 	struct hbm_notification_request req;
+	const size_t len = sizeof(struct hbm_notification_request);
 	int ret;
 
-	mei_hbm_hdr(&mei_hdr, sizeof(req));
-	mei_hbm_cl_hdr(cl, MEI_HBM_NOTIFY_REQ_CMD, &req, sizeof(req));
+	mei_hbm_hdr(&mei_hdr, len);
+	mei_hbm_cl_hdr(cl, MEI_HBM_NOTIFY_REQ_CMD, &req, len);
 
 	req.start = start;
 
@@ -574,7 +580,8 @@ static void mei_hbm_cl_notify(struct mei_device *dev,
 static int mei_hbm_prop_req(struct mei_device *dev, unsigned long start_idx)
 {
 	struct mei_msg_hdr mei_hdr;
-	struct hbm_props_request req;
+	struct hbm_props_request prop_req;
+	const size_t len = sizeof(struct hbm_props_request);
 	unsigned long addr;
 	int ret;
 
@@ -584,17 +591,18 @@ static int mei_hbm_prop_req(struct mei_device *dev, unsigned long start_idx)
 	if (addr == MEI_CLIENTS_MAX) {
 		dev->hbm_state = MEI_HBM_STARTED;
 		mei_host_client_init(dev);
+
 		return 0;
 	}
 
-	mei_hbm_hdr(&mei_hdr, sizeof(req));
+	mei_hbm_hdr(&mei_hdr, len);
 
-	memset(&req, 0, sizeof(req));
+	memset(&prop_req, 0, sizeof(struct hbm_props_request));
 
-	req.hbm_cmd = HOST_CLIENT_PROPERTIES_REQ_CMD;
-	req.me_addr = addr;
+	prop_req.hbm_cmd = HOST_CLIENT_PROPERTIES_REQ_CMD;
+	prop_req.me_addr = addr;
 
-	ret = mei_hbm_write_message(dev, &mei_hdr, &req);
+	ret = mei_hbm_write_message(dev, &mei_hdr, &prop_req);
 	if (ret) {
 		dev_err(dev->dev, "properties request write failed: ret = %d\n",
 			ret);
@@ -620,14 +628,15 @@ int mei_hbm_pg(struct mei_device *dev, u8 pg_cmd)
 {
 	struct mei_msg_hdr mei_hdr;
 	struct hbm_power_gate req;
+	const size_t len = sizeof(struct hbm_power_gate);
 	int ret;
 
 	if (!dev->hbm_f_pg_supported)
 		return -EOPNOTSUPP;
 
-	mei_hbm_hdr(&mei_hdr, sizeof(req));
+	mei_hbm_hdr(&mei_hdr, len);
 
-	memset(&req, 0, sizeof(req));
+	memset(&req, 0, len);
 	req.hbm_cmd = pg_cmd;
 
 	ret = mei_hbm_write_message(dev, &mei_hdr, &req);
@@ -648,10 +657,11 @@ static int mei_hbm_stop_req(struct mei_device *dev)
 {
 	struct mei_msg_hdr mei_hdr;
 	struct hbm_host_stop_request req;
+	const size_t len = sizeof(struct hbm_host_stop_request);
 
-	mei_hbm_hdr(&mei_hdr, sizeof(req));
+	mei_hbm_hdr(&mei_hdr, len);
 
-	memset(&req, 0, sizeof(req));
+	memset(&req, 0, len);
 	req.hbm_cmd = HOST_STOP_REQ_CMD;
 	req.reason = DRIVER_STOP_REQUEST;
 

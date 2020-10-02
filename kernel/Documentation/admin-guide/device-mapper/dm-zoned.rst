@@ -14,7 +14,7 @@ host-aware zoned block devices.
 For a more detailed description of the zoned block device models and
 their constraints see (for SCSI devices):
 
-https://www.t10.org/drafts.htm#ZBC_Family
+http://www.t10.org/drafts.htm#ZBC_Family
 
 and (for ATA devices):
 

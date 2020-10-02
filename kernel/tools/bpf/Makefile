@@ -9,8 +9,7 @@ MAKE = make
 INSTALL ?= install
 
 CFLAGS += -Wall -O2
-CFLAGS += -D__EXPORTED_HEADERS__ -I$(srctree)/tools/include/uapi \
-	  -I$(srctree)/tools/include
+CFLAGS += -D__EXPORTED_HEADERS__ -I$(srctree)/include/uapi -I$(srctree)/include
 
 # This will work when bpf is built in tools env. where srctree
 # isn't set and when invoked from selftests build, where srctree
@@ -124,12 +123,5 @@ runqslower_install:
 runqslower_clean:
 	$(call descend,runqslower,clean)
 
-resolve_btfids:
-	$(call descend,resolve_btfids)
-
-resolve_btfids_clean:
-	$(call descend,resolve_btfids,clean)
-
 .PHONY: all install clean bpftool bpftool_install bpftool_clean \
-	runqslower runqslower_install runqslower_clean \
-	resolve_btfids resolve_btfids_clean
+	runqslower runqslower_install runqslower_clean

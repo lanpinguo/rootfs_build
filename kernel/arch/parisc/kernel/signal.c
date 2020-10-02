@@ -30,6 +30,7 @@
 #include <asm/ucontext.h>
 #include <asm/rt_sigframe.h>
 #include <linux/uaccess.h>
+#include <asm/pgalloc.h>
 #include <asm/cacheflush.h>
 #include <asm/asm-offsets.h>
 
@@ -502,7 +503,7 @@ syscall_restart(struct pt_regs *regs, struct k_sigaction *ka)
 			regs->gr[28] = -EINTR;
 			break;
 		}
-		fallthrough;
+		/* fallthrough */
 	case -ERESTARTNOINTR:
 		check_syscallno_in_delay_branch(regs);
 		break;

@@ -178,7 +178,7 @@ int amdgpu_ib_schedule(struct amdgpu_ring *ring, unsigned num_ibs,
 
 	need_ctx_switch = ring->current_ctx != fence_ctx;
 	if (ring->funcs->emit_pipeline_sync && job &&
-	    ((tmp = amdgpu_sync_get_fence(&job->sched_sync)) ||
+	    ((tmp = amdgpu_sync_get_fence(&job->sched_sync, NULL)) ||
 	     (amdgpu_sriov_vf(adev) && need_ctx_switch) ||
 	     amdgpu_vm_need_pipeline_sync(ring, job))) {
 		need_pipe_sync = true;
@@ -468,8 +468,7 @@ static const struct drm_info_list amdgpu_debugfs_sa_list[] = {
 int amdgpu_debugfs_sa_init(struct amdgpu_device *adev)
 {
 #if defined(CONFIG_DEBUG_FS)
-	return amdgpu_debugfs_add_files(adev, amdgpu_debugfs_sa_list,
-					ARRAY_SIZE(amdgpu_debugfs_sa_list));
+	return amdgpu_debugfs_add_files(adev, amdgpu_debugfs_sa_list, 1);
 #else
 	return 0;
 #endif

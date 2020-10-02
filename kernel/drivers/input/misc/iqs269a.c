@@ -575,7 +575,8 @@ static int iqs269_parse_chan(struct iqs269_private *iqs269,
 
 		case IQS269_LOCAL_CAP_SIZE_GLOBAL_0pF5:
 			engine_a |= IQS269_CHx_ENG_A_LOCAL_CAP_SIZE;
-			fallthrough;
+
+			/* fall through */
 
 		case IQS269_LOCAL_CAP_SIZE_GLOBAL_ONLY:
 			engine_b |= IQS269_CHx_ENG_B_LOCAL_CAP_ENABLE;
@@ -730,12 +731,14 @@ static int iqs269_parse_chan(struct iqs269_private *iqs269,
 				iqs269->switches[i].code = val;
 				iqs269->switches[i].enabled = true;
 			}
-			fallthrough;
+
+			/* fall through */
 
 		case IQS269_CHx_HALL_INACTIVE:
 			if (iqs269->hall_enable)
 				break;
-			fallthrough;
+
+			/* fall through */
 
 		default:
 			iqs269->keycode[i * IQS269_NUM_CH + reg] = val;
@@ -1140,12 +1143,14 @@ static int iqs269_input_init(struct iqs269_private *iqs269)
 							    sw_code,
 							    state & BIT(j));
 				}
-				fallthrough;
+
+				/* fall through */
 
 			case IQS269_CHx_HALL_INACTIVE:
 				if (iqs269->hall_enable)
 					continue;
-				fallthrough;
+
+				/* fall through */
 
 			default:
 				if (keycode != KEY_RESERVED)
@@ -1268,12 +1273,14 @@ static int iqs269_report(struct iqs269_private *iqs269)
 					input_report_switch(iqs269->keypad,
 							    sw_code,
 							    state & BIT(j));
-				fallthrough;
+
+				/* fall through */
 
 			case IQS269_CHx_HALL_INACTIVE:
 				if (iqs269->hall_enable)
 					continue;
-				fallthrough;
+
+				/* fall through */
 
 			default:
 				input_report_key(iqs269->keypad, keycode,

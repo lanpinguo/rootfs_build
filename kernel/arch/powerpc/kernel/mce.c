@@ -49,20 +49,6 @@ static struct irq_work mce_ue_event_irq_work = {
 
 DECLARE_WORK(mce_ue_event_work, machine_process_ue_event);
 
-static BLOCKING_NOTIFIER_HEAD(mce_notifier_list);
-
-int mce_register_notifier(struct notifier_block *nb)
-{
-	return blocking_notifier_chain_register(&mce_notifier_list, nb);
-}
-EXPORT_SYMBOL_GPL(mce_register_notifier);
-
-int mce_unregister_notifier(struct notifier_block *nb)
-{
-	return blocking_notifier_chain_unregister(&mce_notifier_list, nb);
-}
-EXPORT_SYMBOL_GPL(mce_unregister_notifier);
-
 static void mce_set_error_info(struct machine_check_event *mce,
 			       struct mce_error_info *mce_err)
 {
@@ -292,7 +278,6 @@ static void machine_process_ue_event(struct work_struct *work)
 	while (__this_cpu_read(mce_ue_count) > 0) {
 		index = __this_cpu_read(mce_ue_count) - 1;
 		evt = this_cpu_ptr(&mce_ue_event_queue[index]);
-		blocking_notifier_call_chain(&mce_notifier_list, 0, evt);
 #ifdef CONFIG_MEMORY_FAILURE
 		/*
 		 * This should probably queued elsewhere, but
@@ -385,7 +370,6 @@ void machine_check_print_event_info(struct machine_check_event *evt,
 	static const char *mc_user_types[] = {
 		"Indeterminate",
 		"tlbie(l) invalid",
-		"scv invalid",
 	};
 	static const char *mc_ra_types[] = {
 		"Indeterminate",
@@ -727,7 +711,7 @@ long hmi_exception_realmode(struct pt_regs *regs)
 {	
 	int ret;
 
-	local_paca->hmi_irqs++;
+	__this_cpu_inc(irq_stat.hmi_exceptions);
 
 	ret = hmi_handle_debugtrig(regs);
 	if (ret >= 0)

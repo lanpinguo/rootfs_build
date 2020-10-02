@@ -57,16 +57,20 @@ u64 mmhub_v9_4_get_fb_location(struct amdgpu_device *adev)
 static void mmhub_v9_4_setup_hubid_vm_pt_regs(struct amdgpu_device *adev, int hubid,
 				uint32_t vmid, uint64_t value)
 {
-	struct amdgpu_vmhub *hub = &adev->vmhub[AMDGPU_MMHUB_0];
+	/* two registers distance between mmVML2VC0_VM_CONTEXT0_* to
+	 * mmVML2VC0_VM_CONTEXT1_*
+	 */
+	int dist = mmVML2VC0_VM_CONTEXT1_PAGE_TABLE_BASE_ADDR_LO32
+			- mmVML2VC0_VM_CONTEXT0_PAGE_TABLE_BASE_ADDR_LO32;
 
 	WREG32_SOC15_OFFSET(MMHUB, 0,
 			    mmVML2VC0_VM_CONTEXT0_PAGE_TABLE_BASE_ADDR_LO32,
-			    hub->ctx_addr_distance * vmid + hubid * MMHUB_INSTANCE_REGISTER_OFFSET,
+			    dist * vmid + hubid * MMHUB_INSTANCE_REGISTER_OFFSET,
 			    lower_32_bits(value));
 
 	WREG32_SOC15_OFFSET(MMHUB, 0,
 			    mmVML2VC0_VM_CONTEXT0_PAGE_TABLE_BASE_ADDR_HI32,
-			    hub->ctx_addr_distance * vmid + hubid * MMHUB_INSTANCE_REGISTER_OFFSET,
+			    dist * vmid + hubid * MMHUB_INSTANCE_REGISTER_OFFSET,
 			    upper_32_bits(value));
 
 }
@@ -297,7 +301,6 @@ static void mmhub_v9_4_disable_identity_aperture(struct amdgpu_device *adev,
 
 static void mmhub_v9_4_setup_vmid_config(struct amdgpu_device *adev, int hubid)
 {
-	struct amdgpu_vmhub *hub = &adev->vmhub[AMDGPU_MMHUB_0];
 	uint32_t tmp;
 	int i;
 
@@ -332,25 +335,21 @@ static void mmhub_v9_4_setup_vmid_config(struct amdgpu_device *adev, int hubid)
 				    RETRY_PERMISSION_OR_INVALID_PAGE_FAULT,
 				    !amdgpu_noretry);
 		WREG32_SOC15_OFFSET(MMHUB, 0, mmVML2VC0_VM_CONTEXT1_CNTL,
-				    hubid * MMHUB_INSTANCE_REGISTER_OFFSET +
-				    i * hub->ctx_distance, tmp);
+				    hubid * MMHUB_INSTANCE_REGISTER_OFFSET + i,
+				    tmp);
 		WREG32_SOC15_OFFSET(MMHUB, 0,
 			    mmVML2VC0_VM_CONTEXT1_PAGE_TABLE_START_ADDR_LO32,
-			    hubid * MMHUB_INSTANCE_REGISTER_OFFSET +
-			    i * hub->ctx_addr_distance, 0);
+			    hubid * MMHUB_INSTANCE_REGISTER_OFFSET + i*2, 0);
 		WREG32_SOC15_OFFSET(MMHUB, 0,
 			    mmVML2VC0_VM_CONTEXT1_PAGE_TABLE_START_ADDR_HI32,
-			    hubid * MMHUB_INSTANCE_REGISTER_OFFSET +
-			    i * hub->ctx_addr_distance, 0);
+			    hubid * MMHUB_INSTANCE_REGISTER_OFFSET + i*2, 0);
 		WREG32_SOC15_OFFSET(MMHUB, 0,
 				mmVML2VC0_VM_CONTEXT1_PAGE_TABLE_END_ADDR_LO32,
-				hubid * MMHUB_INSTANCE_REGISTER_OFFSET +
-				i * hub->ctx_addr_distance,
+				hubid * MMHUB_INSTANCE_REGISTER_OFFSET + i*2,
 				lower_32_bits(adev->vm_manager.max_pfn - 1));
 		WREG32_SOC15_OFFSET(MMHUB, 0,
 				mmVML2VC0_VM_CONTEXT1_PAGE_TABLE_END_ADDR_HI32,
-				hubid * MMHUB_INSTANCE_REGISTER_OFFSET +
-				i * hub->ctx_addr_distance,
+				hubid * MMHUB_INSTANCE_REGISTER_OFFSET + i*2,
 				upper_32_bits(adev->vm_manager.max_pfn - 1));
 	}
 }
@@ -358,19 +357,16 @@ static void mmhub_v9_4_setup_vmid_config(struct amdgpu_device *adev, int hubid)
 static void mmhub_v9_4_program_invalidation(struct amdgpu_device *adev,
 					    int hubid)
 {
-	struct amdgpu_vmhub *hub = &adev->vmhub[AMDGPU_MMHUB_0];
 	unsigned i;
 
 	for (i = 0; i < 18; ++i) {
 		WREG32_SOC15_OFFSET(MMHUB, 0,
 				mmVML2VC0_VM_INVALIDATE_ENG0_ADDR_RANGE_LO32,
-				hubid * MMHUB_INSTANCE_REGISTER_OFFSET +
-				i * hub->eng_addr_distance,
+				hubid * MMHUB_INSTANCE_REGISTER_OFFSET + 2 * i,
 				0xffffffff);
 		WREG32_SOC15_OFFSET(MMHUB, 0,
 				mmVML2VC0_VM_INVALIDATE_ENG0_ADDR_RANGE_HI32,
-				hubid * MMHUB_INSTANCE_REGISTER_OFFSET +
-				i * hub->eng_addr_distance,
+				hubid * MMHUB_INSTANCE_REGISTER_OFFSET + 2 * i,
 				0x1f);
 	}
 }
@@ -399,7 +395,6 @@ int mmhub_v9_4_gart_enable(struct amdgpu_device *adev)
 
 void mmhub_v9_4_gart_disable(struct amdgpu_device *adev)
 {
-	struct amdgpu_vmhub *hub = &adev->vmhub[AMDGPU_MMHUB_0];
 	u32 tmp;
 	u32 i, j;
 
@@ -409,7 +404,7 @@ void mmhub_v9_4_gart_disable(struct amdgpu_device *adev)
 			WREG32_SOC15_OFFSET(MMHUB, 0,
 					    mmVML2VC0_VM_CONTEXT0_CNTL,
 					    j * MMHUB_INSTANCE_REGISTER_OFFSET +
-					    i * hub->ctx_distance, 0);
+					    i, 0);
 
 		/* Setup TLB control */
 		tmp = RREG32_SOC15_OFFSET(MMHUB, 0,
@@ -539,15 +534,6 @@ void mmhub_v9_4_init(struct amdgpu_device *adev)
 			SOC15_REG_OFFSET(MMHUB, 0,
 				    mmVML2PF0_VM_L2_PROTECTION_FAULT_CNTL) +
 				    i * MMHUB_INSTANCE_REGISTER_OFFSET;
-
-		hub[i]->ctx_distance = mmVML2VC0_VM_CONTEXT1_CNTL -
-			mmVML2VC0_VM_CONTEXT0_CNTL;
-		hub[i]->ctx_addr_distance = mmVML2VC0_VM_CONTEXT1_PAGE_TABLE_BASE_ADDR_LO32 -
-			mmVML2VC0_VM_CONTEXT0_PAGE_TABLE_BASE_ADDR_LO32;
-		hub[i]->eng_distance = mmVML2VC0_VM_INVALIDATE_ENG1_REQ -
-			mmVML2VC0_VM_INVALIDATE_ENG0_REQ;
-		hub[i]->eng_addr_distance = mmVML2VC0_VM_INVALIDATE_ENG1_ADDR_RANGE_LO32 -
-			mmVML2VC0_VM_INVALIDATE_ENG0_ADDR_RANGE_LO32;
 	}
 }
 

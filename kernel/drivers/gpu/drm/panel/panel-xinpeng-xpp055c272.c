@@ -62,9 +62,9 @@ static inline struct xpp055c272 *panel_to_xpp055c272(struct drm_panel *panel)
 }
 
 #define dsi_generic_write_seq(dsi, cmd, seq...) do {			\
-		static const u8 b[] = { cmd, seq };			\
+		static const u8 d[] = { seq };				\
 		int ret;						\
-		ret = mipi_dsi_dcs_write_buffer(dsi, b, ARRAY_SIZE(b));	\
+		ret = mipi_dsi_dcs_write(dsi, cmd, d, ARRAY_SIZE(d));	\
 		if (ret < 0)						\
 			return ret;					\
 	} while (0)
@@ -243,6 +243,7 @@ static const struct drm_display_mode default_mode = {
 	.vsync_start	= 1280 + 22,
 	.vsync_end	= 1280 + 22 + 4,
 	.vtotal		= 1280 + 22 + 4 + 11,
+	.vrefresh	= 60,
 	.clock		= 64000,
 	.width_mm	= 68,
 	.height_mm	= 121,
@@ -258,7 +259,7 @@ static int xpp055c272_get_modes(struct drm_panel *panel,
 	if (!mode) {
 		DRM_DEV_ERROR(ctx->dev, "Failed to add mode %ux%u@%u\n",
 			      default_mode.hdisplay, default_mode.vdisplay,
-			      drm_mode_vrefresh(&default_mode));
+			      default_mode.vrefresh);
 		return -ENOMEM;
 	}
 

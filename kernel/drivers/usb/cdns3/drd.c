@@ -29,6 +29,7 @@
  */
 int cdns3_set_mode(struct cdns3 *cdns, enum usb_dr_mode mode)
 {
+	int ret = 0;
 	u32 reg;
 
 	switch (mode) {
@@ -60,7 +61,7 @@ int cdns3_set_mode(struct cdns3 *cdns, enum usb_dr_mode mode)
 		return -EINVAL;
 	}
 
-	return 0;
+	return ret;
 }
 
 int cdns3_get_id(struct cdns3 *cdns)
@@ -83,25 +84,25 @@ int cdns3_get_vbus(struct cdns3 *cdns)
 	return vbus;
 }
 
-bool cdns3_is_host(struct cdns3 *cdns)
+int cdns3_is_host(struct cdns3 *cdns)
 {
 	if (cdns->dr_mode == USB_DR_MODE_HOST)
-		return true;
-	else if (cdns3_get_id(cdns) == CDNS3_ID_HOST)
-		return true;
+		return 1;
+	else if (!cdns3_get_id(cdns))
+		return 1;
 
-	return false;
+	return 0;
 }
 
-bool cdns3_is_device(struct cdns3 *cdns)
+int cdns3_is_device(struct cdns3 *cdns)
 {
 	if (cdns->dr_mode == USB_DR_MODE_PERIPHERAL)
-		return true;
+		return 1;
 	else if (cdns->dr_mode == USB_DR_MODE_OTG)
-		if (cdns3_get_id(cdns) == CDNS3_ID_PERIPHERAL)
-			return true;
+		if (cdns3_get_id(cdns))
+			return 1;
 
-	return false;
+	return 0;
 }
 
 /**
@@ -124,95 +125,83 @@ static void cdns3_otg_enable_irq(struct cdns3 *cdns)
 }
 
 /**
- * cdns3_drd_host_on - start host.
- * @cdns: Pointer to controller context structure.
- *
- * Returns 0 on success otherwise negative errno.
- */
-int cdns3_drd_host_on(struct cdns3 *cdns)
-{
-	u32 val;
-	int ret;
-
-	/* Enable host mode. */
-	writel(OTGCMD_HOST_BUS_REQ | OTGCMD_OTG_DIS,
-	       &cdns->otg_regs->cmd);
-
-	dev_dbg(cdns->dev, "Waiting till Host mode is turned on\n");
-	ret = readl_poll_timeout_atomic(&cdns->otg_regs->sts, val,
-					val & OTGSTS_XHCI_READY, 1, 100000);
-
-	if (ret)
-		dev_err(cdns->dev, "timeout waiting for xhci_ready\n");
-
-	return ret;
-}
-
-/**
- * cdns3_drd_host_off - stop host.
- * @cdns: Pointer to controller context structure.
- */
-void cdns3_drd_host_off(struct cdns3 *cdns)
-{
-	u32 val;
-
-	writel(OTGCMD_HOST_BUS_DROP | OTGCMD_DEV_BUS_DROP |
-	       OTGCMD_DEV_POWER_OFF | OTGCMD_HOST_POWER_OFF,
-	       &cdns->otg_regs->cmd);
-
-	/* Waiting till H_IDLE state.*/
-	readl_poll_timeout_atomic(&cdns->otg_regs->state, val,
-				  !(val & OTGSTATE_HOST_STATE_MASK),
-				  1, 2000000);
-}
-
-/**
- * cdns3_drd_gadget_on - start gadget.
- * @cdns: Pointer to controller context structure.
+ * cdns3_drd_switch_host - start/stop host
+ * @cdns: Pointer to controller context structure
+ * @on: 1 for start, 0 for stop
  *
  * Returns 0 on success otherwise negative errno
  */
-int cdns3_drd_gadget_on(struct cdns3 *cdns)
+int cdns3_drd_switch_host(struct cdns3 *cdns, int on)
 {
 	int ret, val;
 	u32 reg = OTGCMD_OTG_DIS;
 
 	/* switch OTG core */
-	writel(OTGCMD_DEV_BUS_REQ | reg, &cdns->otg_regs->cmd);
+	if (on) {
+		writel(OTGCMD_HOST_BUS_REQ | reg, &cdns->otg_regs->cmd);
 
-	dev_dbg(cdns->dev, "Waiting till Device mode is turned on\n");
-
-	ret = readl_poll_timeout_atomic(&cdns->otg_regs->sts, val,
-					val & OTGSTS_DEV_READY,
-					1, 100000);
-	if (ret) {
-		dev_err(cdns->dev, "timeout waiting for dev_ready\n");
-		return ret;
+		dev_dbg(cdns->dev, "Waiting till Host mode is turned on\n");
+		ret = readl_poll_timeout_atomic(&cdns->otg_regs->sts, val,
+						val & OTGSTS_XHCI_READY,
+						1, 100000);
+		if (ret) {
+			dev_err(cdns->dev, "timeout waiting for xhci_ready\n");
+			return ret;
+		}
+	} else {
+		writel(OTGCMD_HOST_BUS_DROP | OTGCMD_DEV_BUS_DROP |
+		       OTGCMD_DEV_POWER_OFF | OTGCMD_HOST_POWER_OFF,
+		       &cdns->otg_regs->cmd);
+		/* Waiting till H_IDLE state.*/
+		readl_poll_timeout_atomic(&cdns->otg_regs->state, val,
+					  !(val & OTGSTATE_HOST_STATE_MASK),
+					  1, 2000000);
 	}
 
 	return 0;
 }
 
 /**
- * cdns3_drd_gadget_off - stop gadget.
- * @cdns: Pointer to controller context structure.
+ * cdns3_drd_switch_gadget - start/stop gadget
+ * @cdns: Pointer to controller context structure
+ * @on: 1 for start, 0 for stop
+ *
+ * Returns 0 on success otherwise negative errno
  */
-void cdns3_drd_gadget_off(struct cdns3 *cdns)
+int cdns3_drd_switch_gadget(struct cdns3 *cdns, int on)
 {
-	u32 val;
+	int ret, val;
+	u32 reg = OTGCMD_OTG_DIS;
 
-	/*
-	 * Driver should wait at least 10us after disabling Device
-	 * before turning-off Device (DEV_BUS_DROP).
-	 */
-	usleep_range(20, 30);
-	writel(OTGCMD_HOST_BUS_DROP | OTGCMD_DEV_BUS_DROP |
-	       OTGCMD_DEV_POWER_OFF | OTGCMD_HOST_POWER_OFF,
-	       &cdns->otg_regs->cmd);
-	/* Waiting till DEV_IDLE state.*/
-	readl_poll_timeout_atomic(&cdns->otg_regs->state, val,
-				  !(val & OTGSTATE_DEV_STATE_MASK),
-				  1, 2000000);
+	/* switch OTG core */
+	if (on) {
+		writel(OTGCMD_DEV_BUS_REQ | reg, &cdns->otg_regs->cmd);
+
+		dev_dbg(cdns->dev, "Waiting till Device mode is turned on\n");
+
+		ret = readl_poll_timeout_atomic(&cdns->otg_regs->sts, val,
+						val & OTGSTS_DEV_READY,
+						1, 100000);
+		if (ret) {
+			dev_err(cdns->dev, "timeout waiting for dev_ready\n");
+			return ret;
+		}
+	} else {
+		/*
+		 * driver should wait at least 10us after disabling Device
+		 * before turning-off Device (DEV_BUS_DROP)
+		 */
+		usleep_range(20, 30);
+		writel(OTGCMD_HOST_BUS_DROP | OTGCMD_DEV_BUS_DROP |
+		       OTGCMD_DEV_POWER_OFF | OTGCMD_HOST_POWER_OFF,
+		       &cdns->otg_regs->cmd);
+		/* Waiting till DEV_IDLE state.*/
+		readl_poll_timeout_atomic(&cdns->otg_regs->state, val,
+					  !(val & OTGSTATE_DEV_STATE_MASK),
+					  1, 2000000);
+	}
+
+	return 0;
 }
 
 /**
@@ -223,7 +212,7 @@ void cdns3_drd_gadget_off(struct cdns3 *cdns)
  */
 static int cdns3_init_otg_mode(struct cdns3 *cdns)
 {
-	int ret;
+	int ret = 0;
 
 	cdns3_otg_disable_irq(cdns);
 	/* clear all interrupts */
@@ -234,8 +223,7 @@ static int cdns3_init_otg_mode(struct cdns3 *cdns)
 		return ret;
 
 	cdns3_otg_enable_irq(cdns);
-
-	return 0;
+	return ret;
 }
 
 /**
@@ -246,7 +234,7 @@ static int cdns3_init_otg_mode(struct cdns3 *cdns)
  */
 int cdns3_drd_update_mode(struct cdns3 *cdns)
 {
-	int ret;
+	int ret = 0;
 
 	switch (cdns->dr_mode) {
 	case USB_DR_MODE_PERIPHERAL:
@@ -291,12 +279,12 @@ static irqreturn_t cdns3_drd_irq(int irq, void *data)
 	u32 reg;
 
 	if (cdns->dr_mode != USB_DR_MODE_OTG)
-		return IRQ_NONE;
+		return ret;
 
 	reg = readl(&cdns->otg_regs->ivect);
 
 	if (!reg)
-		return IRQ_NONE;
+		return ret;
 
 	if (reg & OTGIEN_ID_CHANGE_INT) {
 		dev_dbg(cdns->dev, "OTG IRQ: new ID: %d\n",
@@ -319,8 +307,8 @@ static irqreturn_t cdns3_drd_irq(int irq, void *data)
 int cdns3_drd_init(struct cdns3 *cdns)
 {
 	void __iomem *regs;
+	int ret = 0;
 	u32 state;
-	int ret;
 
 	regs = devm_ioremap_resource(cdns->dev, &cdns->otg_res);
 	if (IS_ERR(regs))
@@ -371,18 +359,19 @@ int cdns3_drd_init(struct cdns3 *cdns)
 					cdns3_drd_thread_irq,
 					IRQF_SHARED,
 					dev_name(cdns->dev), cdns);
+
 	if (ret) {
 		dev_err(cdns->dev, "couldn't get otg_irq\n");
 		return ret;
 	}
 
 	state = readl(&cdns->otg_regs->sts);
-	if (OTGSTS_OTG_NRDY(state)) {
+	if (OTGSTS_OTG_NRDY(state) != 0) {
 		dev_err(cdns->dev, "Cadence USB3 OTG device not ready\n");
 		return -ENODEV;
 	}
 
-	return 0;
+	return ret;
 }
 
 int cdns3_drd_exit(struct cdns3 *cdns)

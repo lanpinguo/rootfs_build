@@ -196,10 +196,7 @@ static void __init configure_exceptions(void)
 	/* Under a PAPR hypervisor, we need hypercalls */
 	if (firmware_has_feature(FW_FEATURE_SET_MODE)) {
 		/* Enable AIL if possible */
-		if (!pseries_enable_reloc_on_exc()) {
-			init_task.thread.fscr &= ~FSCR_SCV;
-			cur_cpu_spec->cpu_user_features2 &= ~PPC_FEATURE2_SCV;
-		}
+		pseries_enable_reloc_on_exc();
 
 		/*
 		 * Tell the hypervisor that we want our exceptions to

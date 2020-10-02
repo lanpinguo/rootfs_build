@@ -104,7 +104,6 @@ void scif_cleanup_zombie_epd(void)
 
 /**
  * scif_cnctreq() - Respond to SCIF_CNCT_REQ interrupt message
- * @scifdev:    SCIF device
  * @msg:        Interrupt message
  *
  * This message is initiated by the remote node to request a connection
@@ -156,7 +155,6 @@ conreq_sendrej:
 
 /**
  * scif_cnctgnt() - Respond to SCIF_CNCT_GNT interrupt message
- * @scifdev:    SCIF device
  * @msg:        Interrupt message
  *
  * An accept() on the remote node has occurred and sent this message
@@ -183,7 +181,6 @@ void scif_cnctgnt(struct scif_dev *scifdev, struct scifmsg *msg)
 
 /**
  * scif_cnctgnt_ack() - Respond to SCIF_CNCT_GNTACK interrupt message
- * @scifdev:    SCIF device
  * @msg:        Interrupt message
  *
  * The remote connection request has finished mapping the local memory.
@@ -206,7 +203,6 @@ void scif_cnctgnt_ack(struct scif_dev *scifdev, struct scifmsg *msg)
 
 /**
  * scif_cnctgnt_nack() - Respond to SCIF_CNCT_GNTNACK interrupt message
- * @scifdev:    SCIF device
  * @msg:        Interrupt message
  *
  * The remote connection request failed to map the local memory it was sent.
@@ -225,7 +221,6 @@ void scif_cnctgnt_nack(struct scif_dev *scifdev, struct scifmsg *msg)
 
 /**
  * scif_cnctrej() - Respond to SCIF_CNCT_REJ interrupt message
- * @scifdev:    SCIF device
  * @msg:        Interrupt message
  *
  * The remote end has rejected the connection request.  Set the end
@@ -245,7 +240,6 @@ void scif_cnctrej(struct scif_dev *scifdev, struct scifmsg *msg)
 
 /**
  * scif_discnct() - Respond to SCIF_DISCNCT interrupt message
- * @scifdev:    SCIF device
  * @msg:        Interrupt message
  *
  * The remote node has indicated close() has been called on its end
@@ -307,7 +301,6 @@ discnct_ack:
 
 /**
  * scif_discnct_ack() - Respond to SCIF_DISCNT_ACK interrupt message
- * @scifdev:    SCIF device
  * @msg:        Interrupt message
  *
  * Remote side has indicated it has not more references to local resources
@@ -324,7 +317,6 @@ void scif_discnt_ack(struct scif_dev *scifdev, struct scifmsg *msg)
 
 /**
  * scif_clientsend() - Respond to SCIF_CLIENT_SEND interrupt message
- * @scifdev:    SCIF device
  * @msg:        Interrupt message
  *
  * Remote side is confirming send or receive interrupt handling is complete.
@@ -341,7 +333,6 @@ void scif_clientsend(struct scif_dev *scifdev, struct scifmsg *msg)
 
 /**
  * scif_clientrcvd() - Respond to SCIF_CLIENT_RCVD interrupt message
- * @scifdev:    SCIF device
  * @msg:        Interrupt message
  *
  * Remote side is confirming send or receive interrupt handling is complete.

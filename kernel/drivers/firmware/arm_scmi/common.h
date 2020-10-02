@@ -6,8 +6,6 @@
  *
  * Copyright (C) 2018 ARM Ltd.
  */
-#ifndef _SCMI_COMMON_H
-#define _SCMI_COMMON_H
 
 #include <linux/bitfield.h>
 #include <linux/completion.h>
@@ -237,5 +235,3 @@ void shmem_fetch_notification(struct scmi_shared_mem __iomem *shmem,
 void shmem_clear_channel(struct scmi_shared_mem __iomem *shmem);
 bool shmem_poll_done(struct scmi_shared_mem __iomem *shmem,
 		     struct scmi_xfer *xfer);
-
-#endif /* _SCMI_COMMON_H */

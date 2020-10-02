@@ -17,7 +17,8 @@ KCOV_INSTRUMENT_perf_event.o := n
 KCSAN_SANITIZE_common.o := n
 
 # Make sure load_percpu_segment has no stackprotector
-CFLAGS_common.o		:= -fno-stack-protector
+nostackp := $(call cc-option, -fno-stack-protector)
+CFLAGS_common.o		:= $(nostackp)
 
 obj-y			:= cacheinfo.o scattered.o topology.o
 obj-y			+= common.o

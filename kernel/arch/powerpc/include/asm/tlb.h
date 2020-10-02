@@ -12,6 +12,7 @@
 #ifndef __powerpc64__
 #include <linux/pgtable.h>
 #endif
+#include <asm/pgalloc.h>
 #ifndef __powerpc64__
 #include <asm/page.h>
 #include <asm/mmu.h>

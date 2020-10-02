@@ -233,7 +233,7 @@ static int sun6i_dphy_exit(struct phy *phy)
 }
 
 
-static const struct phy_ops sun6i_dphy_ops = {
+static struct phy_ops sun6i_dphy_ops = {
 	.configure	= sun6i_dphy_configure,
 	.power_on	= sun6i_dphy_power_on,
 	.power_off	= sun6i_dphy_power_off,
@@ -241,7 +241,7 @@ static const struct phy_ops sun6i_dphy_ops = {
 	.exit		= sun6i_dphy_exit,
 };
 
-static const struct regmap_config sun6i_dphy_regmap_config = {
+static struct regmap_config sun6i_dphy_regmap_config = {
 	.reg_bits	= 32,
 	.val_bits	= 32,
 	.reg_stride	= 4,

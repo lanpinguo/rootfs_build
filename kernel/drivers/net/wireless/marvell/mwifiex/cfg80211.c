@@ -27,8 +27,7 @@ module_param(reg_alpha2, charp, 0);
 
 static const struct ieee80211_iface_limit mwifiex_ap_sta_limits[] = {
 	{
-		.max = MWIFIEX_MAX_BSS_NUM,
-		.types = BIT(NL80211_IFTYPE_STATION) |
+		.max = 3, .types = BIT(NL80211_IFTYPE_STATION) |
 				   BIT(NL80211_IFTYPE_P2P_GO) |
 				   BIT(NL80211_IFTYPE_P2P_CLIENT) |
 				   BIT(NL80211_IFTYPE_AP),
@@ -3727,11 +3726,11 @@ mwifiex_cfg80211_tdls_mgmt(struct wiphy *wiphy, struct net_device *dev,
 	int ret;
 
 	if (!(wiphy->flags & WIPHY_FLAG_SUPPORTS_TDLS))
-		return -EOPNOTSUPP;
+		return -ENOTSUPP;
 
 	/* make sure we are in station mode and connected */
 	if (!(priv->bss_type == MWIFIEX_BSS_TYPE_STA && priv->media_connected))
-		return -EOPNOTSUPP;
+		return -ENOTSUPP;
 
 	switch (action_code) {
 	case WLAN_TDLS_SETUP_REQUEST:
@@ -3799,11 +3798,11 @@ mwifiex_cfg80211_tdls_oper(struct wiphy *wiphy, struct net_device *dev,
 
 	if (!(wiphy->flags & WIPHY_FLAG_SUPPORTS_TDLS) ||
 	    !(wiphy->flags & WIPHY_FLAG_TDLS_EXTERNAL_SETUP))
-		return -EOPNOTSUPP;
+		return -ENOTSUPP;
 
 	/* make sure we are in station mode and connected */
 	if (!(priv->bss_type == MWIFIEX_BSS_TYPE_STA && priv->media_connected))
-		return -EOPNOTSUPP;
+		return -ENOTSUPP;
 
 	mwifiex_dbg(priv->adapter, MSG,
 		    "TDLS peer=%pM, oper=%d\n", peer, action);
@@ -3833,7 +3832,7 @@ mwifiex_cfg80211_tdls_oper(struct wiphy *wiphy, struct net_device *dev,
 	default:
 		mwifiex_dbg(priv->adapter, ERROR,
 			    "tdls_oper: operation not supported\n");
-		return -EOPNOTSUPP;
+		return -ENOTSUPP;
 	}
 
 	return mwifiex_tdls_oper(priv, peer, action);
@@ -3914,11 +3913,11 @@ mwifiex_cfg80211_add_station(struct wiphy *wiphy, struct net_device *dev,
 	struct mwifiex_private *priv = mwifiex_netdev_get_priv(dev);
 
 	if (!(params->sta_flags_set & BIT(NL80211_STA_FLAG_TDLS_PEER)))
-		return -EOPNOTSUPP;
+		return -ENOTSUPP;
 
 	/* make sure we are in station mode and connected */
 	if ((priv->bss_type != MWIFIEX_BSS_TYPE_STA) || !priv->media_connected)
-		return -EOPNOTSUPP;
+		return -ENOTSUPP;
 
 	return mwifiex_tdls_oper(priv, mac, MWIFIEX_TDLS_CREATE_LINK);
 }
@@ -4151,11 +4150,11 @@ mwifiex_cfg80211_change_station(struct wiphy *wiphy, struct net_device *dev,
 
 	/* we support change_station handler only for TDLS peers*/
 	if (!(params->sta_flags_set & BIT(NL80211_STA_FLAG_TDLS_PEER)))
-		return -EOPNOTSUPP;
+		return -ENOTSUPP;
 
 	/* make sure we are in station mode and connected */
 	if ((priv->bss_type != MWIFIEX_BSS_TYPE_STA) || !priv->media_connected)
-		return -EOPNOTSUPP;
+		return -ENOTSUPP;
 
 	priv->sta_params = params;
 

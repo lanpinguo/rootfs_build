@@ -199,7 +199,7 @@ static int raise_local(void)
 			 * calling irq_enter, but the necessary
 			 * machinery isn't exported currently.
 			 */
-			fallthrough;
+			/*FALL THROUGH*/
 		case MCJ_CTX_PROCESS:
 			raise_exception(m, NULL);
 			break;

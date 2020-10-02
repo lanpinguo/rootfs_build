@@ -138,7 +138,7 @@ int big_key_preparse(struct key_preparsed_payload *prep)
 err_fput:
 	fput(file);
 err_enckey:
-	kfree_sensitive(enckey);
+	kzfree(enckey);
 error:
 	memzero_explicit(buf, enclen);
 	kvfree(buf);
@@ -155,7 +155,7 @@ void big_key_free_preparse(struct key_preparsed_payload *prep)
 
 		path_put(path);
 	}
-	kfree_sensitive(prep->payload.data[big_key_data]);
+	kzfree(prep->payload.data[big_key_data]);
 }
 
 /*
@@ -187,7 +187,7 @@ void big_key_destroy(struct key *key)
 		path->mnt = NULL;
 		path->dentry = NULL;
 	}
-	kfree_sensitive(key->payload.data[big_key_data]);
+	kzfree(key->payload.data[big_key_data]);
 	key->payload.data[big_key_data] = NULL;
 }
 

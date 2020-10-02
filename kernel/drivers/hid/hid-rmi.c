@@ -428,6 +428,7 @@ static void rmi_report(struct hid_device *hid, struct hid_report *report)
 
 	switch (report->id) {
 	case RMI_READ_DATA_REPORT_ID:
+		/* fall-through */
 	case RMI_ATTN_REPORT_ID:
 		return;
 	}

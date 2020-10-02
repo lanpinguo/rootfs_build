@@ -63,6 +63,7 @@
  */
 
 #include <linux/linkage.h>
+#include <asm/inst.h>
 
 #define VMOVDQ		vmovdqu
 

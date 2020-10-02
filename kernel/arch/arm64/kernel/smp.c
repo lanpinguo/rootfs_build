@@ -43,6 +43,7 @@
 #include <asm/kvm_mmu.h>
 #include <asm/mmu_context.h>
 #include <asm/numa.h>
+#include <asm/pgalloc.h>
 #include <asm/processor.h>
 #include <asm/smp_plat.h>
 #include <asm/sections.h>
@@ -151,7 +152,7 @@ int __cpu_up(unsigned int cpu, struct task_struct *idle)
 			break;
 		}
 		pr_crit("CPU%u: may not have shut down cleanly\n", cpu);
-		fallthrough;
+		/* Fall through */
 	case CPU_STUCK_IN_KERNEL:
 		pr_crit("CPU%u: is stuck in kernel\n", cpu);
 		if (status & CPU_STUCK_REASON_52_BIT_VA)

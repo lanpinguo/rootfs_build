@@ -50,10 +50,6 @@
 	status = "disabled";
 };
 
-&sata {
-	status = "okay";
-};
-
 &vgen3_reg {
 	regulator-always-on;
 };

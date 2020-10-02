@@ -1,4 +1,6 @@
 # SPDX-License-Identifier: GPL-2.0
+ifdef CONFIG_UBSAN
+
 ifdef CONFIG_UBSAN_ALIGNMENT
       CFLAGS_UBSAN += $(call cc-option, -fsanitize=alignment)
 endif
@@ -24,3 +26,4 @@ endif
       # -fsanitize=* options makes GCC less smart than usual and
       # increase number of 'maybe-uninitialized false-positives
       CFLAGS_UBSAN += $(call cc-option, -Wno-maybe-uninitialized)
+endif

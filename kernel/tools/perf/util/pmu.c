@@ -26,8 +26,6 @@
 #include "strbuf.h"
 #include "fncache.h"
 
-struct perf_pmu perf_pmu__fake;
-
 struct perf_pmu_format {
 	char *name;
 	int value;
@@ -274,7 +272,7 @@ static void perf_pmu_update_alias(struct perf_pmu_alias *old,
 }
 
 /* Delete an alias entry. */
-static void perf_pmu_free_alias(struct perf_pmu_alias *newalias)
+void perf_pmu_free_alias(struct perf_pmu_alias *newalias)
 {
 	zfree(&newalias->name);
 	zfree(&newalias->desc);
@@ -1354,6 +1352,17 @@ void perf_pmu__set_format(unsigned long *bits, long from, long to)
 		set_bit(b, bits);
 }
 
+void perf_pmu__del_formats(struct list_head *formats)
+{
+	struct perf_pmu_format *fmt, *tmp;
+
+	list_for_each_entry_safe(fmt, tmp, formats, list) {
+		list_del(&fmt->list);
+		free(fmt->name);
+		free(fmt);
+	}
+}
+
 static int sub_non_neg(int a, int b)
 {
 	if (b > a)
@@ -1402,7 +1411,6 @@ struct sevent {
 	char *pmu;
 	char *metric_expr;
 	char *metric_name;
-	int is_cpu;
 };
 
 static int cmp_sevent(const void *a, const void *b)
@@ -1419,11 +1427,6 @@ static int cmp_sevent(const void *a, const void *b)
 		if (n)
 			return n;
 	}
-
-	/* Order CPU core events to be first */
-	if (as->is_cpu != bs->is_cpu)
-		return bs->is_cpu - as->is_cpu;
-
 	return strcmp(as->name, bs->name);
 }
 
@@ -1483,7 +1486,7 @@ void print_pmu_events(const char *event_glob, bool name_only, bool quiet_flag,
 		list_for_each_entry(alias, &pmu->aliases, list) {
 			char *name = alias->desc ? alias->name :
 				format_alias(buf, sizeof(buf), pmu, alias);
-			bool is_cpu = is_pmu_core(pmu->name);
+			bool is_cpu = !strcmp(pmu->name, "cpu");
 
 			if (alias->deprecated && !deprecated)
 				continue;
@@ -1515,7 +1518,6 @@ void print_pmu_events(const char *event_glob, bool name_only, bool quiet_flag,
 			aliases[j].pmu = pmu->name;
 			aliases[j].metric_expr = alias->metric_expr;
 			aliases[j].metric_name = alias->metric_name;
-			aliases[j].is_cpu = is_cpu;
 			j++;
 		}
 		if (pmu->selectable &&

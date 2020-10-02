@@ -38,7 +38,6 @@
 #include <linux/types.h>
 #include <linux/mutex.h>
 #include <linux/virtio.h>
-#include <linux/cdev.h>
 #include <linux/completion.h>
 #include <linux/idr.h>
 #include <linux/of.h>
@@ -360,7 +359,6 @@ enum rsc_handling_status {
  * @unprepare:	unprepare device after stop
  * @start:	power on the device and boot it
  * @stop:	power off the device
- * @attach:	attach to a device that his already powered up
  * @kick:	kick a virtqueue (virtqueue id given as a parameter)
  * @da_to_va:	optional platform hook to perform address translations
  * @parse_fw:	parse firmware to extract information (e.g. resource table)
@@ -381,7 +379,6 @@ struct rproc_ops {
 	int (*unprepare)(struct rproc *rproc);
 	int (*start)(struct rproc *rproc);
 	int (*stop)(struct rproc *rproc);
-	int (*attach)(struct rproc *rproc);
 	void (*kick)(struct rproc *rproc, int vqid);
 	void * (*da_to_va)(struct rproc *rproc, u64 da, size_t len);
 	int (*parse_fw)(struct rproc *rproc, const struct firmware *fw);
@@ -403,8 +400,6 @@ struct rproc_ops {
  * @RPROC_RUNNING:	device is up and running
  * @RPROC_CRASHED:	device has crashed; need to start recovery
  * @RPROC_DELETED:	device is deleted
- * @RPROC_DETACHED:	device has been booted by another entity and waiting
- *			for the core to attach to it
  * @RPROC_LAST:		just keep this one at the end
  *
  * Please note that the values of these states are used as indices
@@ -419,8 +414,7 @@ enum rproc_state {
 	RPROC_RUNNING	= 2,
 	RPROC_CRASHED	= 3,
 	RPROC_DELETED	= 4,
-	RPROC_DETACHED	= 5,
-	RPROC_LAST	= 6,
+	RPROC_LAST	= 5,
 };
 
 /**
@@ -441,20 +435,6 @@ enum rproc_crash_type {
 };
 
 /**
- * enum rproc_dump_mechanism - Coredump options for core
- * @RPROC_COREDUMP_DEFAULT:	Copy dump to separate buffer and carry on with
-				recovery
- * @RPROC_COREDUMP_INLINE:	Read segments directly from device memory. Stall
-				recovery until all segments are read
- * @RPROC_COREDUMP_DISABLED:	Don't perform any dump
- */
-enum rproc_dump_mechanism {
-	RPROC_COREDUMP_DEFAULT,
-	RPROC_COREDUMP_INLINE,
-	RPROC_COREDUMP_DISABLED,
-};
-
-/**
  * struct rproc_dump_segment - segment info from ELF header
  * @node:	list node related to the rproc segment list
  * @da:		device address of the segment
@@ -471,7 +451,7 @@ struct rproc_dump_segment {
 
 	void *priv;
 	void (*dump)(struct rproc *rproc, struct rproc_dump_segment *segment,
-		     void *dest, size_t offset, size_t size);
+		     void *dest);
 	loff_t offset;
 };
 
@@ -486,7 +466,6 @@ struct rproc_dump_segment {
  * @dev: virtual device for refcounting and common remoteproc behavior
  * @power: refcount of users who need this rproc powered up
  * @state: state of the device
- * @dump_conf: Currently selected coredump configuration
  * @lock: lock which protects concurrent manipulations of the rproc
  * @dbg_dir: debugfs directory of this rproc device
  * @traces: list of trace buffers
@@ -507,11 +486,8 @@ struct rproc_dump_segment {
  * @table_sz: size of @cached_table
  * @has_iommu: flag to indicate if remote processor is behind an MMU
  * @auto_boot: flag to indicate if remote processor should be auto-started
- * @autonomous: true if an external entity has booted the remote processor
  * @dump_segments: list of segments in the firmware
  * @nb_vdev: number of vdev currently handled by rproc
- * @char_dev: character device of the rproc
- * @cdev_put_on_release: flag to indicate if remoteproc should be shutdown on @char_dev release
  */
 struct rproc {
 	struct list_head node;
@@ -523,7 +499,6 @@ struct rproc {
 	struct device dev;
 	atomic_t power;
 	unsigned int state;
-	enum rproc_dump_mechanism dump_conf;
 	struct mutex lock;
 	struct dentry *dbg_dir;
 	struct list_head traces;
@@ -544,13 +519,10 @@ struct rproc {
 	size_t table_sz;
 	bool has_iommu;
 	bool auto_boot;
-	bool autonomous;
 	struct list_head dump_segments;
 	int nb_vdev;
 	u8 elf_class;
 	u16 elf_machine;
-	struct cdev cdev;
-	bool cdev_put_on_release;
 };
 
 /**
@@ -631,7 +603,6 @@ void rproc_put(struct rproc *rproc);
 int rproc_add(struct rproc *rproc);
 int rproc_del(struct rproc *rproc);
 void rproc_free(struct rproc *rproc);
-void rproc_resource_cleanup(struct rproc *rproc);
 
 struct rproc *devm_rproc_alloc(struct device *dev, const char *name,
 			       const struct rproc_ops *ops,
@@ -659,8 +630,7 @@ int rproc_coredump_add_custom_segment(struct rproc *rproc,
 				      dma_addr_t da, size_t size,
 				      void (*dumpfn)(struct rproc *rproc,
 						     struct rproc_dump_segment *segment,
-						     void *dest, size_t offset,
-						     size_t size),
+						     void *dest),
 				      void *priv);
 int rproc_coredump_set_elf_info(struct rproc *rproc, u8 class, u16 machine);
 

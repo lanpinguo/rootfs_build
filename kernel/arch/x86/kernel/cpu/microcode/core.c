@@ -145,6 +145,7 @@ extern struct builtin_fw __end_builtin_fw[];
 
 bool get_builtin_firmware(struct cpio_data *cd, const char *name)
 {
+#ifdef CONFIG_FW_LOADER
 	struct builtin_fw *b_fw;
 
 	for (b_fw = __start_builtin_fw; b_fw != __end_builtin_fw; b_fw++) {
@@ -154,6 +155,7 @@ bool get_builtin_firmware(struct cpio_data *cd, const char *name)
 			return true;
 		}
 	}
+#endif
 	return false;
 }
 

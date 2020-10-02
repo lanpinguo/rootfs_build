@@ -190,8 +190,9 @@ int i40iw_inetaddr_event(struct notifier_block *notifier,
 	switch (event) {
 	case NETDEV_DOWN:
 		action = I40IW_ARP_DELETE;
-		fallthrough;
+		/* Fall through */
 	case NETDEV_UP:
+		/* Fall through */
 	case NETDEV_CHANGEADDR:
 
 		/* Just skip if no need to handle ARP cache */
@@ -246,8 +247,9 @@ int i40iw_inet6addr_event(struct notifier_block *notifier,
 	switch (event) {
 	case NETDEV_DOWN:
 		action = I40IW_ARP_DELETE;
-		fallthrough;
+		/* Fall through */
 	case NETDEV_UP:
+		/* Fall through */
 	case NETDEV_CHANGEADDR:
 		i40iw_manage_arp_cache(iwdev,
 				       netdev->dev_addr,
@@ -342,7 +344,7 @@ int i40iw_netdevice_event(struct notifier_block *notifier,
 	switch (event) {
 	case NETDEV_DOWN:
 		iwdev->iw_status = 0;
-		fallthrough;
+		/* Fall through */
 	case NETDEV_UP:
 		i40iw_port_ibevent(iwdev);
 		break;

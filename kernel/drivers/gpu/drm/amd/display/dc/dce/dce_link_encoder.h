@@ -38,8 +38,7 @@
 
 #define AUX_REG_LIST(id)\
 	SRI(AUX_CONTROL, DP_AUX, id), \
-	SRI(AUX_DPHY_RX_CONTROL0, DP_AUX, id), \
-	SRI(AUX_DPHY_RX_CONTROL1, DP_AUX, id)
+	SRI(AUX_DPHY_RX_CONTROL0, DP_AUX, id)
 
 #define HPD_REG_LIST(id)\
 	SRI(DC_HPD_CONTROL, HPD, id)
@@ -108,7 +107,6 @@
 struct dce110_link_enc_aux_registers {
 	uint32_t AUX_CONTROL;
 	uint32_t AUX_DPHY_RX_CONTROL0;
-	uint32_t AUX_DPHY_RX_CONTROL1;
 };
 
 struct dce110_link_enc_hpd_registers {

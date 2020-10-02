@@ -1556,7 +1556,8 @@ EXPORT_SYMBOL_GPL(rt2x00lib_remove_dev);
 /*
  * Device state handlers
  */
-int rt2x00lib_suspend(struct rt2x00_dev *rt2x00dev)
+#ifdef CONFIG_PM
+int rt2x00lib_suspend(struct rt2x00_dev *rt2x00dev, pm_message_t state)
 {
 	rt2x00_dbg(rt2x00dev, "Going to sleep\n");
 
@@ -1613,6 +1614,7 @@ int rt2x00lib_resume(struct rt2x00_dev *rt2x00dev)
 	return 0;
 }
 EXPORT_SYMBOL_GPL(rt2x00lib_resume);
+#endif /* CONFIG_PM */
 
 /*
  * rt2x00lib module information.

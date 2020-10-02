@@ -370,7 +370,7 @@ void via_nubus_irq_startup(int irq)
 			/* Allow NuBus slots 9 through F. */
 			via2[vDirA] &= 0x80 | ~(1 << irq_idx);
 		}
-		fallthrough;
+		/* fall through */
 	case MAC_VIA_IICI:
 		via_irq_enable(irq);
 		break;

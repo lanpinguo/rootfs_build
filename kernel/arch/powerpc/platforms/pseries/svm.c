@@ -11,7 +11,6 @@
 #include <asm/svm.h>
 #include <asm/swiotlb.h>
 #include <asm/ultravisor.h>
-#include <asm/dtl.h>
 
 static int __init init_svm(void)
 {

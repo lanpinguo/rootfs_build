@@ -39,7 +39,6 @@
 #include <linux/random.h>
 #include <linux/sched.h>
 #include <asm/unaligned.h>
-#include <trace/events/random.h>
 
 #ifdef CONFIG_RANDOM32_SELFTEST
 static void __init prandom_state_selftest(void);
@@ -83,7 +82,6 @@ u32 prandom_u32(void)
 	u32 res;
 
 	res = prandom_u32_state(state);
-	trace_prandom_u32(res);
 	put_cpu_var(net_rand_state);
 
 	return res;

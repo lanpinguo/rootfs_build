@@ -19,8 +19,10 @@ properties:
 
   reg:
     items:
-      - description: the I/O address containing the GPIO controller registers.
-      - description: the I/O address containing the Chip Common A interrupt registers.
+      - description: the I/O address containing the GPIO controller
+                     registers.
+      - description: the I/O address containing the Chip Common A interrupt
+                     registers.
 
   gpio-controller: true
 

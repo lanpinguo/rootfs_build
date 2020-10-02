@@ -59,7 +59,6 @@
 #include <asm/asm-prototypes.h>
 #include <asm/cpu_has_feature.h>
 #include <asm/ftrace.h>
-#include <asm/kup.h>
 
 #ifdef DEBUG
 #include <asm/udbg.h>

@@ -17,7 +17,7 @@
 		stdout-path = "serial0:115200n8";
 	};
 
-	memory@80000000 {
+	memory {
 		device_type = "memory";
 		reg = <0x0 0x80000000 0x1 0x0>;
 	};
@@ -274,8 +274,8 @@
 			reg = <0x50>;
 
 			vcc-supply = <&vdd_1v8>;
-			address-width = <8>;
-			pagesize = <8>;
+			address-bits = <8>;
+			page-size = <8>;
 			size = <256>;
 			read-only;
 		};
@@ -293,17 +293,24 @@
 	};
 
 	/* eMMC */
-	mmc@700b0600 {
+	sdhci@700b0600 {
 		status = "okay";
 		bus-width = <8>;
 		non-removable;
 		vqmmc-supply = <&vdd_1v8>;
 	};
 
-	clk32k_in: clock@0 {
-		compatible = "fixed-clock";
-		clock-frequency = <32768>;
-		#clock-cells = <0>;
+	clocks {
+		compatible = "simple-bus";
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		clk32k_in: clock@0 {
+			compatible = "fixed-clock";
+			reg = <0>;
+			#clock-cells = <0>;
+			clock-frequency = <32768>;
+		};
 	};
 
 	cpus {
@@ -335,15 +342,18 @@
 		method = "smc";
 	};
 
-	vdd_gpu: regulator@100 {
-		compatible = "pwm-regulator";
-		pwms = <&pwm 1 4880>;
-		regulator-name = "VDD_GPU";
-		regulator-min-microvolt = <710000>;
-		regulator-max-microvolt = <1320000>;
-		enable-gpios = <&pmic 6 GPIO_ACTIVE_HIGH>;
-		regulator-ramp-delay = <80>;
-		regulator-enable-ramp-delay = <2000>;
-		regulator-settling-time-us = <160>;
+	regulators {
+		vdd_gpu: regulator@100 {
+			compatible = "pwm-regulator";
+			reg = <100>;
+			pwms = <&pwm 1 4880>;
+			regulator-name = "VDD_GPU";
+			regulator-min-microvolt = <710000>;
+			regulator-max-microvolt = <1320000>;
+			enable-gpios = <&pmic 6 GPIO_ACTIVE_HIGH>;
+			regulator-ramp-delay = <80>;
+			regulator-enable-ramp-delay = <2000>;
+			regulator-settling-time-us = <160>;
+		};
 	};
 };

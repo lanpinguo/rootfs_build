@@ -74,7 +74,11 @@ static int vram = 0;
 static int bpp = 8;
 static int reverse_i2c;
 static bool nomtrr = false;
-static int backlight = IS_BUILTIN(CONFIG_PMAC_BACKLIGHT);
+#ifdef CONFIG_PMAC_BACKLIGHT
+static int backlight = 1;
+#else
+static int backlight = 0;
+#endif
 
 static char *mode_option = NULL;
 

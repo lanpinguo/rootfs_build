@@ -342,8 +342,7 @@ LED
 MDIO
   devm_mdiobus_alloc()
   devm_mdiobus_alloc_size()
-  devm_mdiobus_register()
-  devm_of_mdiobus_register()
+  devm_mdiobus_free()
 
 MEM
   devm_free_pages()

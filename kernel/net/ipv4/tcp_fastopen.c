@@ -38,7 +38,7 @@ static void tcp_fastopen_ctx_free(struct rcu_head *head)
 	struct tcp_fastopen_context *ctx =
 	    container_of(head, struct tcp_fastopen_context, rcu);
 
-	kfree_sensitive(ctx);
+	kzfree(ctx);
 }
 
 void tcp_fastopen_destroy_cipher(struct sock *sk)

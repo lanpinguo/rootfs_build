@@ -137,7 +137,8 @@ struct	hw_xmit	{
 };
 
 /* reduce size */
-struct pkt_attrib {
+struct pkt_attrib
+{
 	u8 type;
 	u8 subtype;
 	u8 bswenc;
@@ -245,7 +246,8 @@ int rtw_sctx_wait(struct submit_ctx *sctx, const char *msg);
 void rtw_sctx_done_err(struct submit_ctx **sctx, int status);
 void rtw_sctx_done(struct submit_ctx **sctx);
 
-struct xmit_buf {
+struct xmit_buf
+{
 	struct list_head	list;
 
 	struct adapter *padapter;
@@ -279,7 +281,8 @@ struct xmit_buf {
 };
 
 
-struct xmit_frame {
+struct xmit_frame
+{
 	struct list_head	list;
 
 	struct pkt_attrib attrib;
@@ -311,7 +314,8 @@ struct tx_servq {
 };
 
 
-struct sta_xmit_priv {
+struct sta_xmit_priv
+{
 	_lock	lock;
 	sint	option;
 	sint	apsd_setting;	/* When bit mask is on, the associated edca queue supports APSD. */

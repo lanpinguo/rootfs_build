@@ -60,11 +60,6 @@ notrace long system_call_exception(long r3, long r4, long r5,
 	local_irq_enable();
 
 	if (unlikely(current_thread_info()->flags & _TIF_SYSCALL_DOTRACE)) {
-		if (unlikely(regs->trap == 0x7ff0)) {
-			/* Unsupported scv vector */
-			_exception(SIGILL, regs, ILL_ILLOPC, regs->nip);
-			return regs->gpr[3];
-		}
 		/*
 		 * We use the return value of do_syscall_trace_enter() as the
 		 * syscall number. If the syscall was rejected for any reason
@@ -83,11 +78,6 @@ notrace long system_call_exception(long r3, long r4, long r5,
 		r8 = regs->gpr[8];
 
 	} else if (unlikely(r0 >= NR_syscalls)) {
-		if (unlikely(regs->trap == 0x7ff0)) {
-			/* Unsupported scv vector */
-			_exception(SIGILL, regs, ILL_ILLOPC, regs->nip);
-			return regs->gpr[3];
-		}
 		return -ENOSYS;
 	}
 
@@ -115,20 +105,16 @@ notrace long system_call_exception(long r3, long r4, long r5,
  * local irqs must be disabled. Returns false if the caller must re-enable
  * them, check for new work, and try again.
  */
-static notrace inline bool prep_irq_for_enabled_exit(bool clear_ri)
+static notrace inline bool prep_irq_for_enabled_exit(void)
 {
 	/* This must be done with RI=1 because tracing may touch vmaps */
 	trace_hardirqs_on();
 
 	/* This pattern matches prep_irq_for_idle */
-	if (clear_ri)
-		__hard_EE_RI_disable();
-	else
-		__hard_irq_disable();
+	__hard_EE_RI_disable();
 	if (unlikely(lazy_irq_pending_nocheck())) {
 		/* Took an interrupt, may have more exit work to do. */
-		if (clear_ri)
-			__hard_RI_enable();
+		__hard_RI_enable();
 		trace_hardirqs_off();
 		local_paca->irq_happened |= PACA_IRQ_HARD_DIS;
 
@@ -150,8 +136,7 @@ static notrace inline bool prep_irq_for_enabled_exit(bool clear_ri)
  * because RI=0 and soft mask state is "unreconciled", so it is marked notrace.
  */
 notrace unsigned long syscall_exit_prepare(unsigned long r3,
-					   struct pt_regs *regs,
-					   long scv)
+					   struct pt_regs *regs)
 {
 	unsigned long *ti_flagsp = &current_thread_info()->flags;
 	unsigned long ti_flags;
@@ -166,7 +151,7 @@ notrace unsigned long syscall_exit_prepare(unsigned long r3,
 
 	ti_flags = *ti_flagsp;
 
-	if (unlikely(r3 >= (unsigned long)-MAX_ERRNO) && !scv) {
+	if (unlikely(r3 >= (unsigned long)-MAX_ERRNO)) {
 		if (likely(!(ti_flags & (_TIF_NOERROR | _TIF_RESTOREALL)))) {
 			r3 = -r3;
 			regs->ccr |= 0x10000000; /* Set SO bit in CR */
@@ -221,20 +206,12 @@ again:
 			else if (cpu_has_feature(CPU_FTR_ALTIVEC))
 				mathflags |= MSR_VEC;
 
-			/*
-			 * If userspace MSR has all available FP bits set,
-			 * then they are live and no need to restore. If not,
-			 * it means the regs were given up and restore_math
-			 * may decide to restore them (to avoid taking an FP
-			 * fault).
-			 */
 			if ((regs->msr & mathflags) != mathflags)
 				restore_math(regs);
 		}
 	}
 
-	/* scv need not set RI=0 because SRRs are not used */
-	if (unlikely(!prep_irq_for_enabled_exit(!scv))) {
+	if (unlikely(!prep_irq_for_enabled_exit())) {
 		local_irq_enable();
 		goto again;
 	}
@@ -300,13 +277,12 @@ again:
 			else if (cpu_has_feature(CPU_FTR_ALTIVEC))
 				mathflags |= MSR_VEC;
 
-			/* See above restore_math comment */
 			if ((regs->msr & mathflags) != mathflags)
 				restore_math(regs);
 		}
 	}
 
-	if (unlikely(!prep_irq_for_enabled_exit(true))) {
+	if (unlikely(!prep_irq_for_enabled_exit())) {
 		local_irq_enable();
 		local_irq_disable();
 		goto again;
@@ -369,7 +345,7 @@ again:
 			}
 		}
 
-		if (unlikely(!prep_irq_for_enabled_exit(true))) {
+		if (unlikely(!prep_irq_for_enabled_exit())) {
 			/*
 			 * Can't local_irq_restore to replay if we were in
 			 * interrupt context. Must replay directly.

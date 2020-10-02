@@ -68,14 +68,14 @@ static void dwc2_set_his_params(struct dwc2_hsotg *hsotg)
 	p->ahbcfg = GAHBCFG_HBSTLEN_INCR16 <<
 		GAHBCFG_HBSTLEN_SHIFT;
 	p->change_speed_quirk = true;
-	p->power_down = DWC2_POWER_DOWN_PARAM_NONE;
+	p->power_down = false;
 }
 
 static void dwc2_set_s3c6400_params(struct dwc2_hsotg *hsotg)
 {
 	struct dwc2_core_params *p = &hsotg->params;
 
-	p->power_down = DWC2_POWER_DOWN_PARAM_NONE;
+	p->power_down = 0;
 	p->phy_utmi_width = 8;
 }
 
@@ -89,7 +89,7 @@ static void dwc2_set_rk_params(struct dwc2_hsotg *hsotg)
 	p->host_perio_tx_fifo_size = 256;
 	p->ahbcfg = GAHBCFG_HBSTLEN_INCR16 <<
 		GAHBCFG_HBSTLEN_SHIFT;
-	p->power_down = DWC2_POWER_DOWN_PARAM_NONE;
+	p->power_down = 0;
 }
 
 static void dwc2_set_ltq_params(struct dwc2_hsotg *hsotg)
@@ -319,11 +319,11 @@ static void dwc2_set_param_power_down(struct dwc2_hsotg *hsotg)
 	int val;
 
 	if (hsotg->hw_params.hibernation)
-		val = DWC2_POWER_DOWN_PARAM_HIBERNATION;
+		val = 2;
 	else if (hsotg->hw_params.power_optimized)
-		val = DWC2_POWER_DOWN_PARAM_PARTIAL;
+		val = 1;
 	else
-		val = DWC2_POWER_DOWN_PARAM_NONE;
+		val = 0;
 
 	hsotg->params.power_down = val;
 }

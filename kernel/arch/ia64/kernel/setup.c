@@ -65,7 +65,6 @@
 #include <asm/tlbflush.h>
 #include <asm/unistd.h>
 #include <asm/uv/uv.h>
-#include <asm/xtp.h>
 
 #if defined(CONFIG_SMP) && (IA64_CPU_SIZE > PAGE_SIZE)
 # error "struct cpuinfo_ia64 too big!"

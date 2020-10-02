@@ -666,7 +666,8 @@ void l2cap_chan_del(struct l2cap_chan *chan, int err)
 
 		l2cap_seq_list_free(&chan->srej_list);
 		l2cap_seq_list_free(&chan->retrans_list);
-		fallthrough;
+
+		/* fall through */
 
 	case L2CAP_MODE_STREAMING:
 		skb_queue_purge(&chan->tx_q);
@@ -871,8 +872,7 @@ static inline u8 l2cap_get_auth_type(struct l2cap_chan *chan)
 			else
 				return HCI_AT_NO_BONDING;
 		}
-		fallthrough;
-
+		/* fall through */
 	default:
 		switch (chan->sec_level) {
 		case BT_SECURITY_HIGH:
@@ -2983,7 +2983,8 @@ static void l2cap_tx_state_wait_f(struct l2cap_chan *chan,
 		break;
 	case L2CAP_EV_RECV_REQSEQ_AND_FBIT:
 		l2cap_process_reqseq(chan, control->reqseq);
-		fallthrough;
+
+		/* Fall through */
 
 	case L2CAP_EV_RECV_FBIT:
 		if (control && control->final) {
@@ -3310,7 +3311,7 @@ static inline __u8 l2cap_select_mode(__u8 mode, __u16 remote_feat_mask)
 	case L2CAP_MODE_ERTM:
 		if (l2cap_mode_supported(mode, remote_feat_mask))
 			return mode;
-		fallthrough;
+		/* fall through */
 	default:
 		return L2CAP_MODE_BASIC;
 	}
@@ -3446,7 +3447,7 @@ static int l2cap_build_conf_req(struct l2cap_chan *chan, void *data, size_t data
 		if (__l2cap_efs_supported(chan->conn))
 			set_bit(FLAG_EFS_ENABLE, &chan->flags);
 
-		fallthrough;
+		/* fall through */
 	default:
 		chan->mode = l2cap_select_mode(rfc.mode, chan->conn->feat_mask);
 		break;
@@ -4538,7 +4539,7 @@ static inline int l2cap_config_rsp(struct l2cap_conn *conn,
 				goto done;
 			break;
 		}
-		fallthrough;
+		/* fall through */
 
 	default:
 		l2cap_chan_set_err(chan, ECONNRESET);
@@ -7718,7 +7719,7 @@ static struct l2cap_conn *l2cap_conn_add(struct hci_conn *hcon)
 			conn->mtu = hcon->hdev->le_mtu;
 			break;
 		}
-		fallthrough;
+		/* fall through */
 	default:
 		conn->mtu = hcon->hdev->acl_mtu;
 		break;
@@ -7840,7 +7841,7 @@ int l2cap_chan_connect(struct l2cap_chan *chan, __le16 psm, u16 cid,
 	case L2CAP_MODE_STREAMING:
 		if (!disable_ertm)
 			break;
-		fallthrough;
+		/* fall through */
 	default:
 		err = -EOPNOTSUPP;
 		goto done;
@@ -7892,13 +7893,11 @@ int l2cap_chan_connect(struct l2cap_chan *chan, __le16 psm, u16 cid,
 		else
 			hcon = hci_connect_le_scan(hdev, dst, dst_type,
 						   chan->sec_level,
-						   HCI_LE_CONN_TIMEOUT,
-						   CONN_REASON_L2CAP_CHAN);
+						   HCI_LE_CONN_TIMEOUT);
 
 	} else {
 		u8 auth_type = l2cap_get_auth_type(chan);
-		hcon = hci_connect_acl(hdev, dst, chan->sec_level, auth_type,
-				       CONN_REASON_L2CAP_CHAN);
+		hcon = hci_connect_acl(hdev, dst, chan->sec_level, auth_type);
 	}
 
 	if (IS_ERR(hcon)) {

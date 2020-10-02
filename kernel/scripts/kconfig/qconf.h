@@ -30,7 +30,7 @@ public:
 };
 
 enum colIdx {
-	promptColIdx, nameColIdx, noColIdx, modColIdx, yesColIdx, dataColIdx
+	promptColIdx, nameColIdx, noColIdx, modColIdx, yesColIdx, dataColIdx, colNr
 };
 enum listMode {
 	singleMode, menuMode, symbolMode, fullMode, listMode
@@ -69,13 +69,11 @@ protected:
 public slots:
 	void setRootMenu(struct menu *menu);
 
-	void updateList();
+	void updateList(ConfigItem *item);
 	void setValue(ConfigItem* item, tristate val);
 	void changeValue(ConfigItem* item);
 	void updateSelection(void);
 	void saveSettings(void);
-	void setOptionMode(QAction *action);
-
 signals:
 	void menuChanged(struct menu *menu);
 	void menuSelected(struct menu *menu);
@@ -87,8 +85,20 @@ public:
 	void updateListAll(void)
 	{
 		updateAll = true;
-		updateList();
+		updateList(NULL);
 		updateAll = false;
+	}
+	ConfigList* listView()
+	{
+		return this;
+	}
+	void addColumn(colIdx idx)
+	{
+		showColumn(idx);
+	}
+	void removeColumn(colIdx idx)
+	{
+		hideColumn(idx);
 	}
 	void setAllOpen(bool open);
 	void setParentMenu(void);
@@ -96,9 +106,13 @@ public:
 	bool menuSkip(struct menu *);
 
 	void updateMenuList(ConfigItem *parent, struct menu*);
-	void updateMenuList(struct menu *menu);
+	void updateMenuList(ConfigList *parent, struct menu*);
 
 	bool updateAll;
+
+	QPixmap symbolYesPix, symbolModPix, symbolNoPix;
+	QPixmap choiceYesPix, choiceNoPix;
+	QPixmap menuPix, menuInvPix, menuBackPix, voidPix;
 
 	bool showName, showRange, showData;
 	enum listMode mode;
@@ -107,8 +121,6 @@ public:
 	QPalette disabledColorGroup;
 	QPalette inactivedColorGroup;
 	QMenu* headerPopup;
-
-	static QAction *showNormalAction, *showAllAction, *showPromptAction;
 };
 
 class ConfigItem : public QTreeWidgetItem {
@@ -156,16 +168,28 @@ public:
 
 		return ret;
 	}
+	void setText(colIdx idx, const QString& text)
+	{
+		Parent::setText(idx, text);
+	}
+	QString text(colIdx idx) const
+	{
+		return Parent::text(idx);
+	}
+	void setPixmap(colIdx idx, const QIcon &icon)
+	{
+		Parent::setIcon(idx, icon);
+	}
+	const QIcon pixmap(colIdx idx) const
+	{
+		return icon(idx);
+	}
 	// TODO: Implement paintCell
 
 	ConfigItem* nextItem;
 	struct menu *menu;
 	bool visible;
 	bool goParent;
-
-	static QIcon symbolYesIcon, symbolModIcon, symbolNoIcon;
-	static QIcon choiceYesIcon, choiceNoIcon;
-	static QIcon menuIcon, menubackIcon;
 };
 
 class ConfigLineEdit : public QLineEdit {
@@ -190,7 +214,7 @@ class ConfigView : public QWidget {
 public:
 	ConfigView(QWidget* parent, const char *name = 0);
 	~ConfigView(void);
-	static void updateList();
+	static void updateList(ConfigItem* item);
 	static void updateListAll(void);
 
 	bool showName(void) const { return list->showName; }
@@ -200,6 +224,7 @@ public slots:
 	void setShowName(bool);
 	void setShowRange(bool);
 	void setShowData(bool);
+	void setOptionMode(QAction *);
 signals:
 	void showNameChanged(bool);
 	void showRangeChanged(bool);
@@ -210,12 +235,15 @@ public:
 
 	static ConfigView* viewList;
 	ConfigView* nextView;
+
+	static QAction *showNormalAction;
+	static QAction *showAllAction;
+	static QAction *showPromptAction;
 };
 
 class ConfigInfoView : public QTextBrowser {
 	Q_OBJECT
 	typedef class QTextBrowser Parent;
-	QMenu *contextMenu;
 public:
 	ConfigInfoView(QWidget* parent, const char *name = 0);
 	bool showDebug(void) const { return _showDebug; }
@@ -236,7 +264,8 @@ protected:
 	QString debug_info(struct symbol *sym);
 	static QString print_filter(const QString &str);
 	static void expr_print_help(void *data, struct symbol *sym, const char *str);
-	void contextMenuEvent(QContextMenuEvent *event);
+	QMenu *createStandardContextMenu(const QPoint & pos);
+	void contextMenuEvent(QContextMenuEvent *e);
 
 	struct symbol *sym;
 	struct menu *_menu;
@@ -247,7 +276,7 @@ class ConfigSearchWindow : public QDialog {
 	Q_OBJECT
 	typedef class QDialog Parent;
 public:
-	ConfigSearchWindow(ConfigMainWindow *parent);
+	ConfigSearchWindow(ConfigMainWindow* parent, const char *name = 0);
 
 public slots:
 	void saveSettings(void);
@@ -297,6 +326,7 @@ protected:
 	ConfigView *configView;
 	ConfigList *configList;
 	ConfigInfoView *helpText;
+	QToolBar *toolBar;
 	QAction *backAction;
 	QAction *singleViewAction;
 	QAction *splitViewAction;

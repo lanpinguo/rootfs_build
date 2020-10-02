@@ -18,7 +18,6 @@
 #include <linux/extable.h>
 #include <linux/uaccess.h>
 #include <linux/hugetlb.h>
-#include <linux/perf_event.h>
 
 #include <asm/traps.h>
 
@@ -67,7 +66,7 @@ parisc_acctyp(unsigned long code, unsigned int inst)
 	case 0x30000000: /* coproc2 */
 		if (bit22set(inst))
 			return VM_WRITE;
-		fallthrough;
+		/* fall through */
 
 	case 0x0: /* indexed/memory management */
 		if (bit22set(inst)) {
@@ -282,7 +281,6 @@ void do_page_fault(struct pt_regs *regs, unsigned long code,
 	acc_type = parisc_acctyp(code, regs->iir);
 	if (acc_type & VM_WRITE)
 		flags |= FAULT_FLAG_WRITE;
-	perf_sw_event(PERF_COUNT_SW_PAGE_FAULTS, 1, regs, address);
 retry:
 	mmap_read_lock(mm);
 	vma = find_vma_prev(mm, address, &prev_vma);
@@ -304,7 +302,7 @@ good_area:
 	 * fault.
 	 */
 
-	fault = handle_mm_fault(vma, address, flags, regs);
+	fault = handle_mm_fault(vma, address, flags);
 
 	if (fault_signal_pending(fault, regs))
 		return;
@@ -325,6 +323,10 @@ good_area:
 		BUG();
 	}
 	if (flags & FAULT_FLAG_ALLOW_RETRY) {
+		if (fault & VM_FAULT_MAJOR)
+			current->maj_flt++;
+		else
+			current->min_flt++;
 		if (fault & VM_FAULT_RETRY) {
 			/*
 			 * No need to mmap_read_unlock(mm) as we would
@@ -370,7 +372,7 @@ bad_area:
 			}
 
 			/* probably address is outside of mapped file */
-			fallthrough;
+			/* fall through */
 		case 17:	/* NA data TLB miss / page fault */
 		case 18:	/* Unaligned access - PCXS only */
 			signo = SIGBUS;

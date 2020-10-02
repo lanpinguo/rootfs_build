@@ -1457,10 +1457,8 @@ int acpi_dma_get_range(struct device *dev, u64 *dma_addr, u64 *offset,
  * acpi_dma_configure - Set-up DMA configuration for the device.
  * @dev: The pointer to the device
  * @attr: device dma attributes
- * @input_id: input device id const value pointer
  */
-int acpi_dma_configure_id(struct device *dev, enum dev_dma_attr attr,
-			  const u32 *input_id)
+int acpi_dma_configure(struct device *dev, enum dev_dma_attr attr)
 {
 	const struct iommu_ops *iommu;
 	u64 dma_addr = 0, size = 0;
@@ -1472,7 +1470,7 @@ int acpi_dma_configure_id(struct device *dev, enum dev_dma_attr attr,
 
 	iort_dma_setup(dev, &dma_addr, &size);
 
-	iommu = iort_iommu_configure_id(dev, input_id);
+	iommu = iort_iommu_configure(dev);
 	if (PTR_ERR(iommu) == -EPROBE_DEFER)
 		return -EPROBE_DEFER;
 
@@ -1481,7 +1479,7 @@ int acpi_dma_configure_id(struct device *dev, enum dev_dma_attr attr,
 
 	return 0;
 }
-EXPORT_SYMBOL_GPL(acpi_dma_configure_id);
+EXPORT_SYMBOL_GPL(acpi_dma_configure);
 
 static void acpi_init_coherency(struct acpi_device *adev)
 {

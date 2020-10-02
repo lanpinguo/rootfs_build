@@ -253,9 +253,11 @@ static int intel_pcie_get_resources(struct platform_device *pdev)
 	struct intel_pcie_port *lpp = platform_get_drvdata(pdev);
 	struct dw_pcie *pci = &lpp->pci;
 	struct device *dev = pci->dev;
+	struct resource *res;
 	int ret;
 
-	pci->dbi_base = devm_platform_ioremap_resource_byname(pdev, "dbi");
+	res = platform_get_resource_byname(pdev, IORESOURCE_MEM, "dbi");
+	pci->dbi_base = devm_ioremap_resource(dev, res);
 	if (IS_ERR(pci->dbi_base))
 		return PTR_ERR(pci->dbi_base);
 
@@ -289,7 +291,8 @@ static int intel_pcie_get_resources(struct platform_device *pdev)
 	ret = of_pci_get_max_link_speed(dev->of_node);
 	lpp->link_gen = ret < 0 ? 0 : ret;
 
-	lpp->app_base = devm_platform_ioremap_resource_byname(pdev, "app");
+	res = platform_get_resource_byname(pdev, IORESOURCE_MEM, "app");
+	lpp->app_base = devm_ioremap_resource(dev, res);
 	if (IS_ERR(lpp->app_base))
 		return PTR_ERR(lpp->app_base);
 

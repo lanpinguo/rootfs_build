@@ -319,7 +319,7 @@ static int slg51000_regulator_init(struct slg51000 *chip)
 				rdesc->linear_min_sel = 0;
 				break;
 			}
-			fallthrough;	/* to the check below */
+			/* Fall through - to the check below.*/
 
 		default:
 			rdesc->linear_min_sel = vsel_range[0];

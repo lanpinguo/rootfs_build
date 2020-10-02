@@ -1417,8 +1417,7 @@ static void skd_resolve_req_exception(struct skd_device *skdev,
 	case SKD_CHECK_STATUS_REPORT_GOOD:
 	case SKD_CHECK_STATUS_REPORT_SMART_ALERT:
 		skreq->status = BLK_STS_OK;
-		if (likely(!blk_should_fake_timeout(req->q)))
-			blk_mq_complete_request(req);
+		blk_mq_complete_request(req);
 		break;
 
 	case SKD_CHECK_STATUS_BUSY_IMMINENT:
@@ -1436,13 +1435,12 @@ static void skd_resolve_req_exception(struct skd_device *skdev,
 			blk_mq_requeue_request(req, true);
 			break;
 		}
-		fallthrough;
+		/* fall through */
 
 	case SKD_CHECK_STATUS_REPORT_ERROR:
 	default:
 		skreq->status = BLK_STS_IOERR;
-		if (likely(!blk_should_fake_timeout(req->q)))
-			blk_mq_complete_request(req);
+		blk_mq_complete_request(req);
 		break;
 	}
 }
@@ -1562,8 +1560,7 @@ static int skd_isr_completion_posted(struct skd_device *skdev,
 		 */
 		if (likely(cmp_status == SAM_STAT_GOOD)) {
 			skreq->status = BLK_STS_OK;
-			if (likely(!blk_should_fake_timeout(rq->q)))
-				blk_mq_complete_request(rq);
+			blk_mq_complete_request(rq);
 		} else {
 			skd_resolve_req_exception(skdev, skreq, rq);
 		}

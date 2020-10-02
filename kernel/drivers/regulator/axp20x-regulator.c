@@ -399,7 +399,7 @@ static int axp20x_set_ramp_delay(struct regulator_dev *rdev, int ramp)
 		if (rate_count > 0)
 			break;
 
-		fallthrough;
+		/* fall through */
 	default:
 		/* Not supported for this regulator */
 		return -ENOTSUPP;
@@ -1022,7 +1022,7 @@ static int axp20x_set_dcdc_freq(struct platform_device *pdev, u32 dcdcfreq)
 		 * (See include/linux/mfd/axp20x.h)
 		 */
 		reg = AXP803_DCDC_FREQ_CTRL;
-		fallthrough;	/* to the check below */
+		/* Fall through - to the check below.*/
 	case AXP806_ID:
 		/*
 		 * AXP806 also have DCDC work frequency setting register at a
@@ -1030,7 +1030,7 @@ static int axp20x_set_dcdc_freq(struct platform_device *pdev, u32 dcdcfreq)
 		 */
 		if (axp20x->variant == AXP806_ID)
 			reg = AXP806_DCDC_FREQ_CTRL;
-		fallthrough;
+		/* Fall through */
 	case AXP221_ID:
 	case AXP223_ID:
 	case AXP809_ID:
@@ -1118,7 +1118,7 @@ static int axp20x_set_dcdc_workmode(struct regulator_dev *rdev, int id, u32 work
 		 * (See include/linux/mfd/axp20x.h)
 		 */
 		reg = AXP806_DCDC_MODE_CTRL2;
-		fallthrough;	/* to the check below */
+		 /* Fall through - to the check below. */
 	case AXP221_ID:
 	case AXP223_ID:
 	case AXP809_ID:

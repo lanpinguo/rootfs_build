@@ -7,7 +7,6 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/blk-mq.h>
-#include <linux/list_sort.h>
 
 #include <trace/events/block.h>
 
@@ -90,35 +89,6 @@ void blk_mq_sched_restart(struct blk_mq_hw_ctx *hctx)
 	blk_mq_run_hw_queue(hctx, true);
 }
 
-static int sched_rq_cmp(void *priv, struct list_head *a, struct list_head *b)
-{
-	struct request *rqa = container_of(a, struct request, queuelist);
-	struct request *rqb = container_of(b, struct request, queuelist);
-
-	return rqa->mq_hctx > rqb->mq_hctx;
-}
-
-static bool blk_mq_dispatch_hctx_list(struct list_head *rq_list)
-{
-	struct blk_mq_hw_ctx *hctx =
-		list_first_entry(rq_list, struct request, queuelist)->mq_hctx;
-	struct request *rq;
-	LIST_HEAD(hctx_list);
-	unsigned int count = 0;
-
-	list_for_each_entry(rq, rq_list, queuelist) {
-		if (rq->mq_hctx != hctx) {
-			list_cut_before(&hctx_list, rq_list, &rq->queuelist);
-			goto dispatch;
-		}
-		count++;
-	}
-	list_splice_tail_init(rq_list, &hctx_list);
-
-dispatch:
-	return blk_mq_dispatch_rq_list(hctx, &hctx_list, count);
-}
-
 #define BLK_MQ_BUDGET_DELAY	3		/* ms units */
 
 /*
@@ -129,20 +99,12 @@ dispatch:
  * Returns -EAGAIN if hctx->dispatch was found non-empty and run_work has to
  * be run again.  This is necessary to avoid starving flushes.
  */
-static int __blk_mq_do_dispatch_sched(struct blk_mq_hw_ctx *hctx)
+static int blk_mq_do_dispatch_sched(struct blk_mq_hw_ctx *hctx)
 {
 	struct request_queue *q = hctx->queue;
 	struct elevator_queue *e = q->elevator;
-	bool multi_hctxs = false, run_queue = false;
-	bool dispatched = false, busy = false;
-	unsigned int max_dispatch;
 	LIST_HEAD(rq_list);
-	int count = 0;
-
-	if (hctx->dispatch_busy)
-		max_dispatch = 1;
-	else
-		max_dispatch = hctx->queue->nr_requests;
+	int ret = 0;
 
 	do {
 		struct request *rq;
@@ -151,16 +113,16 @@ static int __blk_mq_do_dispatch_sched(struct blk_mq_hw_ctx *hctx)
 			break;
 
 		if (!list_empty_careful(&hctx->dispatch)) {
-			busy = true;
+			ret = -EAGAIN;
 			break;
 		}
 
-		if (!blk_mq_get_dispatch_budget(q))
+		if (!blk_mq_get_dispatch_budget(hctx))
 			break;
 
 		rq = e->type->ops.dispatch_request(hctx);
 		if (!rq) {
-			blk_mq_put_dispatch_budget(q);
+			blk_mq_put_dispatch_budget(hctx);
 			/*
 			 * We're releasing without dispatching. Holding the
 			 * budget could have blocked any "hctx"s with the
@@ -168,7 +130,7 @@ static int __blk_mq_do_dispatch_sched(struct blk_mq_hw_ctx *hctx)
 			 * no guarantee anyone will kick the queue.  Kick it
 			 * ourselves.
 			 */
-			run_queue = true;
+			blk_mq_delay_run_hw_queues(q, BLK_MQ_BUDGET_DELAY);
 			break;
 		}
 
@@ -177,42 +139,8 @@ static int __blk_mq_do_dispatch_sched(struct blk_mq_hw_ctx *hctx)
 		 * if this rq won't be queued to driver via .queue_rq()
 		 * in blk_mq_dispatch_rq_list().
 		 */
-		list_add_tail(&rq->queuelist, &rq_list);
-		if (rq->mq_hctx != hctx)
-			multi_hctxs = true;
-	} while (++count < max_dispatch);
-
-	if (!count) {
-		if (run_queue)
-			blk_mq_delay_run_hw_queues(q, BLK_MQ_BUDGET_DELAY);
-	} else if (multi_hctxs) {
-		/*
-		 * Requests from different hctx may be dequeued from some
-		 * schedulers, such as bfq and deadline.
-		 *
-		 * Sort the requests in the list according to their hctx,
-		 * dispatch batching requests from same hctx at a time.
-		 */
-		list_sort(NULL, &rq_list, sched_rq_cmp);
-		do {
-			dispatched |= blk_mq_dispatch_hctx_list(&rq_list);
-		} while (!list_empty(&rq_list));
-	} else {
-		dispatched = blk_mq_dispatch_rq_list(hctx, &rq_list, count);
-	}
-
-	if (busy)
-		return -EAGAIN;
-	return !!dispatched;
-}
-
-static int blk_mq_do_dispatch_sched(struct blk_mq_hw_ctx *hctx)
-{
-	int ret;
-
-	do {
-		ret = __blk_mq_do_dispatch_sched(hctx);
-	} while (ret == 1);
+		list_add(&rq->queuelist, &rq_list);
+	} while (blk_mq_dispatch_rq_list(q, &rq_list, true));
 
 	return ret;
 }
@@ -234,7 +162,7 @@ static struct blk_mq_ctx *blk_mq_next_ctx(struct blk_mq_hw_ctx *hctx,
  * restart queue if .get_budget() returns BLK_STS_NO_RESOURCE.
  *
  * Returns -EAGAIN if hctx->dispatch was found non-empty and run_work has to
- * be run again.  This is necessary to avoid starving flushes.
+ * to be run again.  This is necessary to avoid starving flushes.
  */
 static int blk_mq_do_dispatch_ctx(struct blk_mq_hw_ctx *hctx)
 {
@@ -242,9 +170,10 @@ static int blk_mq_do_dispatch_ctx(struct blk_mq_hw_ctx *hctx)
 	LIST_HEAD(rq_list);
 	struct blk_mq_ctx *ctx = READ_ONCE(hctx->dispatch_from);
 	int ret = 0;
-	struct request *rq;
 
 	do {
+		struct request *rq;
+
 		if (!list_empty_careful(&hctx->dispatch)) {
 			ret = -EAGAIN;
 			break;
@@ -253,12 +182,12 @@ static int blk_mq_do_dispatch_ctx(struct blk_mq_hw_ctx *hctx)
 		if (!sbitmap_any_bit_set(&hctx->ctx_map))
 			break;
 
-		if (!blk_mq_get_dispatch_budget(q))
+		if (!blk_mq_get_dispatch_budget(hctx))
 			break;
 
 		rq = blk_mq_dequeue_from_ctx(hctx, ctx);
 		if (!rq) {
-			blk_mq_put_dispatch_budget(q);
+			blk_mq_put_dispatch_budget(hctx);
 			/*
 			 * We're releasing without dispatching. Holding the
 			 * budget could have blocked any "hctx"s with the
@@ -280,7 +209,7 @@ static int blk_mq_do_dispatch_ctx(struct blk_mq_hw_ctx *hctx)
 		/* round robin for fair dispatch */
 		ctx = blk_mq_next_ctx(hctx, rq->mq_ctx);
 
-	} while (blk_mq_dispatch_rq_list(rq->mq_hctx, &rq_list, 1));
+	} while (blk_mq_dispatch_rq_list(q, &rq_list, true));
 
 	WRITE_ONCE(hctx->dispatch_from, ctx);
 	return ret;
@@ -320,7 +249,7 @@ static int __blk_mq_sched_dispatch_requests(struct blk_mq_hw_ctx *hctx)
 	 */
 	if (!list_empty(&rq_list)) {
 		blk_mq_sched_mark_restart_hctx(hctx);
-		if (blk_mq_dispatch_rq_list(hctx, &rq_list, 0)) {
+		if (blk_mq_dispatch_rq_list(q, &rq_list, false)) {
 			if (has_sched_dispatch)
 				ret = blk_mq_do_dispatch_sched(hctx);
 			else
@@ -333,7 +262,7 @@ static int __blk_mq_sched_dispatch_requests(struct blk_mq_hw_ctx *hctx)
 		ret = blk_mq_do_dispatch_ctx(hctx);
 	} else {
 		blk_mq_flush_busy_ctxs(hctx, &rq_list);
-		blk_mq_dispatch_rq_list(hctx, &rq_list, 0);
+		blk_mq_dispatch_rq_list(q, &rq_list, false);
 	}
 
 	return ret;

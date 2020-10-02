@@ -52,6 +52,7 @@ static const struct drm_display_mode default_mode = {
 	.vsync_start = 320 + 150,
 	.vsync_end = 320 + 150 + 1,
 	.vtotal = 320 + 150 + 1 + 2,
+	.vrefresh = 30,
 	.flags = 0,
 };
 
@@ -408,7 +409,7 @@ static int s6e63j0x03_get_modes(struct drm_panel *panel,
 	if (!mode) {
 		DRM_ERROR("failed to add mode %ux%ux@%u\n",
 			default_mode.hdisplay, default_mode.vdisplay,
-			drm_mode_vrefresh(&default_mode));
+			default_mode.vrefresh);
 		return -ENOMEM;
 	}
 

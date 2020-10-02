@@ -11,36 +11,22 @@ maintainers:
 
 properties:
   compatible:
-    items:
-      - enum:
-          - ti,keystone-dwc3
-          - ti,am654-dwc3
+    oneOf:
+      - const: "ti,keystone-dwc3"
+      - const: "ti,am654-dwc3"
 
   reg:
     maxItems: 1
-
-  '#address-cells':
-    const: 1
-
-  '#size-cells':
-    const: 1
-
-  ranges: true
+    description: Address and length of the register set for the USB subsystem on
+      the SOC.
 
   interrupts:
     maxItems: 1
+    description: The irq number of this device that is used to interrupt the MPU.
+
 
   clocks:
-    minItems: 1
-    maxItems: 2
-
-  assigned-clocks:
-    minItems: 1
-    maxItems: 2
-
-  assigned-clock-parents:
-    minItems: 1
-    maxItems: 2
+    description: Clock ID for USB functional clock.
 
   power-domains:
     description: Should contain a phandle to a PM domain provider node
@@ -56,42 +42,33 @@ properties:
 
   phy-names:
     items:
-      - const: usb3-phy
+      - const: "usb3-phy"
 
-  dma-coherent: true
-
-  dma-ranges: true
-
-patternProperties:
-  "usb@[a-f0-9]+$":
-    type: object
+  dwc3:
     description: This is the node representing the DWC3 controller instance
       Documentation/devicetree/bindings/usb/dwc3.txt
 
 required:
   - compatible
   - reg
-  - "#address-cells"
-  - "#size-cells"
-  - ranges
   - interrupts
-
-additionalProperties: false
+  - clocks
 
 examples:
   - |
     #include <dt-bindings/interrupt-controller/arm-gic.h>
 
-    dwc3@2680000 {
+    usb: usb@2680000 {
       compatible = "ti,keystone-dwc3";
       #address-cells = <1>;
       #size-cells = <1>;
       reg = <0x2680000 0x10000>;
       clocks = <&clkusb>;
+      clock-names = "usb";
       interrupts = <GIC_SPI 393 IRQ_TYPE_EDGE_RISING>;
       ranges;
 
-      usb@2690000 {
+      dwc3@2690000 {
         compatible = "synopsys,dwc3";
         reg = <0x2690000 0x70000>;
         interrupts = <GIC_SPI 393 IRQ_TYPE_EDGE_RISING>;

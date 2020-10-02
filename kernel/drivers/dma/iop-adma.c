@@ -406,7 +406,8 @@ static void iop_chan_start_null_xor(struct iop_adma_chan *iop_chan);
 
 /**
  * iop_adma_alloc_chan_resources -  returns the number of allocated descriptors
- * @chan: allocate descriptor resources for this channel
+ * @chan - allocate descriptor resources for this channel
+ * @client - current client requesting the channel be ready for requests
  *
  * Note: We keep the slots for 1 operation on iop_chan->chain at all times.  To
  * avoid deadlock, via async_xor, num_descs_in_pool must at a minimum be

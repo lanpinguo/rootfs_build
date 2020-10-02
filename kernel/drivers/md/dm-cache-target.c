@@ -421,6 +421,8 @@ struct cache {
 
 	struct rw_semaphore quiesce_lock;
 
+	struct dm_target_callbacks callbacks;
+
 	/*
 	 * origin_blocks entries, discarded if set.
 	 */
@@ -884,7 +886,7 @@ static void accounted_complete(struct cache *cache, struct bio *bio)
 static void accounted_request(struct cache *cache, struct bio *bio)
 {
 	accounted_begin(cache, bio);
-	submit_bio_noacct(bio);
+	generic_make_request(bio);
 }
 
 static void issue_op(struct bio *bio, void *context)
@@ -1790,7 +1792,7 @@ static bool process_bio(struct cache *cache, struct bio *bio)
 	bool commit_needed;
 
 	if (map_bio(cache, bio, get_bio_block(cache, bio), &commit_needed) == DM_MAPIO_REMAPPED)
-		submit_bio_noacct(bio);
+		generic_make_request(bio);
 
 	return commit_needed;
 }
@@ -1856,7 +1858,7 @@ static bool process_discard_bio(struct cache *cache, struct bio *bio)
 
 	if (cache->features.discard_passdown) {
 		remap_to_origin(cache, bio);
-		submit_bio_noacct(bio);
+		generic_make_request(bio);
 	} else
 		bio_endio(bio);
 
@@ -2421,6 +2423,20 @@ static void set_cache_size(struct cache *cache, dm_cblock_t size)
 	cache->cache_size = size;
 }
 
+static int is_congested(struct dm_dev *dev, int bdi_bits)
+{
+	struct request_queue *q = bdev_get_queue(dev->bdev);
+	return bdi_congested(q->backing_dev_info, bdi_bits);
+}
+
+static int cache_is_congested(struct dm_target_callbacks *cb, int bdi_bits)
+{
+	struct cache *cache = container_of(cb, struct cache, callbacks);
+
+	return is_congested(cache->origin_dev, bdi_bits) ||
+		is_congested(cache->cache_dev, bdi_bits);
+}
+
 #define DEFAULT_MIGRATION_THRESHOLD 2048
 
 static int cache_create(struct cache_args *ca, struct cache **result)
@@ -2454,6 +2470,9 @@ static int cache_create(struct cache_args *ca, struct cache **result)
 		if (r)
 			goto bad;
 	}
+
+	cache->callbacks.congested_fn = cache_is_congested;
+	dm_table_add_target_callbacks(ti->table, &cache->callbacks);
 
 	cache->metadata_dev = ca->metadata_dev;
 	cache->origin_dev = ca->origin_dev;

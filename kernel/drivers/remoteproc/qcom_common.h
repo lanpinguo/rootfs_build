@@ -26,11 +26,10 @@ struct qcom_rproc_subdev {
 	struct qcom_smd_edge *edge;
 };
 
-struct qcom_ssr_subsystem;
-
 struct qcom_rproc_ssr {
 	struct rproc_subdev subdev;
-	struct qcom_ssr_subsystem *info;
+
+	const char *name;
 };
 
 void qcom_add_glink_subdev(struct rproc *rproc, struct qcom_rproc_glink *glink,

@@ -319,7 +319,8 @@ static int amdgpu_vram_mgr_new(struct ttm_mem_type_manager *man,
 	mem_bytes = (u64)mem->num_pages << PAGE_SHIFT;
 	if (atomic64_add_return(mem_bytes, &mgr->usage) > max_bytes) {
 		atomic64_sub(mem_bytes, &mgr->usage);
-		return -ENOSPC;
+		mem->mm_node = NULL;
+		return 0;
 	}
 
 	if (place->flags & TTM_PL_FLAG_CONTIGUOUS) {
@@ -399,13 +400,15 @@ error:
 	atomic64_sub(mem->num_pages << PAGE_SHIFT, &mgr->usage);
 
 	kvfree(nodes);
-	return r;
+	return r == -ENOSPC ? 0 : r;
 }
 
 /**
  * amdgpu_vram_mgr_del - free ranges
  *
  * @man: TTM memory type manager
+ * @tbo: TTM BO we need this range for
+ * @place: placement flags and restrictions
  * @mem: TTM memory object
  *
  * Free the allocated VRAM again.
@@ -474,11 +477,11 @@ int amdgpu_vram_mgr_alloc_sgt(struct amdgpu_device *adev,
 	if (r)
 		goto error_free;
 
-	for_each_sgtable_sg((*sgt), sg, i)
+	for_each_sg((*sgt)->sgl, sg, num_entries, i)
 		sg->length = 0;
 
 	node = mem->mm_node;
-	for_each_sgtable_sg((*sgt), sg, i) {
+	for_each_sg((*sgt)->sgl, sg, num_entries, i) {
 		phys_addr_t phys = (node->start << PAGE_SHIFT) +
 			adev->gmc.aper_base;
 		size_t size = node->size << PAGE_SHIFT;
@@ -498,7 +501,7 @@ int amdgpu_vram_mgr_alloc_sgt(struct amdgpu_device *adev,
 	return 0;
 
 error_unmap:
-	for_each_sgtable_sg((*sgt), sg, i) {
+	for_each_sg((*sgt)->sgl, sg, num_entries, i) {
 		if (!sg->length)
 			continue;
 
@@ -529,7 +532,7 @@ void amdgpu_vram_mgr_free_sgt(struct amdgpu_device *adev,
 	struct scatterlist *sg;
 	int i;
 
-	for_each_sgtable_sg(sgt, sg, i)
+	for_each_sg(sgt->sgl, sg, sgt->nents, i)
 		dma_unmap_resource(dev, sg->dma_address,
 				   sg->length, dir,
 				   DMA_ATTR_SKIP_CPU_SYNC);

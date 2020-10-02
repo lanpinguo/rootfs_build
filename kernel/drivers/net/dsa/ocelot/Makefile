@@ -3,5 +3,4 @@ obj-$(CONFIG_NET_DSA_MSCC_FELIX) += mscc_felix.o
 
 mscc_felix-objs := \
 	felix.o \
-	felix_vsc9959.o \
-	seville_vsc9953.o
+	felix_vsc9959.o

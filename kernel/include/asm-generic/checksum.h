@@ -23,9 +23,11 @@ extern __wsum csum_partial(const void *buff, int len, __wsum sum);
  * here even more important to align src and dst on a 32-bit (or even
  * better 64-bit) boundary
  */
+extern __wsum csum_partial_copy(const void *src, void *dst, int len, __wsum sum);
+
 #ifndef csum_partial_copy_nocheck
-__wsum csum_partial_copy_nocheck(const void *src, void *dst, int len,
-		__wsum sum);
+#define csum_partial_copy_nocheck(src, dst, len, sum)	\
+	csum_partial_copy((src), (dst), (len), (sum))
 #endif
 
 #ifndef ip_fast_csum

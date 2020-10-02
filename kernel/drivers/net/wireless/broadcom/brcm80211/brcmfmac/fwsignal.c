@@ -323,10 +323,6 @@ struct brcmf_skbuff_cb {
  *	firmware suppress the packet as device is already in PS mode.
  * @BRCMF_FWS_TXSTATUS_FW_TOSSED:
  *	firmware tossed the packet.
- * @BRCMF_FWS_TXSTATUS_FW_DISCARD_NOACK:
- *	firmware tossed the packet after retries.
- * @BRCMF_FWS_TXSTATUS_FW_SUPPRESS_ACKED:
- *	firmware wrongly reported suppressed previously, now fixing to acked.
  * @BRCMF_FWS_TXSTATUS_HOST_TOSSED:
  *	host tossed the packet.
  */
@@ -335,8 +331,6 @@ enum brcmf_fws_txstatus {
 	BRCMF_FWS_TXSTATUS_CORE_SUPPRESS,
 	BRCMF_FWS_TXSTATUS_FW_PS_SUPPRESS,
 	BRCMF_FWS_TXSTATUS_FW_TOSSED,
-	BRCMF_FWS_TXSTATUS_FW_DISCARD_NOACK,
-	BRCMF_FWS_TXSTATUS_FW_SUPPRESS_ACKED,
 	BRCMF_FWS_TXSTATUS_HOST_TOSSED
 };
 
@@ -389,7 +383,6 @@ struct brcmf_fws_mac_descriptor {
 };
 
 #define BRCMF_FWS_HANGER_MAXITEMS	3072
-#define BRCMF_BORROW_RATIO			3
 
 /**
  * enum brcmf_fws_hanger_item_state - state of hanger item.
@@ -486,8 +479,7 @@ struct brcmf_fws_info {
 	u32 fifo_enqpkt[BRCMF_FWS_FIFO_COUNT];
 	int fifo_credit[BRCMF_FWS_FIFO_COUNT];
 	int init_fifo_credit[BRCMF_FWS_FIFO_COUNT];
-	int credits_borrowed[BRCMF_FWS_FIFO_AC_VO + 1]
-		[BRCMF_FWS_FIFO_AC_VO + 1];
+	int credits_borrowed[BRCMF_FWS_FIFO_AC_VO + 1];
 	int deq_node_pos[BRCMF_FWS_FIFO_COUNT];
 	u32 fifo_credit_map;
 	u32 fifo_delay_map;
@@ -1199,11 +1191,11 @@ static void brcmf_fws_return_credits(struct brcmf_fws_info *fws,
 
 	fws->fifo_credit_map |= 1 << fifo;
 
-	if (fifo > BRCMF_FWS_FIFO_AC_BK &&
-	    fifo <= BRCMF_FWS_FIFO_AC_VO) {
+	if ((fifo == BRCMF_FWS_FIFO_AC_BE) &&
+	    (fws->credits_borrowed[0])) {
 		for (lender_ac = BRCMF_FWS_FIFO_AC_VO; lender_ac >= 0;
 		     lender_ac--) {
-			borrowed = &fws->credits_borrowed[fifo][lender_ac];
+			borrowed = &fws->credits_borrowed[lender_ac];
 			if (*borrowed) {
 				fws->fifo_credit_map |= (1 << lender_ac);
 				fifo_credit = &fws->fifo_credit[lender_ac];
@@ -1220,10 +1212,7 @@ static void brcmf_fws_return_credits(struct brcmf_fws_info *fws,
 		}
 	}
 
-	if (credits) {
-		fws->fifo_credit[fifo] += credits;
-	}
-
+	fws->fifo_credit[fifo] += credits;
 	if (fws->fifo_credit[fifo] > fws->init_fifo_credit[fifo])
 		fws->fifo_credit[fifo] = fws->init_fifo_credit[fifo];
 
@@ -1466,10 +1455,6 @@ brcmf_fws_txs_process(struct brcmf_fws_info *fws, u8 flags, u32 hslot,
 		remove_from_hanger = false;
 	} else if (flags == BRCMF_FWS_TXSTATUS_FW_TOSSED)
 		fws->stats.txs_tossed += compcnt;
-	else if (flags == BRCMF_FWS_TXSTATUS_FW_DISCARD_NOACK)
-		fws->stats.txs_discard += compcnt;
-	else if (flags == BRCMF_FWS_TXSTATUS_FW_SUPPRESS_ACKED)
-		fws->stats.txs_discard += compcnt;
 	else if (flags == BRCMF_FWS_TXSTATUS_HOST_TOSSED)
 		fws->stats.txs_host_tossed += compcnt;
 	else
@@ -1862,9 +1847,6 @@ void brcmf_fws_hdrpull(struct brcmf_if *ifp, s16 siglen, struct sk_buff *skb)
 
 	WARN_ON(siglen > skb->len);
 
-	if (siglen > skb->len)
-		siglen = skb->len;
-
 	if (!siglen)
 		return;
 	/* if flow control disabled, skip to packet data and leave */
@@ -2027,31 +2009,27 @@ static void brcmf_fws_rollback_toq(struct brcmf_fws_info *fws,
 	}
 }
 
-static int brcmf_fws_borrow_credit(struct brcmf_fws_info *fws,
-				   int highest_lender_ac, int borrower_ac,
-				   bool borrow_all)
+static int brcmf_fws_borrow_credit(struct brcmf_fws_info *fws)
 {
-	int lender_ac, borrow_limit = 0;
+	int lender_ac;
 
-	for (lender_ac = 0; lender_ac <= highest_lender_ac; lender_ac++) {
+	if (time_after(fws->borrow_defer_timestamp, jiffies)) {
+		fws->fifo_credit_map &= ~(1 << BRCMF_FWS_FIFO_AC_BE);
+		return -ENAVAIL;
+	}
 
-		if (!borrow_all)
-			borrow_limit =
-			  fws->init_fifo_credit[lender_ac] / BRCMF_BORROW_RATIO;
-		else
-			borrow_limit = 0;
-
-		if (fws->fifo_credit[lender_ac] > borrow_limit) {
-			fws->credits_borrowed[borrower_ac][lender_ac]++;
+	for (lender_ac = 0; lender_ac <= BRCMF_FWS_FIFO_AC_VO; lender_ac++) {
+		if (fws->fifo_credit[lender_ac] > 0) {
+			fws->credits_borrowed[lender_ac]++;
 			fws->fifo_credit[lender_ac]--;
 			if (fws->fifo_credit[lender_ac] == 0)
 				fws->fifo_credit_map &= ~(1 << lender_ac);
-			fws->fifo_credit_map |= (1 << borrower_ac);
+			fws->fifo_credit_map |= (1 << BRCMF_FWS_FIFO_AC_BE);
 			brcmf_dbg(DATA, "borrow credit from: %d\n", lender_ac);
 			return 0;
 		}
 	}
-	fws->fifo_credit_map &= ~(1 << borrower_ac);
+	fws->fifo_credit_map &= ~(1 << BRCMF_FWS_FIFO_AC_BE);
 	return -ENAVAIL;
 }
 
@@ -2242,10 +2220,9 @@ static void brcmf_fws_dequeue_worker(struct work_struct *worker)
 			}
 			continue;
 		}
-
-		while ((fws->fifo_credit[fifo]) ||
+		while ((fws->fifo_credit[fifo] > 0) ||
 		       ((!fws->bcmc_credit_check) &&
-				(fifo == BRCMF_FWS_FIFO_BCMC))) {
+			(fifo == BRCMF_FWS_FIFO_BCMC))) {
 			skb = brcmf_fws_deq(fws, fifo);
 			if (!skb)
 				break;
@@ -2255,14 +2232,10 @@ static void brcmf_fws_dequeue_worker(struct work_struct *worker)
 			if (fws->bus_flow_blocked)
 				break;
 		}
-
-		if (fifo >= BRCMF_FWS_FIFO_AC_BE &&
-		    fifo <= BRCMF_FWS_FIFO_AC_VO &&
-		    fws->fifo_credit[fifo] == 0 &&
-		    !fws->bus_flow_blocked) {
-			while (brcmf_fws_borrow_credit(fws,
-						       fifo - 1, fifo,
-						       true) == 0) {
+		if ((fifo == BRCMF_FWS_FIFO_AC_BE) &&
+		    (fws->fifo_credit[fifo] <= 0) &&
+		    (!fws->bus_flow_blocked)) {
+			while (brcmf_fws_borrow_credit(fws) == 0) {
 				skb = brcmf_fws_deq(fws, fifo);
 				if (!skb) {
 					brcmf_fws_return_credits(fws, fifo, 1);

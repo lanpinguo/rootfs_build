@@ -660,7 +660,7 @@ static void free_private_bo_pages(struct hmm_buffer_object *bo,
 				break;
 			}
 
-			fallthrough;
+			/* fall through */
 
 		/*
 		 * if dynamic memory pool doesn't exist, need to free

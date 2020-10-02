@@ -636,10 +636,7 @@ static int call_ipmr_mfc_entry_notifiers(struct net *net,
 
 /**
  *	vif_delete - Delete a VIF entry
- *	@mrt: Table to delete from
- *	@vifi: VIF identifier to delete
  *	@notify: Set to 1, if the caller is a notifier_call
- *	@head: if unregistering the VIF, place it on this queue
  */
 static int vif_delete(struct mr_table *mrt, int vifi, int notify,
 		      struct list_head *head)
@@ -1341,7 +1338,7 @@ static void mrtsock_destruct(struct sock *sk)
  * MOSPF/PIM router set up we can clean this up.
  */
 
-int ip_mroute_setsockopt(struct sock *sk, int optname, sockptr_t optval,
+int ip_mroute_setsockopt(struct sock *sk, int optname, char __user *optval,
 			 unsigned int optlen)
 {
 	struct net *net = sock_net(sk);
@@ -1413,7 +1410,7 @@ int ip_mroute_setsockopt(struct sock *sk, int optname, sockptr_t optval,
 			ret = -EINVAL;
 			break;
 		}
-		if (copy_from_sockptr(&vif, optval, sizeof(vif))) {
+		if (copy_from_user(&vif, optval, sizeof(vif))) {
 			ret = -EFAULT;
 			break;
 		}
@@ -1441,7 +1438,7 @@ int ip_mroute_setsockopt(struct sock *sk, int optname, sockptr_t optval,
 			ret = -EINVAL;
 			break;
 		}
-		if (copy_from_sockptr(&mfc, optval, sizeof(mfc))) {
+		if (copy_from_user(&mfc, optval, sizeof(mfc))) {
 			ret = -EFAULT;
 			break;
 		}
@@ -1459,7 +1456,7 @@ int ip_mroute_setsockopt(struct sock *sk, int optname, sockptr_t optval,
 			ret = -EINVAL;
 			break;
 		}
-		if (copy_from_sockptr(&val, optval, sizeof(val))) {
+		if (get_user(val, (int __user *)optval)) {
 			ret = -EFAULT;
 			break;
 		}
@@ -1471,7 +1468,7 @@ int ip_mroute_setsockopt(struct sock *sk, int optname, sockptr_t optval,
 			ret = -EINVAL;
 			break;
 		}
-		if (copy_from_sockptr(&val, optval, sizeof(val))) {
+		if (get_user(val, (int __user *)optval)) {
 			ret = -EFAULT;
 			break;
 		}
@@ -1486,7 +1483,7 @@ int ip_mroute_setsockopt(struct sock *sk, int optname, sockptr_t optval,
 			ret = -EINVAL;
 			break;
 		}
-		if (copy_from_sockptr(&val, optval, sizeof(val))) {
+		if (get_user(val, (int __user *)optval)) {
 			ret = -EFAULT;
 			break;
 		}
@@ -1508,7 +1505,7 @@ int ip_mroute_setsockopt(struct sock *sk, int optname, sockptr_t optval,
 			ret = -EINVAL;
 			break;
 		}
-		if (copy_from_sockptr(&uval, optval, sizeof(uval))) {
+		if (get_user(uval, (u32 __user *)optval)) {
 			ret = -EFAULT;
 			break;
 		}

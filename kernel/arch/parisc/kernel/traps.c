@@ -75,7 +75,7 @@ static int printbinary(char *buf, unsigned long x, int nbits)
 		lvl, f, (x), (x+3), (r)[(x)+0], (r)[(x)+1],		\
 		(r)[(x)+2], (r)[(x)+3])
 
-static void print_gr(const char *level, struct pt_regs *regs)
+static void print_gr(char *level, struct pt_regs *regs)
 {
 	int i;
 	char buf[64];
@@ -89,7 +89,7 @@ static void print_gr(const char *level, struct pt_regs *regs)
 		PRINTREGS(level, regs->gr, "r", RFMT, i);
 }
 
-static void print_fr(const char *level, struct pt_regs *regs)
+static void print_fr(char *level, struct pt_regs *regs)
 {
 	int i;
 	char buf[64];
@@ -119,7 +119,7 @@ static void print_fr(const char *level, struct pt_regs *regs)
 void show_regs(struct pt_regs *regs)
 {
 	int i, user;
-	const char *level;
+	char *level;
 	unsigned long cr30, cr31;
 
 	user = user_mode(regs);
@@ -437,6 +437,7 @@ void parisc_terminate(char *msg, struct pt_regs *regs, int code, unsigned long o
 		break;
 
 	default:
+		/* Fall through */
 		break;
 
 	}
@@ -643,12 +644,12 @@ void notrace handle_interruption(int code, struct pt_regs *regs)
 
 	case 15:
 		/* Data TLB miss fault/Data page fault */
-		fallthrough;
+		/* Fall through */
 	case 16:
 		/* Non-access instruction TLB miss fault */
 		/* The instruction TLB entry needed for the target address of the FIC
 		   is absent, and hardware can't find it, so we get to cleanup */
-		fallthrough;
+		/* Fall through */
 	case 17:
 		/* Non-access data TLB miss fault/Non-access data page fault */
 		/* FIXME: 
@@ -672,7 +673,7 @@ void notrace handle_interruption(int code, struct pt_regs *regs)
 			handle_unaligned(regs);
 			return;
 		}
-		fallthrough;
+		/* Fall Through */
 	case 26: 
 		/* PCXL: Data memory access rights trap */
 		fault_address = regs->ior;
@@ -682,7 +683,7 @@ void notrace handle_interruption(int code, struct pt_regs *regs)
 	case 19:
 		/* Data memory break trap */
 		regs->gr[0] |= PSW_X; /* So we can single-step over the trap */
-		fallthrough;
+		/* fall thru */
 	case 21:
 		/* Page reference trap */
 		handle_gdb_break(regs, TRAP_HWBKPT);
@@ -729,7 +730,7 @@ void notrace handle_interruption(int code, struct pt_regs *regs)
 			}
 			mmap_read_unlock(current->mm);
 		}
-		fallthrough;
+		/* Fall Through */
 	case 27: 
 		/* Data memory protection ID trap */
 		if (code == 27 && !user_mode(regs) &&

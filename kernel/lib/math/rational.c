@@ -27,7 +27,7 @@
  * with the fractional part size described in given_denominator.
  *
  * for theoretical background, see:
- * https://en.wikipedia.org/wiki/Continued_fraction
+ * http://en.wikipedia.org/wiki/Continued_fraction
  */
 
 void rational_best_approximation(

@@ -279,7 +279,7 @@ static int virtio_gpu_resource_create_ioctl(struct drm_device *dev, void *data,
 		drm_gem_object_release(obj);
 		return ret;
 	}
-	drm_gem_object_put(obj);
+	drm_gem_object_put_unlocked(obj);
 
 	rc->res_handle = qobj->hw_res_handle; /* similiar to a VM address */
 	rc->bo_handle = handle;
@@ -301,7 +301,7 @@ static int virtio_gpu_resource_info_ioctl(struct drm_device *dev, void *data,
 
 	ri->size = qobj->base.base.size;
 	ri->res_handle = qobj->hw_res_handle;
-	drm_gem_object_put(gobj);
+	drm_gem_object_put_unlocked(gobj);
 	return 0;
 }
 
@@ -418,7 +418,7 @@ static int virtio_gpu_wait_ioctl(struct drm_device *dev, void *data,
 	else if (ret > 0)
 		ret = 0;
 
-	drm_gem_object_put(obj);
+	drm_gem_object_put_unlocked(obj);
 	return ret;
 }
 

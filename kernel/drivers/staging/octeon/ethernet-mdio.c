@@ -163,7 +163,7 @@ int cvm_oct_phy_setup_device(struct net_device *dev)
 	of_node_put(phy_node);
 
 	if (!phydev)
-		return -EPROBE_DEFER;
+		return -ENODEV;
 
 	priv->last_link = 0;
 	phy_start(phydev);

@@ -6,7 +6,6 @@
 
 #include <linux/mm.h>
 #include <asm/cputable.h>
-#include <asm/cpu_has_feature.h>
 
 #ifdef CONFIG_PPC_BOOK3S_64
 /*

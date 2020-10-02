@@ -26,7 +26,6 @@
 #include "amdgpu_pm.h"
 #include "soc15.h"
 #include "soc15d.h"
-#include "jpeg_v2_0.h"
 
 #include "vcn/vcn_2_0_0_offset.h"
 #include "vcn/vcn_2_0_0_sh_mask.h"
@@ -230,9 +229,9 @@ static int jpeg_v2_0_disable_power_gating(struct amdgpu_device *adev)
 		data = 1 << UVD_PGFSM_CONFIG__UVDJ_PWR_CONFIG__SHIFT;
 		WREG32(SOC15_REG_OFFSET(JPEG, 0, mmUVD_PGFSM_CONFIG), data);
 
-		r = SOC15_WAIT_ON_RREG(JPEG, 0,
+		SOC15_WAIT_ON_RREG(JPEG, 0,
 			mmUVD_PGFSM_STATUS, UVD_PGFSM_STATUS_UVDJ_PWR_ON,
-			UVD_PGFSM_STATUS__UVDJ_PWR_STATUS_MASK);
+			UVD_PGFSM_STATUS__UVDJ_PWR_STATUS_MASK, r);
 
 		if (r) {
 			DRM_ERROR("amdgpu: JPEG disable power gating failed\n");
@@ -261,9 +260,9 @@ static int jpeg_v2_0_enable_power_gating(struct amdgpu_device* adev)
 		data = 2 << UVD_PGFSM_CONFIG__UVDJ_PWR_CONFIG__SHIFT;
 		WREG32(SOC15_REG_OFFSET(JPEG, 0, mmUVD_PGFSM_CONFIG), data);
 
-		r = SOC15_WAIT_ON_RREG(JPEG, 0, mmUVD_PGFSM_STATUS,
+		SOC15_WAIT_ON_RREG(JPEG, 0, mmUVD_PGFSM_STATUS,
 			(2 << UVD_PGFSM_STATUS__UVDJ_PWR_STATUS__SHIFT),
-			UVD_PGFSM_STATUS__UVDJ_PWR_STATUS_MASK);
+			UVD_PGFSM_STATUS__UVDJ_PWR_STATUS_MASK, r);
 
 		if (r) {
 			DRM_ERROR("amdgpu: JPEG enable power gating failed\n");
@@ -629,7 +628,7 @@ void jpeg_v2_0_dec_ring_emit_vm_flush(struct amdgpu_ring *ring,
 	pd_addr = amdgpu_gmc_emit_flush_gpu_tlb(ring, vmid, pd_addr);
 
 	/* wait for register write */
-	data0 = hub->ctx0_ptb_addr_lo32 + vmid * hub->ctx_addr_distance;
+	data0 = hub->ctx0_ptb_addr_lo32 + vmid * 2;
 	data1 = lower_32_bits(pd_addr);
 	mask = 0xffffffff;
 	jpeg_v2_0_dec_ring_emit_reg_wait(ring, data0, data1, mask);
@@ -677,10 +676,10 @@ static bool jpeg_v2_0_is_idle(void *handle)
 static int jpeg_v2_0_wait_for_idle(void *handle)
 {
 	struct amdgpu_device *adev = (struct amdgpu_device *)handle;
-	int ret;
+	int ret = 0;
 
-	ret = SOC15_WAIT_ON_RREG(JPEG, 0, mmUVD_JRBC_STATUS, UVD_JRBC_STATUS__RB_JOB_DONE_MASK,
-		UVD_JRBC_STATUS__RB_JOB_DONE_MASK);
+	SOC15_WAIT_ON_RREG(JPEG, 0, mmUVD_JRBC_STATUS, UVD_JRBC_STATUS__RB_JOB_DONE_MASK,
+		UVD_JRBC_STATUS__RB_JOB_DONE_MASK, ret);
 
 	return ret;
 }

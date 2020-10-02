@@ -62,6 +62,7 @@ Legacy documentation
 .. toctree::
    :maxdepth: 1
 
+   upgrading-clients
    old-module-parameters
 
 .. only::  subproject and html

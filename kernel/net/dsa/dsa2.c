@@ -261,14 +261,9 @@ static int dsa_port_setup(struct dsa_port *dp)
 	struct devlink_port *dlp = &dp->devlink_port;
 	bool dsa_port_link_registered = false;
 	bool devlink_port_registered = false;
-	struct devlink_port_attrs attrs = {};
 	struct devlink *dl = ds->devlink;
 	bool dsa_port_enabled = false;
 	int err = 0;
-
-	attrs.phys.port_number = dp->index;
-	memcpy(attrs.switch_id.id, id, len);
-	attrs.switch_id.id_len = len;
 
 	if (dp->setup)
 		return 0;
@@ -279,8 +274,8 @@ static int dsa_port_setup(struct dsa_port *dp)
 		break;
 	case DSA_PORT_TYPE_CPU:
 		memset(dlp, 0, sizeof(*dlp));
-		attrs.flavour = DEVLINK_PORT_FLAVOUR_CPU;
-		devlink_port_attrs_set(dlp, &attrs);
+		devlink_port_attrs_set(dlp, DEVLINK_PORT_FLAVOUR_CPU,
+				       dp->index, false, 0, id, len);
 		err = devlink_port_register(dl, dlp, dp->index);
 		if (err)
 			break;
@@ -299,8 +294,8 @@ static int dsa_port_setup(struct dsa_port *dp)
 		break;
 	case DSA_PORT_TYPE_DSA:
 		memset(dlp, 0, sizeof(*dlp));
-		attrs.flavour = DEVLINK_PORT_FLAVOUR_DSA;
-		devlink_port_attrs_set(dlp, &attrs);
+		devlink_port_attrs_set(dlp, DEVLINK_PORT_FLAVOUR_DSA,
+				       dp->index, false, 0, id, len);
 		err = devlink_port_register(dl, dlp, dp->index);
 		if (err)
 			break;
@@ -319,8 +314,8 @@ static int dsa_port_setup(struct dsa_port *dp)
 		break;
 	case DSA_PORT_TYPE_USER:
 		memset(dlp, 0, sizeof(*dlp));
-		attrs.flavour = DEVLINK_PORT_FLAVOUR_PHYSICAL;
-		devlink_port_attrs_set(dlp, &attrs);
+		devlink_port_attrs_set(dlp, DEVLINK_PORT_FLAVOUR_PHYSICAL,
+				       dp->index, false, 0, id, len);
 		err = devlink_port_register(dl, dlp, dp->index);
 		if (err)
 			break;
@@ -727,12 +722,8 @@ static int dsa_switch_parse_ports_of(struct dsa_switch *ds,
 
 	ports = of_get_child_by_name(dn, "ports");
 	if (!ports) {
-		/* The second possibility is "ethernet-ports" */
-		ports = of_get_child_by_name(dn, "ethernet-ports");
-		if (!ports) {
-			dev_err(ds->dev, "no ports child node found\n");
-			return -EINVAL;
-		}
+		dev_err(ds->dev, "no ports child node found\n");
+		return -EINVAL;
 	}
 
 	for_each_available_child_of_node(ports, port) {

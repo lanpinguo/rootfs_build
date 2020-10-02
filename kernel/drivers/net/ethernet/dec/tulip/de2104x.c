@@ -2105,10 +2105,11 @@ static void de_remove_one(struct pci_dev *pdev)
 	free_netdev(dev);
 }
 
-static int __maybe_unused de_suspend(struct device *dev_d)
+#ifdef CONFIG_PM
+
+static int de_suspend (struct pci_dev *pdev, pm_message_t state)
 {
-	struct pci_dev *pdev = to_pci_dev(dev_d);
-	struct net_device *dev = pci_get_drvdata(pdev);
+	struct net_device *dev = pci_get_drvdata (pdev);
 	struct de_private *de = netdev_priv(dev);
 
 	rtnl_lock();
@@ -2135,6 +2136,7 @@ static int __maybe_unused de_suspend(struct device *dev_d)
 		de_clean_rings(de);
 
 		de_adapter_sleep(de);
+		pci_disable_device(pdev);
 	} else {
 		netif_device_detach(dev);
 	}
@@ -2142,17 +2144,21 @@ static int __maybe_unused de_suspend(struct device *dev_d)
 	return 0;
 }
 
-static int __maybe_unused de_resume(struct device *dev_d)
+static int de_resume (struct pci_dev *pdev)
 {
-	struct pci_dev *pdev = to_pci_dev(dev_d);
-	struct net_device *dev = pci_get_drvdata(pdev);
+	struct net_device *dev = pci_get_drvdata (pdev);
 	struct de_private *de = netdev_priv(dev);
+	int retval = 0;
 
 	rtnl_lock();
 	if (netif_device_present(dev))
 		goto out;
 	if (!netif_running(dev))
 		goto out_attach;
+	if ((retval = pci_enable_device(pdev))) {
+		netdev_err(dev, "pci_enable_device failed in resume\n");
+		goto out;
+	}
 	pci_set_master(pdev);
 	de_init_rings(de);
 	de_init_hw(de);
@@ -2163,14 +2169,17 @@ out:
 	return 0;
 }
 
-static SIMPLE_DEV_PM_OPS(de_pm_ops, de_suspend, de_resume);
+#endif /* CONFIG_PM */
 
 static struct pci_driver de_driver = {
 	.name		= DRV_NAME,
 	.id_table	= de_pci_tbl,
 	.probe		= de_init_one,
 	.remove		= de_remove_one,
-	.driver.pm	= &de_pm_ops,
+#ifdef CONFIG_PM
+	.suspend	= de_suspend,
+	.resume		= de_resume,
+#endif
 };
 
 static int __init de_init (void)

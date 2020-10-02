@@ -857,7 +857,8 @@ retry:
 	if (!ds) {
 		if (!ff_layout_no_fallback_to_mds(pgio->pg_lseg))
 			goto out_mds;
-		pnfs_generic_pg_cleanup(pgio);
+		pnfs_put_lseg(pgio->pg_lseg);
+		pgio->pg_lseg = NULL;
 		/* Sleep for 1 second before retrying */
 		ssleep(1);
 		goto retry;
@@ -883,6 +884,8 @@ out_mds:
 			0, NFS4_MAX_UINT64, IOMODE_READ,
 			NFS_I(pgio->pg_inode)->layout,
 			pgio->pg_lseg);
+	pnfs_put_lseg(pgio->pg_lseg);
+	pgio->pg_lseg = NULL;
 	pgio->pg_maxretrans = 0;
 	nfs_pageio_reset_read_mds(pgio);
 }
@@ -926,7 +929,8 @@ retry:
 		if (!ds) {
 			if (!ff_layout_no_fallback_to_mds(pgio->pg_lseg))
 				goto out_mds;
-			pnfs_generic_pg_cleanup(pgio);
+			pnfs_put_lseg(pgio->pg_lseg);
+			pgio->pg_lseg = NULL;
 			/* Sleep for 1 second before retrying */
 			ssleep(1);
 			goto retry;
@@ -948,6 +952,8 @@ out_mds:
 			0, NFS4_MAX_UINT64, IOMODE_RW,
 			NFS_I(pgio->pg_inode)->layout,
 			pgio->pg_lseg);
+	pnfs_put_lseg(pgio->pg_lseg);
+	pgio->pg_lseg = NULL;
 	pgio->pg_maxretrans = 0;
 	nfs_pageio_reset_write_mds(pgio);
 	pgio->pg_error = -EAGAIN;
@@ -960,8 +966,8 @@ ff_layout_pg_get_mirror_count_write(struct nfs_pageio_descriptor *pgio,
 	if (!pgio->pg_lseg) {
 		pgio->pg_lseg = pnfs_update_layout(pgio->pg_inode,
 						   nfs_req_openctx(req),
-						   req_offset(req),
-						   req->wb_bytes,
+						   0,
+						   NFS4_MAX_UINT64,
 						   IOMODE_RW,
 						   false,
 						   GFP_NOFS);
@@ -1133,7 +1139,7 @@ static int ff_layout_async_handle_error_v4(struct rpc_task *task,
 		nfs4_delete_deviceid(devid->ld, devid->nfs_client,
 				&devid->deviceid);
 		rpc_wake_up(&tbl->slot_tbl_waitq);
-		fallthrough;
+		/* fall through */
 	default:
 		if (ff_layout_avoid_mds_available_ds(lseg))
 			return -NFS4ERR_RESET_TO_PNFS;
@@ -1260,7 +1266,7 @@ static void ff_layout_io_track_ds_error(struct pnfs_layout_segment *lseg,
 		 */
 		if (opnum == OP_READ)
 			break;
-		fallthrough;
+		/* Fallthrough */
 	default:
 		pnfs_error_mark_layout_for_return(lseg->pls_layout->plh_inode,
 						  lseg);

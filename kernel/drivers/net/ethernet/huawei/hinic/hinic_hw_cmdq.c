@@ -401,7 +401,6 @@ static int cmdq_sync_cmd_direct_resp(struct hinic_cmdq *cmdq,
 
 		spin_unlock_bh(&cmdq->cmdq_lock);
 
-		hinic_dump_ceq_info(cmdq->hwdev);
 		return -ETIMEDOUT;
 	}
 
@@ -808,7 +807,6 @@ static int init_cmdqs_ctxt(struct hinic_hwdev *hwdev,
 
 	cmdq_type = HINIC_CMDQ_SYNC;
 	for (; cmdq_type < HINIC_MAX_CMDQ_TYPES; cmdq_type++) {
-		cmdqs->cmdq[cmdq_type].hwdev = hwdev;
 		err = init_cmdq(&cmdqs->cmdq[cmdq_type],
 				&cmdqs->saved_wqs[cmdq_type], cmdq_type,
 				db_area[cmdq_type]);

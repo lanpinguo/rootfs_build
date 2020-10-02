@@ -156,9 +156,8 @@ static struct sk_buff *ksz9477_xmit(struct sk_buff *skb,
 {
 	struct dsa_port *dp = dsa_slave_to_port(dev);
 	struct sk_buff *nskb;
-	__be16 *tag;
+	u16 *tag;
 	u8 *addr;
-	u16 val;
 
 	nskb = ksz_common_xmit(skb, dev, KSZ9477_INGRESS_TAG_LEN);
 	if (!nskb)
@@ -168,12 +167,12 @@ static struct sk_buff *ksz9477_xmit(struct sk_buff *skb,
 	tag = skb_put(nskb, KSZ9477_INGRESS_TAG_LEN);
 	addr = skb_mac_header(nskb);
 
-	val = BIT(dp->index);
+	*tag = BIT(dp->index);
 
 	if (is_link_local_ether_addr(addr))
-		val |= KSZ9477_TAIL_TAG_OVERRIDE;
+		*tag |= KSZ9477_TAIL_TAG_OVERRIDE;
 
-	*tag = cpu_to_be16(val);
+	*tag = cpu_to_be16(*tag);
 
 	return nskb;
 }

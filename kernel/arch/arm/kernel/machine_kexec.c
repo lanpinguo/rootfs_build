@@ -11,6 +11,7 @@
 #include <linux/irq.h>
 #include <linux/memblock.h>
 #include <linux/of_fdt.h>
+#include <asm/pgalloc.h>
 #include <asm/mmu_context.h>
 #include <asm/cacheflush.h>
 #include <asm/fncpy.h>

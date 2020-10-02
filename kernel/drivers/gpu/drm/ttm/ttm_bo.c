@@ -85,6 +85,7 @@ static void ttm_mem_type_debug(struct ttm_bo_device *bdev, struct drm_printer *p
 	drm_printf(p, "    has_type: %d\n", man->has_type);
 	drm_printf(p, "    use_type: %d\n", man->use_type);
 	drm_printf(p, "    flags: 0x%08X\n", man->flags);
+	drm_printf(p, "    gpu_offset: 0x%08llX\n", man->gpu_offset);
 	drm_printf(p, "    size: %llu\n", man->size);
 	drm_printf(p, "    available_caching: 0x%08X\n", man->available_caching);
 	drm_printf(p, "    default_caching: 0x%08X\n", man->default_caching);
@@ -272,15 +273,20 @@ static int ttm_bo_handle_move_mem(struct ttm_buffer_object *bo,
 				  struct ttm_operation_ctx *ctx)
 {
 	struct ttm_bo_device *bdev = bo->bdev;
+	bool old_is_pci = ttm_mem_reg_is_pci(bdev, &bo->mem);
+	bool new_is_pci = ttm_mem_reg_is_pci(bdev, mem);
 	struct ttm_mem_type_manager *old_man = &bdev->man[bo->mem.mem_type];
 	struct ttm_mem_type_manager *new_man = &bdev->man[mem->mem_type];
-	int ret;
+	int ret = 0;
 
-	ret = ttm_mem_io_lock(old_man, true);
-	if (unlikely(ret != 0))
-		goto out_err;
-	ttm_bo_unmap_virtual_locked(bo);
-	ttm_mem_io_unlock(old_man);
+	if (old_is_pci || new_is_pci ||
+	    ((mem->placement & bo->mem.placement & TTM_PL_MASK_CACHING) == 0)) {
+		ret = ttm_mem_io_lock(old_man, true);
+		if (unlikely(ret != 0))
+			goto out_err;
+		ttm_bo_unmap_virtual_locked(bo);
+		ttm_mem_io_unlock(old_man);
+	}
 
 	/*
 	 * Create and bind a ttm if required.
@@ -308,6 +314,7 @@ static int ttm_bo_handle_move_mem(struct ttm_buffer_object *bo,
 			if (bdev->driver->move_notify)
 				bdev->driver->move_notify(bo, evict, mem);
 			bo->mem = *mem;
+			mem->mm_node = NULL;
 			goto moved;
 		}
 	}
@@ -335,6 +342,12 @@ static int ttm_bo_handle_move_mem(struct ttm_buffer_object *bo,
 
 moved:
 	bo->evicted = false;
+
+	if (bo->mem.mm_node)
+		bo->offset = (bo->mem.start << PAGE_SHIFT) +
+		    bdev->man[bo->mem.mem_type].gpu_offset;
+	else
+		bo->offset = 0;
 
 	ctx->bytes_moved += bo->num_pages << PAGE_SHIFT;
 	return 0;
@@ -611,6 +624,7 @@ static void ttm_bo_release(struct kref *kref)
 	ttm_bo_cleanup_memtype_use(bo);
 	dma_resv_unlock(bo->base.resv);
 
+	BUG_ON(bo->mem.mm_node != NULL);
 	atomic_dec(&ttm_bo_glob.bo_count);
 	dma_fence_put(bo->moving);
 	if (!ttm_bo_uses_embedded_gem_object(bo))
@@ -842,29 +856,12 @@ static int ttm_mem_evict_first(struct ttm_bo_device *bdev,
 	return ret;
 }
 
-static int ttm_bo_mem_get(struct ttm_buffer_object *bo,
-			  const struct ttm_place *place,
-			  struct ttm_mem_reg *mem)
-{
-	struct ttm_mem_type_manager *man = &bo->bdev->man[mem->mem_type];
-
-	mem->mm_node = NULL;
-	if (!man->func || !man->func->get_node)
-		return 0;
-
-	return man->func->get_node(man, bo, place, mem);
-}
-
 void ttm_bo_mem_put(struct ttm_buffer_object *bo, struct ttm_mem_reg *mem)
 {
 	struct ttm_mem_type_manager *man = &bo->bdev->man[mem->mem_type];
 
-	if (!man->func || !man->func->put_node)
-		return;
-
-	man->func->put_node(man, mem);
-	mem->mm_node = NULL;
-	mem->mem_type = TTM_PL_SYSTEM;
+	if (mem->mm_node)
+		(*man->func->put_node)(man, mem);
 }
 EXPORT_SYMBOL(ttm_bo_mem_put);
 
@@ -920,11 +917,11 @@ static int ttm_bo_mem_force_space(struct ttm_buffer_object *bo,
 
 	ticket = dma_resv_locking_ctx(bo->base.resv);
 	do {
-		ret = ttm_bo_mem_get(bo, place, mem);
-		if (likely(!ret))
-			break;
-		if (unlikely(ret != -ENOSPC))
+		ret = (*man->func->get_node)(man, bo, place, mem);
+		if (unlikely(ret != 0))
 			return ret;
+		if (mem->mm_node)
+			break;
 		ret = ttm_mem_evict_first(bdev, mem->mem_type, place, ctx,
 					  ticket);
 		if (unlikely(ret != 0))
@@ -1050,6 +1047,7 @@ int ttm_bo_mem_space(struct ttm_buffer_object *bo,
 	if (unlikely(ret))
 		return ret;
 
+	mem->mm_node = NULL;
 	for (i = 0; i < placement->num_placement; ++i) {
 		const struct ttm_place *place = &placement->placement[i];
 		struct ttm_mem_type_manager *man;
@@ -1061,16 +1059,21 @@ int ttm_bo_mem_space(struct ttm_buffer_object *bo,
 			goto error;
 
 		type_found = true;
-		ret = ttm_bo_mem_get(bo, place, mem);
-		if (ret == -ENOSPC)
-			continue;
+		mem->mm_node = NULL;
+		if (mem->mem_type == TTM_PL_SYSTEM)
+			return 0;
+
+		man = &bdev->man[mem->mem_type];
+		ret = (*man->func->get_node)(man, bo, place, mem);
 		if (unlikely(ret))
 			goto error;
 
-		man = &bdev->man[mem->mem_type];
+		if (!mem->mm_node)
+			continue;
+
 		ret = ttm_bo_add_move_fence(bo, man, mem, ctx->no_wait_gpu);
 		if (unlikely(ret)) {
-			ttm_bo_mem_put(bo, mem);
+			(*man->func->put_node)(man, mem);
 			if (ret == -EBUSY)
 				continue;
 
@@ -1089,8 +1092,12 @@ int ttm_bo_mem_space(struct ttm_buffer_object *bo,
 			goto error;
 
 		type_found = true;
+		mem->mm_node = NULL;
+		if (mem->mem_type == TTM_PL_SYSTEM)
+			return 0;
+
 		ret = ttm_bo_mem_force_space(bo, place, mem, ctx);
-		if (likely(!ret))
+		if (ret == 0 && mem->mm_node)
 			return 0;
 
 		if (ret && ret != -EBUSY)
@@ -1128,8 +1135,6 @@ static int ttm_bo_move_buffer(struct ttm_buffer_object *bo,
 	mem.page_alignment = bo->mem.page_alignment;
 	mem.bus.io_reserved_vm = false;
 	mem.bus.io_reserved_count = 0;
-	mem.mm_node = NULL;
-
 	/*
 	 * Determine where to move the buffer.
 	 */
@@ -1138,7 +1143,7 @@ static int ttm_bo_move_buffer(struct ttm_buffer_object *bo,
 		goto out_unlock;
 	ret = ttm_bo_handle_move_mem(bo, &mem, false, ctx);
 out_unlock:
-	if (ret)
+	if (ret && mem.mm_node)
 		ttm_bo_mem_put(bo, &mem);
 	return ret;
 }
@@ -1153,7 +1158,7 @@ static bool ttm_bo_places_compat(const struct ttm_place *places,
 	for (i = 0; i < num_placement; i++) {
 		const struct ttm_place *heap = &places[i];
 
-		if ((mem->start < heap->fpfn ||
+		if (mem->mm_node && (mem->start < heap->fpfn ||
 		     (heap->lpfn != 0 && (mem->start + mem->num_pages) > heap->lpfn)))
 			continue;
 
@@ -1537,6 +1542,7 @@ int ttm_bo_init_mm(struct ttm_bo_device *bdev, unsigned type,
 	BUG_ON(type >= TTM_NUM_MEM_TYPES);
 	man = &bdev->man[type];
 	BUG_ON(man->has_type);
+	man->io_reserve_fastpath = true;
 	man->use_io_reserve_lru = false;
 	mutex_init(&man->io_reserve_mutex);
 	spin_lock_init(&man->move_lock);
@@ -1714,6 +1720,23 @@ EXPORT_SYMBOL(ttm_bo_device_init);
  * buffer object vm functions.
  */
 
+bool ttm_mem_reg_is_pci(struct ttm_bo_device *bdev, struct ttm_mem_reg *mem)
+{
+	struct ttm_mem_type_manager *man = &bdev->man[mem->mem_type];
+
+	if (!(man->flags & TTM_MEMTYPE_FLAG_FIXED)) {
+		if (mem->mem_type == TTM_PL_SYSTEM)
+			return false;
+
+		if (man->flags & TTM_MEMTYPE_FLAG_CMA)
+			return false;
+
+		if (mem->placement & TTM_PL_FLAG_CACHED)
+			return false;
+	}
+	return true;
+}
+
 void ttm_bo_unmap_virtual_locked(struct ttm_buffer_object *bo)
 {
 	struct ttm_bo_device *bdev = bo->bdev;
@@ -1857,7 +1880,7 @@ out:
 }
 EXPORT_SYMBOL(ttm_bo_swapout);
 
-void ttm_bo_swapout_all(void)
+void ttm_bo_swapout_all(struct ttm_bo_device *bdev)
 {
 	struct ttm_operation_ctx ctx = {
 		.interruptible = false,

@@ -37,7 +37,6 @@
 #include "util/evsel_config.h"
 #include "util/event.h"
 #include "util/pfm.h"
-#include "perf.h"
 
 #define MAX_NAME_LEN 100
 
@@ -411,7 +410,7 @@ static int add_event_tool(struct list_head *list, int *idx,
 		return -ENOMEM;
 	evsel->tool_event = tool_event;
 	if (tool_event == PERF_TOOL_DURATION_TIME)
-		evsel->unit = strdup("ns");
+		evsel->unit = "ns";
 	return 0;
 }
 
@@ -768,8 +767,8 @@ int parse_events_load_bpf_obj(struct parse_events_state *parse_state,
 
 	return 0;
 errout:
-	parse_events__handle_error(parse_state->error, 0,
-				strdup(errbuf), strdup("(add -v to see detail)"));
+	parse_state->error->help = strdup("(add -v to see detail)");
+	parse_state->error->str = strdup(errbuf);
 	return err;
 }
 
@@ -785,38 +784,36 @@ parse_events_config_bpf(struct parse_events_state *parse_state,
 		return 0;
 
 	list_for_each_entry(term, head_config, list) {
+		char errbuf[BUFSIZ];
 		int err;
 
 		if (term->type_term != PARSE_EVENTS__TERM_TYPE_USER) {
-			parse_events__handle_error(parse_state->error, term->err_term,
-						strdup("Invalid config term for BPF object"),
-						NULL);
+			snprintf(errbuf, sizeof(errbuf),
+				 "Invalid config term for BPF object");
+			errbuf[BUFSIZ - 1] = '\0';
+
+			parse_state->error->idx = term->err_term;
+			parse_state->error->str = strdup(errbuf);
 			return -EINVAL;
 		}
 
 		err = bpf__config_obj(obj, term, parse_state->evlist, &error_pos);
 		if (err) {
-			char errbuf[BUFSIZ];
-			int idx;
-
 			bpf__strerror_config_obj(obj, term, parse_state->evlist,
 						 &error_pos, err, errbuf,
 						 sizeof(errbuf));
-
-			if (err == -BPF_LOADER_ERRNO__OBJCONF_MAP_VALUE)
-				idx = term->err_val;
-			else
-				idx = term->err_term + error_pos;
-
-			parse_events__handle_error(parse_state->error, idx,
-						strdup(errbuf),
-						strdup(
+			parse_state->error->help = strdup(
 "Hint:\tValid config terms:\n"
 "     \tmap:[<arraymap>].value<indices>=[value]\n"
 "     \tmap:[<eventmap>].event<indices>=[event]\n"
 "\n"
 "     \twhere <indices> is something like [0,3...5] or [all]\n"
-"     \t(add -v to see detail)"));
+"     \t(add -v to see detail)");
+			parse_state->error->str = strdup(errbuf);
+			if (err == -BPF_LOADER_ERRNO__OBJCONF_MAP_VALUE)
+				parse_state->error->idx = term->err_val;
+			else
+				parse_state->error->idx = term->err_term + error_pos;
 			return err;
 		}
 	}
@@ -880,8 +877,8 @@ int parse_events_load_bpf(struct parse_events_state *parse_state,
 						   -err, errbuf,
 						   sizeof(errbuf));
 
-		parse_events__handle_error(parse_state->error, 0,
-					strdup(errbuf), strdup("(add -v to see detail)"));
+		parse_state->error->help = strdup("(add -v to see detail)");
+		parse_state->error->str = strdup(errbuf);
 		return err;
 	}
 
@@ -1453,7 +1450,7 @@ int parse_events_add_pmu(struct parse_events_state *parse_state,
 		fprintf(stderr, "' that may result in non-fatal errors\n");
 	}
 
-	pmu = parse_state->fake_pmu ?: perf_pmu__find(name);
+	pmu = perf_pmu__find(name);
 	if (!pmu) {
 		char *err_str;
 
@@ -1486,7 +1483,7 @@ int parse_events_add_pmu(struct parse_events_state *parse_state,
 		}
 	}
 
-	if (!parse_state->fake_pmu && perf_pmu__check_alias(pmu, head_config, &info))
+	if (perf_pmu__check_alias(pmu, head_config, &info))
 		return -EINVAL;
 
 	if (verbose > 1) {
@@ -1519,7 +1516,7 @@ int parse_events_add_pmu(struct parse_events_state *parse_state,
 	if (pmu->default_config && get_config_chgs(pmu, head_config, &config_terms))
 		return -ENOMEM;
 
-	if (!parse_state->fake_pmu && perf_pmu__config(pmu, &attr, head_config, parse_state->error)) {
+	if (perf_pmu__config(pmu, &attr, head_config, parse_state->error)) {
 		struct evsel_config_term *pos, *tmp;
 
 		list_for_each_entry_safe(pos, tmp, &config_terms, list) {
@@ -1534,23 +1531,19 @@ int parse_events_add_pmu(struct parse_events_state *parse_state,
 	evsel = __add_event(list, &parse_state->idx, &attr, true,
 			    get_config_name(head_config), pmu,
 			    &config_terms, auto_merge_stats, NULL);
-	if (!evsel)
-		return -ENOMEM;
+	if (evsel) {
+		evsel->unit = info.unit;
+		evsel->scale = info.scale;
+		evsel->per_pkg = info.per_pkg;
+		evsel->snapshot = info.snapshot;
+		evsel->metric_expr = info.metric_expr;
+		evsel->metric_name = info.metric_name;
+		evsel->pmu_name = name ? strdup(name) : NULL;
+		evsel->use_uncore_alias = use_uncore_alias;
+		evsel->percore = config_term_percore(&evsel->config_terms);
+	}
 
-	evsel->pmu_name = name ? strdup(name) : NULL;
-	evsel->use_uncore_alias = use_uncore_alias;
-	evsel->percore = config_term_percore(&evsel->config_terms);
-
-	if (parse_state->fake_pmu)
-		return 0;
-
-	evsel->unit = info.unit;
-	evsel->scale = info.scale;
-	evsel->per_pkg = info.per_pkg;
-	evsel->snapshot = info.snapshot;
-	evsel->metric_expr = info.metric_expr;
-	evsel->metric_name = info.metric_name;
-	return 0;
+	return evsel ? 0 : -ENOMEM;
 }
 
 int parse_events_multi_pmu_add(struct parse_events_state *parse_state,
@@ -1799,8 +1792,6 @@ static int get_event_modifier(struct event_modifier *mod, char *str,
 		if (*str == 'u') {
 			if (!exclude)
 				exclude = eu = ek = eh = 1;
-			if (!exclude_GH && !perf_guest)
-				eG = 1;
 			eu = 0;
 		} else if (*str == 'k') {
 			if (!exclude)
@@ -2125,16 +2116,15 @@ int parse_events_terms(struct list_head *terms, const char *str)
 	return ret;
 }
 
-int __parse_events(struct evlist *evlist, const char *str,
-		   struct parse_events_error *err, struct perf_pmu *fake_pmu)
+int parse_events(struct evlist *evlist, const char *str,
+		 struct parse_events_error *err)
 {
 	struct parse_events_state parse_state = {
-		.list	  = LIST_HEAD_INIT(parse_state.list),
-		.idx	  = evlist->core.nr_entries,
-		.error	  = err,
-		.evlist	  = evlist,
-		.stoken	  = PE_START_EVENTS,
-		.fake_pmu = fake_pmu,
+		.list   = LIST_HEAD_INIT(parse_state.list),
+		.idx    = evlist->core.nr_entries,
+		.error  = err,
+		.evlist = evlist,
+		.stoken = PE_START_EVENTS,
 	};
 	int ret;
 

@@ -1546,9 +1546,10 @@ static int atmel_spi_probe(struct platform_device *pdev)
 		return PTR_ERR(clk);
 
 	/* setup spi core then atmel-specific driver state */
+	ret = -ENOMEM;
 	master = spi_alloc_master(&pdev->dev, sizeof(*as));
 	if (!master)
-		return -ENOMEM;
+		goto out_free;
 
 	/* the spi->mode bits understood by this driver: */
 	master->use_gpio_descriptors = true;
@@ -1677,6 +1678,7 @@ out_free_dma:
 	clk_disable_unprepare(clk);
 out_free_irq:
 out_unmap_regs:
+out_free:
 	spi_master_put(master);
 	return ret;
 }

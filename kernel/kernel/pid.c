@@ -199,7 +199,7 @@ struct pid *alloc_pid(struct pid_namespace *ns, pid_t *set_tid,
 			if (tid != 1 && !tmp->child_reaper)
 				goto out_free;
 			retval = -EPERM;
-			if (!checkpoint_restore_ns_capable(tmp->user_ns))
+			if (!ns_capable(tmp->user_ns, CAP_SYS_ADMIN))
 				goto out_free;
 			set_tid_size--;
 		}
@@ -636,8 +636,19 @@ static int pidfd_getfd(struct pid *pid, int fd)
 	if (IS_ERR(file))
 		return PTR_ERR(file);
 
-	ret = receive_fd(file, O_CLOEXEC);
-	fput(file);
+	ret = security_file_receive(file);
+	if (ret) {
+		fput(file);
+		return ret;
+	}
+
+	ret = get_unused_fd_flags(O_CLOEXEC);
+	if (ret < 0) {
+		fput(file);
+	} else {
+		__receive_sock(file);
+		fd_install(ret, file);
+	}
 
 	return ret;
 }

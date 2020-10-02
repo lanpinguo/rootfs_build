@@ -457,17 +457,14 @@ static int __init acpi_pcc_probe(void)
 			pr_warn("Error parsing PCC subspaces from PCCT\n");
 		else
 			pr_warn("Invalid PCCT: %d PCC subspaces\n", count);
-
-		rc = -EINVAL;
-		goto err_put_pcct;
+		return -EINVAL;
 	}
 
 	pcc_mbox_channels = kcalloc(count, sizeof(struct mbox_chan),
 				    GFP_KERNEL);
 	if (!pcc_mbox_channels) {
 		pr_err("Could not allocate space for PCC mbox channels\n");
-		rc = -ENOMEM;
-		goto err_put_pcct;
+		return -ENOMEM;
 	}
 
 	pcc_doorbell_vaddr = kcalloc(count, sizeof(void *), GFP_KERNEL);
@@ -538,8 +535,6 @@ err_free_db_vaddr:
 	kfree(pcc_doorbell_vaddr);
 err_free_mbox:
 	kfree(pcc_mbox_channels);
-err_put_pcct:
-	acpi_put_table(pcct_tbl);
 	return rc;
 }
 

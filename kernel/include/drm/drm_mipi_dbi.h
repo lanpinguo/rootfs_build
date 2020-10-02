@@ -95,6 +95,11 @@ struct mipi_dbi_dev {
 	struct drm_display_mode mode;
 
 	/**
+	 * @enabled: Pipeline is enabled
+	 */
+	bool enabled;
+
+	/**
 	 * @tx_buf: Buffer used for transfer (copy clip rect area)
 	 */
 	u16 *tx_buf;

@@ -638,7 +638,9 @@ static size_t sja1105pqrs_cbs_entry_packing(void *buf, void *entry_ptr,
 #define OP_SEARCH	BIT(3)
 
 /* SJA1105E/T: First generation */
-const struct sja1105_dynamic_table_ops sja1105et_dyn_ops[BLK_IDX_MAX_DYN] = {
+struct sja1105_dynamic_table_ops sja1105et_dyn_ops[BLK_IDX_MAX_DYN] = {
+	[BLK_IDX_SCHEDULE] = {0},
+	[BLK_IDX_SCHEDULE_ENTRY_POINTS] = {0},
 	[BLK_IDX_VL_LOOKUP] = {
 		.entry_packing = sja1105et_vl_lookup_entry_packing,
 		.cmd_packing = sja1105_vl_lookup_cmd_packing,
@@ -647,6 +649,8 @@ const struct sja1105_dynamic_table_ops sja1105et_dyn_ops[BLK_IDX_MAX_DYN] = {
 		.packed_size = SJA1105ET_SJA1105_SIZE_VL_LOOKUP_DYN_CMD,
 		.addr = 0x35,
 	},
+	[BLK_IDX_VL_POLICING] = {0},
+	[BLK_IDX_VL_FORWARDING] = {0},
 	[BLK_IDX_L2_LOOKUP] = {
 		.entry_packing = sja1105et_dyn_l2_lookup_entry_packing,
 		.cmd_packing = sja1105et_l2_lookup_cmd_packing,
@@ -663,6 +667,7 @@ const struct sja1105_dynamic_table_ops sja1105et_dyn_ops[BLK_IDX_MAX_DYN] = {
 		.packed_size = SJA1105ET_SIZE_L2_LOOKUP_DYN_CMD,
 		.addr = 0x20,
 	},
+	[BLK_IDX_L2_POLICING] = {0},
 	[BLK_IDX_VLAN_LOOKUP] = {
 		.entry_packing = sja1105_vlan_lookup_entry_packing,
 		.cmd_packing = sja1105_vlan_lookup_cmd_packing,
@@ -687,6 +692,9 @@ const struct sja1105_dynamic_table_ops sja1105et_dyn_ops[BLK_IDX_MAX_DYN] = {
 		.packed_size = SJA1105ET_SIZE_MAC_CONFIG_DYN_CMD,
 		.addr = 0x36,
 	},
+	[BLK_IDX_SCHEDULE_PARAMS] = {0},
+	[BLK_IDX_SCHEDULE_ENTRY_POINTS_PARAMS] = {0},
+	[BLK_IDX_VL_FORWARDING_PARAMS] = {0},
 	[BLK_IDX_L2_LOOKUP_PARAMS] = {
 		.entry_packing = sja1105et_l2_lookup_params_entry_packing,
 		.cmd_packing = sja1105et_l2_lookup_params_cmd_packing,
@@ -695,6 +703,8 @@ const struct sja1105_dynamic_table_ops sja1105et_dyn_ops[BLK_IDX_MAX_DYN] = {
 		.packed_size = SJA1105ET_SIZE_L2_LOOKUP_PARAMS_DYN_CMD,
 		.addr = 0x38,
 	},
+	[BLK_IDX_L2_FORWARDING_PARAMS] = {0},
+	[BLK_IDX_AVB_PARAMS] = {0},
 	[BLK_IDX_GENERAL_PARAMS] = {
 		.entry_packing = sja1105et_general_params_entry_packing,
 		.cmd_packing = sja1105et_general_params_cmd_packing,
@@ -719,10 +729,13 @@ const struct sja1105_dynamic_table_ops sja1105et_dyn_ops[BLK_IDX_MAX_DYN] = {
 		.packed_size = SJA1105ET_SIZE_CBS_DYN_CMD,
 		.addr = 0x2c,
 	},
+	[BLK_IDX_XMII_PARAMS] = {0},
 };
 
 /* SJA1105P/Q/R/S: Second generation */
-const struct sja1105_dynamic_table_ops sja1105pqrs_dyn_ops[BLK_IDX_MAX_DYN] = {
+struct sja1105_dynamic_table_ops sja1105pqrs_dyn_ops[BLK_IDX_MAX_DYN] = {
+	[BLK_IDX_SCHEDULE] = {0},
+	[BLK_IDX_SCHEDULE_ENTRY_POINTS] = {0},
 	[BLK_IDX_VL_LOOKUP] = {
 		.entry_packing = sja1105_vl_lookup_entry_packing,
 		.cmd_packing = sja1105_vl_lookup_cmd_packing,
@@ -731,6 +744,8 @@ const struct sja1105_dynamic_table_ops sja1105pqrs_dyn_ops[BLK_IDX_MAX_DYN] = {
 		.packed_size = SJA1105PQRS_SJA1105_SIZE_VL_LOOKUP_DYN_CMD,
 		.addr = 0x47,
 	},
+	[BLK_IDX_VL_POLICING] = {0},
+	[BLK_IDX_VL_FORWARDING] = {0},
 	[BLK_IDX_L2_LOOKUP] = {
 		.entry_packing = sja1105pqrs_dyn_l2_lookup_entry_packing,
 		.cmd_packing = sja1105pqrs_l2_lookup_cmd_packing,
@@ -747,6 +762,7 @@ const struct sja1105_dynamic_table_ops sja1105pqrs_dyn_ops[BLK_IDX_MAX_DYN] = {
 		.packed_size = SJA1105PQRS_SIZE_L2_LOOKUP_DYN_CMD,
 		.addr = 0x24,
 	},
+	[BLK_IDX_L2_POLICING] = {0},
 	[BLK_IDX_VLAN_LOOKUP] = {
 		.entry_packing = sja1105_vlan_lookup_entry_packing,
 		.cmd_packing = sja1105_vlan_lookup_cmd_packing,
@@ -771,6 +787,9 @@ const struct sja1105_dynamic_table_ops sja1105pqrs_dyn_ops[BLK_IDX_MAX_DYN] = {
 		.packed_size = SJA1105PQRS_SIZE_MAC_CONFIG_DYN_CMD,
 		.addr = 0x4B,
 	},
+	[BLK_IDX_SCHEDULE_PARAMS] = {0},
+	[BLK_IDX_SCHEDULE_ENTRY_POINTS_PARAMS] = {0},
+	[BLK_IDX_VL_FORWARDING_PARAMS] = {0},
 	[BLK_IDX_L2_LOOKUP_PARAMS] = {
 		.entry_packing = sja1105pqrs_l2_lookup_params_entry_packing,
 		.cmd_packing = sja1105pqrs_l2_lookup_params_cmd_packing,
@@ -779,6 +798,7 @@ const struct sja1105_dynamic_table_ops sja1105pqrs_dyn_ops[BLK_IDX_MAX_DYN] = {
 		.packed_size = SJA1105PQRS_SIZE_L2_LOOKUP_PARAMS_DYN_CMD,
 		.addr = 0x54,
 	},
+	[BLK_IDX_L2_FORWARDING_PARAMS] = {0},
 	[BLK_IDX_AVB_PARAMS] = {
 		.entry_packing = sja1105pqrs_avb_params_entry_packing,
 		.cmd_packing = sja1105pqrs_avb_params_cmd_packing,
@@ -811,6 +831,7 @@ const struct sja1105_dynamic_table_ops sja1105pqrs_dyn_ops[BLK_IDX_MAX_DYN] = {
 		.packed_size = SJA1105PQRS_SIZE_CBS_DYN_CMD,
 		.addr = 0x32,
 	},
+	[BLK_IDX_XMII_PARAMS] = {0},
 };
 
 /* Provides read access to the settings through the dynamic interface

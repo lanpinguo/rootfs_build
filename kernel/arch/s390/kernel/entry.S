@@ -370,7 +370,7 @@ EXPORT_SYMBOL(sie_exit)
 
 /*
  * SVC interrupt handler routine. System calls are synchronous events and
- * are entered with interrupts disabled.
+ * are executed with interrupts enabled.
  */
 
 ENTRY(system_call)

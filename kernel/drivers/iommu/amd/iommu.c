@@ -162,18 +162,7 @@ static void amd_iommu_domain_get_pgtable(struct protection_domain *domain,
 	pgtable->mode = pt_root & 7; /* lowest 3 bits encode pgtable mode */
 }
 
-static void amd_iommu_domain_set_pt_root(struct protection_domain *domain, u64 root)
-{
-	atomic64_set(&domain->pt_root, root);
-}
-
-static void amd_iommu_domain_clr_pt_root(struct protection_domain *domain)
-{
-	amd_iommu_domain_set_pt_root(domain, 0);
-}
-
-static void amd_iommu_domain_set_pgtable(struct protection_domain *domain,
-					 u64 *root, int mode)
+static u64 amd_iommu_domain_encode_pgtable(u64 *root, int mode)
 {
 	u64 pt_root;
 
@@ -181,7 +170,7 @@ static void amd_iommu_domain_set_pgtable(struct protection_domain *domain,
 	pt_root = mode & 7;
 	pt_root |= (u64)root;
 
-	amd_iommu_domain_set_pt_root(domain, pt_root);
+	return pt_root;
 }
 
 static struct iommu_dev_data *alloc_dev_data(u16 devid)
@@ -1421,7 +1410,7 @@ static bool increase_address_space(struct protection_domain *domain,
 	struct domain_pgtable pgtable;
 	unsigned long flags;
 	bool ret = true;
-	u64 *pte;
+	u64 *pte, root;
 
 	spin_lock_irqsave(&domain->lock, flags);
 
@@ -1449,7 +1438,8 @@ static bool increase_address_space(struct protection_domain *domain,
 	 * Device Table needs to be updated and flushed before the new root can
 	 * be published.
 	 */
-	amd_iommu_domain_set_pgtable(domain, pte, pgtable.mode);
+	root = amd_iommu_domain_encode_pgtable(pte, pgtable.mode);
+	atomic64_set(&domain->pt_root, root);
 
 	ret = true;
 
@@ -2329,7 +2319,7 @@ static void protection_domain_free(struct protection_domain *domain)
 		domain_id_free(domain->id);
 
 	amd_iommu_domain_get_pgtable(domain, &pgtable);
-	amd_iommu_domain_clr_pt_root(domain);
+	atomic64_set(&domain->pt_root, 0);
 	free_pagetable(&pgtable);
 
 	kfree(domain);
@@ -2337,7 +2327,7 @@ static void protection_domain_free(struct protection_domain *domain)
 
 static int protection_domain_init(struct protection_domain *domain, int mode)
 {
-	u64 *pt_root = NULL;
+	u64 *pt_root = NULL, root;
 
 	BUG_ON(mode < PAGE_MODE_NONE || mode > PAGE_MODE_6_LEVEL);
 
@@ -2353,7 +2343,8 @@ static int protection_domain_init(struct protection_domain *domain, int mode)
 			return -ENOMEM;
 	}
 
-	amd_iommu_domain_set_pgtable(domain, pt_root, mode);
+	root = amd_iommu_domain_encode_pgtable(pt_root, mode);
+	atomic64_set(&domain->pt_root, root);
 
 	return 0;
 }
@@ -2727,8 +2718,8 @@ void amd_iommu_domain_direct_map(struct iommu_domain *dom)
 	/* First save pgtable configuration*/
 	amd_iommu_domain_get_pgtable(domain, &pgtable);
 
-	/* Remove page-table from domain */
-	amd_iommu_domain_clr_pt_root(domain);
+	/* Update data structure */
+	atomic64_set(&domain->pt_root, 0);
 
 	/* Make changes visible to IOMMUs */
 	update_domain(domain);
@@ -3840,14 +3831,18 @@ int amd_iommu_activate_guest_mode(void *data)
 {
 	struct amd_ir_data *ir_data = (struct amd_ir_data *)data;
 	struct irte_ga *entry = (struct irte_ga *) ir_data->entry;
+	u64 valid;
 
 	if (!AMD_IOMMU_GUEST_IR_VAPIC(amd_iommu_guest_ir) ||
 	    !entry || entry->lo.fields_vapic.guest_mode)
 		return 0;
 
+	valid = entry->lo.fields_vapic.valid;
+
 	entry->lo.val = 0;
 	entry->hi.val = 0;
 
+	entry->lo.fields_vapic.valid       = valid;
 	entry->lo.fields_vapic.guest_mode  = 1;
 	entry->lo.fields_vapic.ga_log_intr = 1;
 	entry->hi.fields.ga_root_ptr       = ir_data->ga_root_ptr;
@@ -3864,11 +3859,13 @@ int amd_iommu_deactivate_guest_mode(void *data)
 	struct amd_ir_data *ir_data = (struct amd_ir_data *)data;
 	struct irte_ga *entry = (struct irte_ga *) ir_data->entry;
 	struct irq_cfg *cfg = ir_data->cfg;
-	u64 valid = entry->lo.fields_remap.valid;
+	u64 valid;
 
 	if (!AMD_IOMMU_GUEST_IR_VAPIC(amd_iommu_guest_ir) ||
 	    !entry || !entry->lo.fields_vapic.guest_mode)
 		return 0;
+
+	valid = entry->lo.fields_remap.valid;
 
 	entry->lo.val = 0;
 	entry->hi.val = 0;

@@ -444,6 +444,10 @@ void ice_dcb_rebuild(struct ice_pf *pf)
 		goto dcb_error;
 	}
 
+	/* If DCB was not enabled previously, we are done */
+	if (!test_bit(ICE_FLAG_DCB_ENA, pf->flags))
+		return;
+
 	mutex_lock(&pf->tc_mutex);
 
 	if (!pf->hw.port_info->is_sw_lldp)
@@ -463,7 +467,7 @@ void ice_dcb_rebuild(struct ice_pf *pf)
 		}
 	}
 
-	dev_info(dev, "DCB info restored\n");
+	dev_info(dev, "DCB restored after reset\n");
 	ret = ice_query_port_ets(pf->hw.port_info, &buf, sizeof(buf), NULL);
 	if (ret) {
 		dev_err(dev, "Query Port ETS failed\n");

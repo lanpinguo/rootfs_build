@@ -225,7 +225,7 @@ static void r8712_usb_read_port_complete(struct urb *purb)
 				padapter->driver_stopped = true;
 				break;
 			}
-			fallthrough;
+			/* Fall through. */
 		case -EPROTO:
 			r8712_read_port(padapter, precvpriv->ff_hwaddr, 0,
 				  (unsigned char *)precvbuf);

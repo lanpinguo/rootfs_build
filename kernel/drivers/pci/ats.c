@@ -188,8 +188,7 @@ void pci_pri_init(struct pci_dev *pdev)
 
 /**
  * pci_enable_pri - Enable PRI capability
- * @pdev: PCI device structure
- * @reqs: outstanding requests
+ * @ pdev: PCI device structure
  *
  * Returns 0 on success, negative value on error
  */

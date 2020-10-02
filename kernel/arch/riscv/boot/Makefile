@@ -14,8 +14,6 @@
 # Based on the ia64 and arm64 boot/Makefile.
 #
 
-KCOV_INSTRUMENT := n
-
 OBJCOPYFLAGS_Image :=-O binary -R .note -R .note.gnu.build-id -R .comment -S
 
 targets := Image loader

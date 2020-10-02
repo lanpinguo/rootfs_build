@@ -93,7 +93,7 @@ static void netlbl_domhsh_free_entry(struct rcu_head *entry)
 
 /**
  * netlbl_domhsh_hash - Hashing function for the domain hash table
- * @key: the domain name to hash
+ * @domain: the domain name to hash
  *
  * Description:
  * This is the hashing function for the domain hash table, it returns the

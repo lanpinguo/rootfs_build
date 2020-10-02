@@ -713,6 +713,7 @@ static const struct usb_device_id id_table_combined[] = {
 	{ USB_DEVICE(XSENS_VID, XSENS_AWINDA_STATION_PID) },
 	{ USB_DEVICE(XSENS_VID, XSENS_CONVERTER_PID) },
 	{ USB_DEVICE(XSENS_VID, XSENS_MTDEVBOARD_PID) },
+	{ USB_DEVICE(XSENS_VID, XSENS_MTIUSBCONVERTER_PID) },
 	{ USB_DEVICE(XSENS_VID, XSENS_MTW_PID) },
 	{ USB_DEVICE(FTDI_VID, FTDI_OMNI1509) },
 	{ USB_DEVICE(MOBILITY_VID, MOBILITY_USB_SERIAL_PID) },
@@ -2483,7 +2484,6 @@ static int ftdi_process_packet(struct usb_serial_port *port,
 		struct ftdi_private *priv, unsigned char *buf, int len)
 {
 	unsigned char status;
-	bool brkint = false;
 	int i;
 	char flag;
 
@@ -2535,17 +2535,13 @@ static int ftdi_process_packet(struct usb_serial_port *port,
 	 */
 	flag = TTY_NORMAL;
 	if (buf[1] & FTDI_RS_ERR_MASK) {
-		/*
-		 * Break takes precedence over parity, which takes precedence
-		 * over framing errors. Note that break is only associated
-		 * with the last character in the buffer and only when it's a
-		 * NUL.
-		 */
-		if (buf[1] & FTDI_RS_BI && buf[len - 1] == '\0') {
+		/* Break takes precedence over parity, which takes precedence
+		 * over framing errors */
+		if (buf[1] & FTDI_RS_BI) {
+			flag = TTY_BREAK;
 			port->icount.brk++;
-			brkint = true;
-		}
-		if (buf[1] & FTDI_RS_PE) {
+			usb_serial_handle_break(port);
+		} else if (buf[1] & FTDI_RS_PE) {
 			flag = TTY_PARITY;
 			port->icount.parity++;
 		} else if (buf[1] & FTDI_RS_FE) {
@@ -2561,13 +2557,8 @@ static int ftdi_process_packet(struct usb_serial_port *port,
 
 	port->icount.rx += len - 2;
 
-	if (brkint || port->sysrq) {
+	if (port->port.console && port->sysrq) {
 		for (i = 2; i < len; i++) {
-			if (brkint && i == len - 1) {
-				if (usb_serial_handle_break(port))
-					return len - 3;
-				flag = TTY_BREAK;
-			}
 			if (usb_serial_handle_sysrq_char(port, buf[i]))
 				continue;
 			tty_insert_flip_char(&port->port, buf[i], flag);
@@ -2584,7 +2575,7 @@ static void ftdi_process_read_urb(struct urb *urb)
 {
 	struct usb_serial_port *port = urb->context;
 	struct ftdi_private *priv = usb_get_serial_port_data(port);
-	char *data = urb->transfer_buffer;
+	char *data = (char *)urb->transfer_buffer;
 	int i;
 	int len;
 	int count = 0;

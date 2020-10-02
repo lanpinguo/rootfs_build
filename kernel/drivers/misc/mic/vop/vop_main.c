@@ -438,7 +438,7 @@ error:
 /*
  * The config ops structure as defined by virtio config
  */
-static const struct virtio_config_ops vop_vq_config_ops = {
+static struct virtio_config_ops vop_vq_config_ops = {
 	.get_features = vop_get_features,
 	.finalize_features = vop_finalize_features,
 	.get = vop_get,
@@ -546,7 +546,7 @@ static int vop_match_desc(struct device *dev, void *data)
 	return vdev->desc == (void __iomem *)data;
 }
 
-static struct _vop_vdev *vop_dc_to_vdev(struct mic_device_ctrl __iomem *dc)
+static struct _vop_vdev *vop_dc_to_vdev(struct mic_device_ctrl *dc)
 {
 	return (struct _vop_vdev *)(unsigned long)readq(&dc->vdev);
 }
@@ -614,6 +614,7 @@ static void _vop_scan_devices(void __iomem *dp, struct vop_device *vpdev,
 	struct mic_device_desc __iomem *d;
 	struct mic_device_ctrl __iomem *dc;
 	struct device *dev;
+	int ret;
 
 	for (i = sizeof(struct mic_bootparam);
 			i < MIC_DP_SIZE; i += _vop_total_desc_size(d)) {
@@ -643,7 +644,7 @@ static void _vop_scan_devices(void __iomem *dp, struct vop_device *vpdev,
 					 &dc->config_change);
 			put_device(dev);
 			_vop_handle_config_change(d, i, vpdev);
-			_vop_remove_device(d, i, vpdev);
+			ret = _vop_remove_device(d, i, vpdev);
 			if (remove) {
 				iowrite8(0, &dc->config_change);
 				iowrite8(0, &dc->guest_ack);
@@ -762,7 +763,7 @@ static void vop_driver_remove(struct vop_device *vpdev)
 	kfree(vi);
 }
 
-static const struct vop_device_id id_table[] = {
+static struct vop_device_id id_table[] = {
 	{ VOP_DEV_TRNSP, VOP_DEV_ANY_ID },
 	{ 0 },
 };

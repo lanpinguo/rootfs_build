@@ -462,9 +462,7 @@ int dn_dev_ioctl(unsigned int cmd, void __user *arg)
 	switch (cmd) {
 	case SIOCGIFADDR:
 		*((__le16 *)sdn->sdn_nodeaddr) = ifa->ifa_local;
-		if (copy_to_user(arg, ifr, DN_IFREQ_SIZE))
-			ret = -EFAULT;
-		break;
+		goto rarok;
 
 	case SIOCSIFADDR:
 		if (!ifa) {
@@ -487,6 +485,10 @@ done:
 	rtnl_unlock();
 
 	return ret;
+rarok:
+	if (copy_to_user(arg, ifr, DN_IFREQ_SIZE))
+		ret = -EFAULT;
+	goto done;
 }
 
 struct net_device *dn_dev_get_default(void)

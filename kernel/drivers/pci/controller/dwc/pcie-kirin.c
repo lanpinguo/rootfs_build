@@ -3,7 +3,7 @@
  * PCIe host controller driver for Kirin Phone SoCs
  *
  * Copyright (C) 2017 HiSilicon Electronics Co., Ltd.
- *		https://www.huawei.com
+ *		http://www.huawei.com
  *
  * Author: Xiaowei Song <songxiaowei@huawei.com>
  */
@@ -147,18 +147,23 @@ static long kirin_pcie_get_clk(struct kirin_pcie *kirin_pcie,
 static long kirin_pcie_get_resource(struct kirin_pcie *kirin_pcie,
 				    struct platform_device *pdev)
 {
-	kirin_pcie->apb_base =
-		devm_platform_ioremap_resource_byname(pdev, "apb");
+	struct device *dev = &pdev->dev;
+	struct resource *apb;
+	struct resource *phy;
+	struct resource *dbi;
+
+	apb = platform_get_resource_byname(pdev, IORESOURCE_MEM, "apb");
+	kirin_pcie->apb_base = devm_ioremap_resource(dev, apb);
 	if (IS_ERR(kirin_pcie->apb_base))
 		return PTR_ERR(kirin_pcie->apb_base);
 
-	kirin_pcie->phy_base =
-		devm_platform_ioremap_resource_byname(pdev, "phy");
+	phy = platform_get_resource_byname(pdev, IORESOURCE_MEM, "phy");
+	kirin_pcie->phy_base = devm_ioremap_resource(dev, phy);
 	if (IS_ERR(kirin_pcie->phy_base))
 		return PTR_ERR(kirin_pcie->phy_base);
 
-	kirin_pcie->pci->dbi_base =
-		devm_platform_ioremap_resource_byname(pdev, "dbi");
+	dbi = platform_get_resource_byname(pdev, IORESOURCE_MEM, "dbi");
+	kirin_pcie->pci->dbi_base = devm_ioremap_resource(dev, dbi);
 	if (IS_ERR(kirin_pcie->pci->dbi_base))
 		return PTR_ERR(kirin_pcie->pci->dbi_base);
 
@@ -450,8 +455,11 @@ static int kirin_pcie_add_msi(struct dw_pcie *pci,
 
 	if (IS_ENABLED(CONFIG_PCI_MSI)) {
 		irq = platform_get_irq(pdev, 0);
-		if (irq < 0)
+		if (irq < 0) {
+			dev_err(&pdev->dev,
+				"failed to get MSI IRQ (%d)\n", irq);
 			return irq;
+		}
 
 		pci->pp.msi_irq = irq;
 	}

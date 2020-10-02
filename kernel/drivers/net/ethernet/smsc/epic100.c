@@ -1512,9 +1512,12 @@ static void epic_remove_one(struct pci_dev *pdev)
 	/* pci_power_off(pdev, -1); */
 }
 
-static int __maybe_unused epic_suspend(struct device *dev_d)
+
+#ifdef CONFIG_PM
+
+static int epic_suspend (struct pci_dev *pdev, pm_message_t state)
 {
-	struct net_device *dev = dev_get_drvdata(dev_d);
+	struct net_device *dev = pci_get_drvdata(pdev);
 	struct epic_private *ep = netdev_priv(dev);
 	void __iomem *ioaddr = ep->ioaddr;
 
@@ -1528,9 +1531,9 @@ static int __maybe_unused epic_suspend(struct device *dev_d)
 }
 
 
-static int __maybe_unused epic_resume(struct device *dev_d)
+static int epic_resume (struct pci_dev *pdev)
 {
-	struct net_device *dev = dev_get_drvdata(dev_d);
+	struct net_device *dev = pci_get_drvdata(pdev);
 
 	if (!netif_running(dev))
 		return 0;
@@ -1539,14 +1542,18 @@ static int __maybe_unused epic_resume(struct device *dev_d)
 	return 0;
 }
 
-static SIMPLE_DEV_PM_OPS(epic_pm_ops, epic_suspend, epic_resume);
+#endif /* CONFIG_PM */
+
 
 static struct pci_driver epic_driver = {
 	.name		= DRV_NAME,
 	.id_table	= epic_pci_tbl,
 	.probe		= epic_init_one,
 	.remove		= epic_remove_one,
-	.driver.pm	= &epic_pm_ops,
+#ifdef CONFIG_PM
+	.suspend	= epic_suspend,
+	.resume		= epic_resume,
+#endif /* CONFIG_PM */
 };
 
 

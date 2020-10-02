@@ -11,6 +11,7 @@
 #include <linux/spinlock.h>
 
 #include <asm/cpu_entry_area.h>
+#include <asm/pgalloc.h>
 #include <asm/fixmap.h>
 #include <asm/e820/api.h>
 #include <asm/tlb.h>

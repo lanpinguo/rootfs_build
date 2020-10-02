@@ -1984,21 +1984,28 @@ static int netdev_close(struct net_device *dev)
 	return 0;
 }
 
-static int __maybe_unused starfire_suspend(struct device *dev_d)
+#ifdef CONFIG_PM
+static int starfire_suspend(struct pci_dev *pdev, pm_message_t state)
 {
-	struct net_device *dev = dev_get_drvdata(dev_d);
+	struct net_device *dev = pci_get_drvdata(pdev);
 
 	if (netif_running(dev)) {
 		netif_device_detach(dev);
 		netdev_close(dev);
 	}
 
+	pci_save_state(pdev);
+	pci_set_power_state(pdev, pci_choose_state(pdev,state));
+
 	return 0;
 }
 
-static int __maybe_unused starfire_resume(struct device *dev_d)
+static int starfire_resume(struct pci_dev *pdev)
 {
-	struct net_device *dev = dev_get_drvdata(dev_d);
+	struct net_device *dev = pci_get_drvdata(pdev);
+
+	pci_set_power_state(pdev, PCI_D0);
+	pci_restore_state(pdev);
 
 	if (netif_running(dev)) {
 		netdev_open(dev);
@@ -2007,6 +2014,8 @@ static int __maybe_unused starfire_resume(struct device *dev_d)
 
 	return 0;
 }
+#endif /* CONFIG_PM */
+
 
 static void starfire_remove_one(struct pci_dev *pdev)
 {
@@ -2031,13 +2040,15 @@ static void starfire_remove_one(struct pci_dev *pdev)
 	free_netdev(dev);			/* Will also free np!! */
 }
 
-static SIMPLE_DEV_PM_OPS(starfire_pm_ops, starfire_suspend, starfire_resume);
 
 static struct pci_driver starfire_driver = {
 	.name		= DRV_NAME,
 	.probe		= starfire_init_one,
 	.remove		= starfire_remove_one,
-	.driver.pm	= &starfire_pm_ops,
+#ifdef CONFIG_PM
+	.suspend	= starfire_suspend,
+	.resume		= starfire_resume,
+#endif /* CONFIG_PM */
 	.id_table	= starfire_pci_tbl,
 };
 

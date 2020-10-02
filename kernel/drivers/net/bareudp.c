@@ -125,6 +125,7 @@ static int bareudp_udp_encap_recv(struct sock *sk, struct sk_buff *skb)
 		bareudp->dev->stats.rx_dropped++;
 		goto drop;
 	}
+
 	tun_dst = udp_tun_rx_dst(skb, family, TUNNEL_KEY, 0, 0);
 	if (!tun_dst) {
 		bareudp->dev->stats.rx_dropped++;
@@ -308,7 +309,7 @@ static int bareudp_xmit_skb(struct sk_buff *skb, struct net_device *dev,
 		return PTR_ERR(rt);
 
 	skb_tunnel_check_pmtu(skb, &rt->dst,
-			      BAREUDP_IPV4_HLEN + info->options_len, false);
+			      BAREUDP_IPV4_HLEN + info->options_len);
 
 	sport = udp_flow_src_port(bareudp->net, skb,
 				  bareudp->sport_min, USHRT_MAX,
@@ -369,8 +370,7 @@ static int bareudp6_xmit_skb(struct sk_buff *skb, struct net_device *dev,
 	if (IS_ERR(dst))
 		return PTR_ERR(dst);
 
-	skb_tunnel_check_pmtu(skb, dst, BAREUDP_IPV6_HLEN + info->options_len,
-			      false);
+	skb_tunnel_check_pmtu(skb, dst, BAREUDP_IPV6_HLEN + info->options_len);
 
 	sport = udp_flow_src_port(bareudp->net, skb,
 				  bareudp->sport_min, USHRT_MAX,
@@ -627,7 +627,6 @@ static int bareudp_configure(struct net *net, struct net_device *dev,
 	bareudp->ethertype = conf->ethertype;
 	bareudp->sport_min = conf->sport_min;
 	bareudp->multi_proto_mode = conf->multi_proto_mode;
-
 	err = register_netdevice(dev);
 	if (err)
 		return err;

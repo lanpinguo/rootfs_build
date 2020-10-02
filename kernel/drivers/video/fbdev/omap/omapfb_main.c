@@ -34,7 +34,11 @@ static unsigned long	def_vyres;
 static unsigned int	def_rotate;
 static unsigned int	def_mirror;
 
-static bool	manual_update = IS_BUILTIN(CONFIG_FB_OMAP_MANUAL_UPDATE);
+#ifdef CONFIG_FB_OMAP_MANUAL_UPDATE
+static bool		manual_update = 1;
+#else
+static bool		manual_update;
+#endif
 
 static struct platform_device	*fbdev_pdev;
 static struct lcd_panel		*fbdev_panel;
@@ -253,7 +257,7 @@ static int _setcolreg(struct fb_info *info, u_int regno, u_int red, u_int green,
 		if (fbdev->ctrl->setcolreg)
 			r = fbdev->ctrl->setcolreg(regno, red, green, blue,
 							transp, update_hw_pal);
-		fallthrough;
+		/* Fallthrough */
 	case OMAPFB_COLOR_RGB565:
 	case OMAPFB_COLOR_RGB444:
 		if (r != 0)
@@ -443,7 +447,7 @@ static int set_color_mode(struct omapfb_plane_struct *plane,
 		return 0;
 	case 12:
 		var->bits_per_pixel = 16;
-		fallthrough;
+		/* fall through */
 	case 16:
 		if (plane->fbdev->panel->bpp == 12)
 			plane->color_mode = OMAPFB_COLOR_RGB444;
@@ -1531,27 +1535,27 @@ static void omapfb_free_resources(struct omapfb_device *fbdev, int state)
 	case OMAPFB_ACTIVE:
 		for (i = 0; i < fbdev->mem_desc.region_cnt; i++)
 			unregister_framebuffer(fbdev->fb_info[i]);
-		fallthrough;
+		/* fall through */
 	case 7:
 		omapfb_unregister_sysfs(fbdev);
-		fallthrough;
+		/* fall through */
 	case 6:
 		if (fbdev->panel->disable)
 			fbdev->panel->disable(fbdev->panel);
-		fallthrough;
+		/* fall through */
 	case 5:
 		omapfb_set_update_mode(fbdev, OMAPFB_UPDATE_DISABLED);
-		fallthrough;
+		/* fall through */
 	case 4:
 		planes_cleanup(fbdev);
-		fallthrough;
+		/* fall through */
 	case 3:
 		ctrl_cleanup(fbdev);
-		fallthrough;
+		/* fall through */
 	case 2:
 		if (fbdev->panel->cleanup)
 			fbdev->panel->cleanup(fbdev->panel);
-		fallthrough;
+		/* fall through */
 	case 1:
 		dev_set_drvdata(fbdev->dev, NULL);
 		kfree(fbdev);
@@ -1854,7 +1858,7 @@ static int __init omapfb_setup(char *options)
 			case 'm':
 			case 'M':
 				vram *= 1024;
-				fallthrough;
+				/* Fall through */
 			case 'k':
 			case 'K':
 				vram *= 1024;

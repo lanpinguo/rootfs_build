@@ -10,7 +10,6 @@
 
 #include <asm/sigp.h>
 #include <asm/lowcore.h>
-#include <asm/processor.h>
 
 #define raw_smp_processor_id()	(S390_lowcore.cpu_nr)
 
@@ -53,10 +52,6 @@ static inline void smp_stop_cpu(void)
 static inline int smp_get_base_cpu(int cpu)
 {
 	return cpu - (cpu % (smp_cpu_mtid + 1));
-}
-
-static inline void smp_cpus_done(unsigned int max_cpus)
-{
 }
 
 extern int smp_rescan_cpus(void);

@@ -36,7 +36,7 @@ struct buffer {
 	YY_BUFFER_STATE state;
 };
 
-static struct buffer *current_buf;
+struct buffer *current_buf;
 
 static int last_ts, first_ts;
 
@@ -105,7 +105,7 @@ n	[A-Za-z0-9_-]
 "endchoice"		return T_ENDCHOICE;
 "endif"			return T_ENDIF;
 "endmenu"		return T_ENDMENU;
-"help"			return T_HELP;
+"help"|"---help---"	return T_HELP;
 "hex"			return T_HEX;
 "if"			return T_IF;
 "imply"			return T_IMPLY;

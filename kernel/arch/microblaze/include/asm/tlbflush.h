@@ -15,6 +15,7 @@
 #include <asm/processor.h>	/* For TASK_SIZE */
 #include <asm/mmu.h>
 #include <asm/page.h>
+#include <asm/pgalloc.h>
 
 extern void _tlbie(unsigned long address);
 extern void _tlbia(void);

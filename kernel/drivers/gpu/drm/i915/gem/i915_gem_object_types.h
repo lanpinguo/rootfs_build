@@ -61,8 +61,6 @@ struct drm_i915_gem_object_ops {
 
 	int (*dmabuf_export)(struct drm_i915_gem_object *obj);
 	void (*release)(struct drm_i915_gem_object *obj);
-
-	const char *name; /* friendly name for debug, e.g. lockdep classes */
 };
 
 enum i915_mmap_type {
@@ -121,7 +119,6 @@ struct drm_i915_gem_object {
 	 * this translation from object to context->handles_vma.
 	 */
 	struct list_head lut_list;
-	spinlock_t lut_lock; /* guards lut_list */
 
 	/** Stolen memory for this object, instead of being backed by shmem. */
 	struct drm_mm_node *stolen;

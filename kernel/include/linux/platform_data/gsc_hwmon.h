@@ -4,9 +4,8 @@
 
 enum gsc_hwmon_mode {
 	mode_temperature,
-	mode_voltage_24bit,
+	mode_voltage,
 	mode_voltage_raw,
-	mode_voltage_16bit,
 	mode_max,
 };
 

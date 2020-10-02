@@ -155,12 +155,10 @@ SYSCALL_DEFINE3(s390_pci_mmio_write, unsigned long, mmio_addr,
 		return -EINVAL;
 
 	/*
-	 * We only support write access to MIO capable devices if we are on
-	 * a MIO enabled system. Otherwise we would have to check for every
-	 * address if it is a special ZPCI_ADDR and would have to do
-	 * a get_pfn() which we don't need for MIO capable devices.  Currently
-	 * ISM devices are the only devices without MIO support and there is no
-	 * known need for accessing these from userspace.
+	 * Only support read access to MIO capable devices on a MIO enabled
+	 * system. Otherwise we would have to check for every address if it is
+	 * a special ZPCI_ADDR and we would have to do a get_pfn() which we
+	 * don't need for MIO capable devices.
 	 */
 	if (static_branch_likely(&have_mio)) {
 		ret = __memcpy_toio_inuser((void  __iomem *) mmio_addr,
@@ -284,12 +282,10 @@ SYSCALL_DEFINE3(s390_pci_mmio_read, unsigned long, mmio_addr,
 		return -EINVAL;
 
 	/*
-	 * We only support read access to MIO capable devices if we are on
-	 * a MIO enabled system. Otherwise we would have to check for every
-	 * address if it is a special ZPCI_ADDR and would have to do
-	 * a get_pfn() which we don't need for MIO capable devices.  Currently
-	 * ISM devices are the only devices without MIO support and there is no
-	 * known need for accessing these from userspace.
+	 * Only support write access to MIO capable devices on a MIO enabled
+	 * system. Otherwise we would have to check for every address if it is
+	 * a special ZPCI_ADDR and we would have to do a get_pfn() which we
+	 * don't need for MIO capable devices.
 	 */
 	if (static_branch_likely(&have_mio)) {
 		ret = __memcpy_fromio_inuser(

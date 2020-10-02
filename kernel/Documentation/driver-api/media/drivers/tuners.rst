@@ -18,7 +18,7 @@ These differ mainly by the bandswitch byte.
 Tuner Manufacturers
 -------------------
 
-- Samsung Tuner identification: (e.g. TCPM9091PD27)
+- SAMSUNG Tuner identification: (e.g. TCPM9091PD27)
 
 .. code-block:: none
 

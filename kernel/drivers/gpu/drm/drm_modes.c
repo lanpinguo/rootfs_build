@@ -548,7 +548,7 @@ EXPORT_SYMBOL(drm_gtf_mode_complex);
  * Generalized Timing Formula is derived from:
  *
  *	GTF Spreadsheet by Andy Morrish (1/5/97)
- *	available at https://www.vesa.org
+ *	available at http://www.vesa.org
  *
  * And it is copied from the file of xserver/hw/xfree86/modes/xf86gtf.c.
  * What I have done is to translate it by using integer calculation.
@@ -757,22 +757,26 @@ EXPORT_SYMBOL(drm_mode_set_name);
  */
 int drm_mode_vrefresh(const struct drm_display_mode *mode)
 {
-	unsigned int num, den;
+	int refresh = 0;
 
-	if (mode->htotal == 0 || mode->vtotal == 0)
-		return 0;
+	if (mode->vrefresh > 0)
+		refresh = mode->vrefresh;
+	else if (mode->htotal > 0 && mode->vtotal > 0) {
+		unsigned int num, den;
 
-	num = mode->clock * 1000;
-	den = mode->htotal * mode->vtotal;
+		num = mode->clock * 1000;
+		den = mode->htotal * mode->vtotal;
 
-	if (mode->flags & DRM_MODE_FLAG_INTERLACE)
-		num *= 2;
-	if (mode->flags & DRM_MODE_FLAG_DBLSCAN)
-		den *= 2;
-	if (mode->vscan > 1)
-		den *= mode->vscan;
+		if (mode->flags & DRM_MODE_FLAG_INTERLACE)
+			num *= 2;
+		if (mode->flags & DRM_MODE_FLAG_DBLSCAN)
+			den *= 2;
+		if (mode->vscan > 1)
+			den *= mode->vscan;
 
-	return DIV_ROUND_CLOSEST(num, den);
+		refresh = DIV_ROUND_CLOSEST(num, den);
+	}
+	return refresh;
 }
 EXPORT_SYMBOL(drm_mode_vrefresh);
 
@@ -1304,7 +1308,7 @@ static int drm_mode_compare(void *priv, struct list_head *lh_a, struct list_head
 	if (diff)
 		return diff;
 
-	diff = drm_mode_vrefresh(b) - drm_mode_vrefresh(a);
+	diff = b->vrefresh - a->vrefresh;
 	if (diff)
 		return diff;
 
@@ -1899,6 +1903,13 @@ EXPORT_SYMBOL(drm_mode_create_from_cmdline_mode);
 void drm_mode_convert_to_umode(struct drm_mode_modeinfo *out,
 			       const struct drm_display_mode *in)
 {
+	WARN(in->hdisplay > USHRT_MAX || in->hsync_start > USHRT_MAX ||
+	     in->hsync_end > USHRT_MAX || in->htotal > USHRT_MAX ||
+	     in->hskew > USHRT_MAX || in->vdisplay > USHRT_MAX ||
+	     in->vsync_start > USHRT_MAX || in->vsync_end > USHRT_MAX ||
+	     in->vtotal > USHRT_MAX || in->vscan > USHRT_MAX,
+	     "timing values too large for mode info\n");
+
 	out->clock = in->clock;
 	out->hdisplay = in->hdisplay;
 	out->hsync_start = in->hsync_start;
@@ -1910,7 +1921,7 @@ void drm_mode_convert_to_umode(struct drm_mode_modeinfo *out,
 	out->vsync_end = in->vsync_end;
 	out->vtotal = in->vtotal;
 	out->vscan = in->vscan;
-	out->vrefresh = drm_mode_vrefresh(in);
+	out->vrefresh = in->vrefresh;
 	out->flags = in->flags;
 	out->type = in->type;
 
@@ -1930,7 +1941,7 @@ void drm_mode_convert_to_umode(struct drm_mode_modeinfo *out,
 	default:
 		WARN(1, "Invalid aspect ratio (0%x) on mode\n",
 		     in->picture_aspect_ratio);
-		fallthrough;
+		/* fall through */
 	case HDMI_PICTURE_ASPECT_NONE:
 		out->flags |= DRM_MODE_FLAG_PIC_AR_NONE;
 		break;
@@ -1970,6 +1981,7 @@ int drm_mode_convert_umode(struct drm_device *dev,
 	out->vsync_end = in->vsync_end;
 	out->vtotal = in->vtotal;
 	out->vscan = in->vscan;
+	out->vrefresh = in->vrefresh;
 	out->flags = in->flags;
 	/*
 	 * Old xf86-video-vmware (possibly others too) used to

@@ -183,10 +183,12 @@ static int gen6_alloc_va_range(struct i915_address_space *vm,
 	struct gen6_ppgtt *ppgtt = to_gen6_ppgtt(i915_vm_to_ppgtt(vm));
 	struct i915_page_directory * const pd = ppgtt->base.pd;
 	struct i915_page_table *pt, *alloc = NULL;
-	bool flush = false;
+	intel_wakeref_t wakeref;
 	u64 from = start;
 	unsigned int pde;
 	int ret = 0;
+
+	wakeref = intel_runtime_pm_get(&vm->i915->runtime_pm);
 
 	spin_lock(&pd->lock);
 	gen6_for_each_pde(pt, pd, start, length, pde) {
@@ -212,20 +214,14 @@ static int gen6_alloc_va_range(struct i915_address_space *vm,
 				alloc = pt;
 				pt = pd->entry[pde];
 			}
-
-			flush = true;
 		}
 
 		atomic_add(count, &pt->used);
 	}
 	spin_unlock(&pd->lock);
 
-	if (flush && i915_vma_is_bound(ppgtt->vma, I915_VMA_GLOBAL_BIND)) {
-		intel_wakeref_t wakeref;
-
-		with_intel_runtime_pm(&vm->i915->runtime_pm, wakeref)
-			gen6_flush_pd(ppgtt, from, start);
-	}
+	if (i915_vma_is_bound(ppgtt->vma, I915_VMA_GLOBAL_BIND))
+		gen6_flush_pd(ppgtt, from, start);
 
 	goto out;
 
@@ -234,6 +230,7 @@ unwind_out:
 out:
 	if (alloc)
 		free_px(vm, alloc);
+	intel_runtime_pm_put(&vm->i915->runtime_pm, wakeref);
 	return ret;
 }
 
@@ -302,12 +299,11 @@ static void pd_vma_clear_pages(struct i915_vma *vma)
 	vma->pages = NULL;
 }
 
-static int pd_vma_bind(struct i915_address_space *vm,
-		       struct i915_vma *vma,
+static int pd_vma_bind(struct i915_vma *vma,
 		       enum i915_cache_level cache_level,
 		       u32 unused)
 {
-	struct i915_ggtt *ggtt = i915_vm_to_ggtt(vm);
+	struct i915_ggtt *ggtt = i915_vm_to_ggtt(vma->vm);
 	struct gen6_ppgtt *ppgtt = vma->private;
 	u32 ggtt_offset = i915_ggtt_offset(vma) / I915_GTT_PAGE_SIZE;
 
@@ -318,7 +314,7 @@ static int pd_vma_bind(struct i915_address_space *vm,
 	return 0;
 }
 
-static void pd_vma_unbind(struct i915_address_space *vm, struct i915_vma *vma)
+static void pd_vma_unbind(struct i915_vma *vma)
 {
 	struct gen6_ppgtt *ppgtt = vma->private;
 	struct i915_page_directory * const pd = ppgtt->base.pd;

@@ -155,16 +155,16 @@ struct i915_ppgtt *i915_ppgtt_create(struct intel_gt *gt)
 	return ppgtt;
 }
 
-int ppgtt_bind_vma(struct i915_address_space *vm,
-		   struct i915_vma *vma,
-		   enum i915_cache_level cache_level,
-		   u32 flags)
+static int ppgtt_bind_vma(struct i915_vma *vma,
+			  enum i915_cache_level cache_level,
+			  u32 flags)
 {
 	u32 pte_flags;
 	int err;
 
-	if (!test_bit(I915_VMA_ALLOC_BIT, __i915_vma_flags(vma))) {
-		err = vm->allocate_va_range(vm, vma->node.start, vma->size);
+	if (flags & I915_VMA_ALLOC) {
+		err = vma->vm->allocate_va_range(vma->vm,
+						 vma->node.start, vma->size);
 		if (err)
 			return err;
 
@@ -176,16 +176,17 @@ int ppgtt_bind_vma(struct i915_address_space *vm,
 	if (i915_gem_object_is_readonly(vma->obj))
 		pte_flags |= PTE_READ_ONLY;
 
-	vm->insert_entries(vm, vma, cache_level, pte_flags);
+	GEM_BUG_ON(!test_bit(I915_VMA_ALLOC_BIT, __i915_vma_flags(vma)));
+	vma->vm->insert_entries(vma->vm, vma, cache_level, pte_flags);
 	wmb();
 
 	return 0;
 }
 
-void ppgtt_unbind_vma(struct i915_address_space *vm, struct i915_vma *vma)
+static void ppgtt_unbind_vma(struct i915_vma *vma)
 {
 	if (test_and_clear_bit(I915_VMA_ALLOC_BIT, __i915_vma_flags(vma)))
-		vm->clear_range(vm, vma->node.start, vma->size);
+		vma->vm->clear_range(vma->vm, vma->node.start, vma->size);
 }
 
 int ppgtt_set_pages(struct i915_vma *vma)

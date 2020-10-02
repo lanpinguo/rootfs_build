@@ -3,7 +3,6 @@
  * Copyright (C) 2009-2010 Pengutronix
  * Uwe Kleine-Koenig <u.kleine-koenig@pengutronix.de>
  */
-#include <linux/gpio/machine.h>
 #include "../hardware.h"
 #include "devices-common.h"
 
@@ -58,7 +57,8 @@ const struct imx_spi_imx_data imx35_cspi_data[] __initconst = {
 #endif /* ifdef CONFIG_SOC_IMX35 */
 
 struct platform_device *__init imx_add_spi_imx(
-	const struct imx_spi_imx_data *data, struct gpiod_lookup_table *gtable)
+		const struct imx_spi_imx_data *data,
+		const struct spi_imx_master *pdata)
 {
 	struct resource res[] = {
 		{
@@ -71,8 +71,7 @@ struct platform_device *__init imx_add_spi_imx(
 			.flags = IORESOURCE_IRQ,
 		},
 	};
-	if (gtable)
-		gpiod_add_lookup_table(gtable);
+
 	return imx_add_platform_device(data->devid, data->id,
-			res, ARRAY_SIZE(res), NULL, 0);
+			res, ARRAY_SIZE(res), pdata, sizeof(*pdata));
 }

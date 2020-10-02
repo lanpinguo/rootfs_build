@@ -1638,7 +1638,7 @@ static int bnxt_tc_get_flow_stats(struct bnxt *bp,
 	lastused = flow->lastused;
 	spin_unlock(&flow->stats_lock);
 
-	flow_stats_update(&tc_flow_cmd->stats, stats.bytes, stats.packets, 0,
+	flow_stats_update(&tc_flow_cmd->stats, stats.bytes, stats.packets,
 			  lastused, FLOW_ACTION_HW_STATS_DELAYED);
 	return 0;
 }
@@ -1888,7 +1888,7 @@ static void bnxt_tc_setup_indr_rel(void *cb_priv)
 	kfree(priv);
 }
 
-static int bnxt_tc_setup_indr_block(struct net_device *netdev, struct Qdisc *sch, struct bnxt *bp,
+static int bnxt_tc_setup_indr_block(struct net_device *netdev, struct bnxt *bp,
 				    struct flow_block_offload *f, void *data,
 				    void (*cleanup)(struct flow_block_cb *block_cb))
 {
@@ -1911,7 +1911,7 @@ static int bnxt_tc_setup_indr_block(struct net_device *netdev, struct Qdisc *sch
 		block_cb = flow_indr_block_cb_alloc(bnxt_tc_setup_indr_block_cb,
 						    cb_priv, cb_priv,
 						    bnxt_tc_setup_indr_rel, f,
-						    netdev, sch, data, bp, cleanup);
+						    netdev, data, bp, cleanup);
 		if (IS_ERR(block_cb)) {
 			list_del(&cb_priv->list);
 			kfree(cb_priv);
@@ -1946,7 +1946,7 @@ static bool bnxt_is_netdev_indr_offload(struct net_device *netdev)
 	return netif_is_vxlan(netdev);
 }
 
-static int bnxt_tc_setup_indr_cb(struct net_device *netdev, struct Qdisc *sch, void *cb_priv,
+static int bnxt_tc_setup_indr_cb(struct net_device *netdev, void *cb_priv,
 				 enum tc_setup_type type, void *type_data,
 				 void *data,
 				 void (*cleanup)(struct flow_block_cb *block_cb))
@@ -1956,7 +1956,8 @@ static int bnxt_tc_setup_indr_cb(struct net_device *netdev, struct Qdisc *sch, v
 
 	switch (type) {
 	case TC_SETUP_BLOCK:
-		return bnxt_tc_setup_indr_block(netdev, sch, cb_priv, type_data, data, cleanup);
+		return bnxt_tc_setup_indr_block(netdev, cb_priv, type_data, data,
+						cleanup);
 	default:
 		break;
 	}
@@ -2000,8 +2001,11 @@ int bnxt_init_tc(struct bnxt *bp)
 	struct bnxt_tc_info *tc_info;
 	int rc;
 
-	if (bp->hwrm_spec_code < 0x10803)
-		return 0;
+	if (bp->hwrm_spec_code < 0x10803) {
+		netdev_warn(bp->dev,
+			    "Firmware does not support TC flower offload.\n");
+		return -ENOTSUPP;
+	}
 
 	tc_info = kzalloc(sizeof(*tc_info), GFP_KERNEL);
 	if (!tc_info)

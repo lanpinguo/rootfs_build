@@ -11,7 +11,8 @@
 #define PCI_IOSIZE	SZ_16M
 #define MAP_BASE	(PCI_IOBASE + PCI_IOSIZE)
 
-#define IO_SPACE_LIMIT  (PCI_IOSIZE - 1)
+/* Reserved at the start of PCI_IOBASE for legacy drivers */
+#define MMIO_LOWER_RESERVED	0x10000
 
 #include <asm/mach-generic/spaces.h>
 #endif

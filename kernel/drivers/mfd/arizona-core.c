@@ -80,7 +80,7 @@ int arizona_clk32k_disable(struct arizona *arizona)
 {
 	mutex_lock(&arizona->clk_lock);
 
-	WARN_ON(arizona->clk32k_ref <= 0);
+	BUG_ON(arizona->clk32k_ref <= 0);
 
 	arizona->clk32k_ref--;
 

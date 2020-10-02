@@ -10,8 +10,11 @@
 #ifndef __ASM_MEMORY_H
 #define __ASM_MEMORY_H
 
+#include <linux/compiler.h>
 #include <linux/const.h>
 #include <linux/sizes.h>
+#include <linux/types.h>
+#include <asm/bug.h>
 #include <asm/page-def.h>
 
 /*
@@ -154,15 +157,11 @@
 #endif
 
 #ifndef __ASSEMBLY__
-
-#include <linux/bitops.h>
-#include <linux/compiler.h>
-#include <linux/mmdebug.h>
-#include <linux/types.h>
-#include <asm/bug.h>
-
 extern u64			vabits_actual;
 #define PAGE_END		(_PAGE_END(vabits_actual))
+
+#include <linux/bitops.h>
+#include <linux/mmdebug.h>
 
 extern s64			physvirt_offset;
 extern s64			memstart_addr;
@@ -323,7 +322,6 @@ static inline void *phys_to_virt(phys_addr_t x)
 	__is_lm_address(__addr) && pfn_valid(virt_to_pfn(__addr));	\
 })
 
-void dump_mem_limit(void);
 #endif /* !ASSEMBLY */
 
 /*

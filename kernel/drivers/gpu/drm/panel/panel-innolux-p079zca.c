@@ -223,6 +223,7 @@ static const struct drm_display_mode innolux_p079zca_mode = {
 	.vsync_start = 1024 + 20,
 	.vsync_end = 1024 + 20 + 4,
 	.vtotal = 1024 + 20 + 4 + 20,
+	.vrefresh = 60,
 };
 
 static const struct panel_desc innolux_p079zca_panel_desc = {
@@ -256,6 +257,7 @@ static const struct drm_display_mode innolux_p097pfg_mode = {
 	.vsync_start = 2048 + 100,
 	.vsync_end = 2048 + 100 + 2,
 	.vtotal = 2048 + 100 + 2 + 18,
+	.vrefresh = 60,
 };
 
 /*
@@ -399,7 +401,7 @@ static int innolux_panel_get_modes(struct drm_panel *panel,
 	mode = drm_mode_duplicate(connector->dev, m);
 	if (!mode) {
 		DRM_DEV_ERROR(panel->dev, "failed to add mode %ux%ux@%u\n",
-			      m->hdisplay, m->vdisplay, drm_mode_vrefresh(m));
+			      m->hdisplay, m->vdisplay, m->vrefresh);
 		return -ENOMEM;
 	}
 

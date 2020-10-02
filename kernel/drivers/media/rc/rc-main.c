@@ -2064,7 +2064,7 @@ static int __init rc_core_init(void)
 	if (rc) {
 		pr_err("rc_core: unable to init lirc\n");
 		class_unregister(&rc_class);
-		return rc;
+		return 0;
 	}
 
 	led_trigger_register_simple("rc-feedback", &led_feedback);

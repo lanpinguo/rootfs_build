@@ -509,8 +509,7 @@ static void lo_rw_aio_do_completion(struct loop_cmd *cmd)
 		return;
 	kfree(cmd->bvec);
 	cmd->bvec = NULL;
-	if (likely(!blk_should_fake_timeout(rq->q)))
-		blk_mq_complete_request(rq);
+	blk_mq_complete_request(rq);
 }
 
 static void lo_rw_aio_complete(struct kiocb *iocb, long ret, long ret2)
@@ -1093,10 +1092,11 @@ static int loop_configure(struct loop_device *lo, fmode_t mode,
 	 * here to avoid changing device under exclusive owner.
 	 */
 	if (!(mode & FMODE_EXCL)) {
-		claimed_bdev = bdev->bd_contains;
-		error = bd_prepare_to_claim(bdev, claimed_bdev, loop_configure);
-		if (error)
+		claimed_bdev = bd_start_claiming(bdev, loop_configure);
+		if (IS_ERR(claimed_bdev)) {
+			error = PTR_ERR(claimed_bdev);
 			goto out_putf;
+		}
 	}
 
 	error = mutex_lock_killable(&loop_ctl_mutex);
@@ -1174,8 +1174,6 @@ static int loop_configure(struct loop_device *lo, fmode_t mode,
 	if (part_shift)
 		lo->lo_flags |= LO_FLAGS_PARTSCAN;
 	partscan = lo->lo_flags & LO_FLAGS_PARTSCAN;
-	if (partscan)
-		lo->lo_disk->flags &= ~GENHD_FL_NO_PART_SCAN;
 
 	/* Grab the block_device to prevent its destruction after we
 	 * put /dev/loopXX inode. Later in __loop_clr_fd() we bdput(bdev).
@@ -1722,7 +1720,7 @@ static int lo_ioctl(struct block_device *bdev, fmode_t mode,
 	case LOOP_SET_BLOCK_SIZE:
 		if (!(mode & FMODE_WRITE) && !capable(CAP_SYS_ADMIN))
 			return -EPERM;
-		fallthrough;
+		/* Fall through */
 	default:
 		err = lo_simple_ioctl(lo, cmd, arg);
 		break;
@@ -1870,7 +1868,7 @@ static int lo_compat_ioctl(struct block_device *bdev, fmode_t mode,
 	case LOOP_SET_STATUS64:
 	case LOOP_CONFIGURE:
 		arg = (unsigned long) compat_ptr(arg);
-		fallthrough;
+		/* fall through */
 	case LOOP_SET_FD:
 	case LOOP_CHANGE_FD:
 	case LOOP_SET_BLOCK_SIZE:
@@ -2053,8 +2051,7 @@ static void loop_handle_cmd(struct loop_cmd *cmd)
 			cmd->ret = ret;
 		else
 			cmd->ret = ret ? -EIO : 0;
-		if (likely(!blk_should_fake_timeout(rq->q)))
-			blk_mq_complete_request(rq);
+		blk_mq_complete_request(rq);
 	}
 }
 

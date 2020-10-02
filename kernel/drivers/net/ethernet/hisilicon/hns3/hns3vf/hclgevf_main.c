@@ -1728,7 +1728,7 @@ static int hclgevf_reset_wait(struct hclgevf_dev *hdev)
 	/* hardware completion status should be available by this time */
 	if (ret) {
 		dev_err(&hdev->pdev->dev,
-			"couldn't get reset done status from h/w, timeout!\n");
+			"could'nt get reset done status from h/w, timeout!\n");
 		return ret;
 	}
 

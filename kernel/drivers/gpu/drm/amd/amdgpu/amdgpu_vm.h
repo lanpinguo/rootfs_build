@@ -324,7 +324,6 @@ struct amdgpu_vm {
 struct amdgpu_vm_manager {
 	/* Handling of VMIDs */
 	struct amdgpu_vmid_mgr			id_mgr[AMDGPU_MAX_VMHUBS];
-	unsigned int				first_kfd_vmid;
 
 	/* Handling of VM fences */
 	u64					fence_context;

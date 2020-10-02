@@ -22,12 +22,12 @@
 /**
  * struct bm1880_pinctrl - driver data
  * @base:	Pinctrl base address
- * @pctrldev:	Pinctrl device
+ * @pctrl:	Pinctrl device
  * @groups:	Pingroups
  * @ngroups:	Number of @groups
  * @funcs:	Pinmux functions
  * @nfuncs:	Number of @funcs
- * @pinconf:	Pinconf data
+ * @pconf:	Pinconf data
  */
 struct bm1880_pinctrl {
 	void __iomem *base;

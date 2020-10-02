@@ -134,9 +134,9 @@ txx9aclc_dma_submit(struct txx9aclc_dmadata *dmadata, dma_addr_t buf_dma_addr)
 
 #define NR_DMA_CHAIN		2
 
-static void txx9aclc_dma_tasklet(struct tasklet_struct *t)
+static void txx9aclc_dma_tasklet(unsigned long data)
 {
-	struct txx9aclc_dmadata *dmadata = from_tasklet(dmadata, t, tasklet);
+	struct txx9aclc_dmadata *dmadata = (struct txx9aclc_dmadata *)data;
 	struct dma_chan *chan = dmadata->dma_chan;
 	struct dma_async_tx_descriptor *desc;
 	struct snd_pcm_substream *substream = dmadata->substream;
@@ -352,7 +352,8 @@ static int txx9aclc_dma_init(struct txx9aclc_soc_device *dev,
 			"playback" : "capture");
 		return -EBUSY;
 	}
-	tasklet_setup(&dmadata->tasklet, txx9aclc_dma_tasklet);
+	tasklet_init(&dmadata->tasklet, txx9aclc_dma_tasklet,
+		     (unsigned long)dmadata);
 	return 0;
 }
 

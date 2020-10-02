@@ -1177,7 +1177,7 @@ static int venc_open(struct file *file)
 
 	ret = pm_runtime_get_sync(core->dev_enc);
 	if (ret < 0)
-		goto err_put_sync;
+		goto err_free_inst;
 
 	ret = venc_ctrl_init(inst);
 	if (ret)
@@ -1222,6 +1222,7 @@ err_ctrl_deinit:
 	venc_ctrl_deinit(inst);
 err_put_sync:
 	pm_runtime_put_sync(core->dev_enc);
+err_free_inst:
 	kfree(inst);
 	return ret;
 }

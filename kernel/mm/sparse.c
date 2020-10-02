@@ -16,6 +16,7 @@
 
 #include "internal.h"
 #include <asm/dma.h>
+#include <asm/pgalloc.h>
 
 /*
  * Permanent SPARSEMEM data:
@@ -249,7 +250,7 @@ void __init subsection_map_init(unsigned long pfn, unsigned long nr_pages)
 #endif
 
 /* Record a memory area against a node. */
-static void __init memory_present(int nid, unsigned long start, unsigned long end)
+void __init memory_present(int nid, unsigned long start, unsigned long end)
 {
 	unsigned long pfn;
 
@@ -285,11 +286,11 @@ static void __init memory_present(int nid, unsigned long start, unsigned long en
 }
 
 /*
- * Mark all memblocks as present using memory_present().
- * This is a convenience function that is useful to mark all of the systems
- * memory as present during initialization.
+ * Mark all memblocks as present using memory_present(). This is a
+ * convenience function that is useful for a number of arches
+ * to mark all of the systems memory as present during initialization.
  */
-static void __init memblocks_present(void)
+void __init memblocks_present(void)
 {
 	struct memblock_region *reg;
 
@@ -574,13 +575,9 @@ failed:
  */
 void __init sparse_init(void)
 {
-	unsigned long pnum_end, pnum_begin, map_count = 1;
-	int nid_begin;
-
-	memblocks_present();
-
-	pnum_begin = first_present_section_nr();
-	nid_begin = sparse_early_nid(__nr_to_section(pnum_begin));
+	unsigned long pnum_begin = first_present_section_nr();
+	int nid_begin = sparse_early_nid(__nr_to_section(pnum_begin));
+	unsigned long pnum_end, map_count = 1;
 
 	/* Setup pageblock_order for HUGETLB_PAGE_SIZE_VARIABLE */
 	set_pageblock_order();
@@ -828,14 +825,10 @@ static void section_deactivate(unsigned long pfn, unsigned long nr_pages,
 		ms->section_mem_map &= ~SECTION_HAS_MEM_MAP;
 	}
 
-	/*
-	 * The memmap of early sections is always fully populated. See
-	 * section_activate() and pfn_valid() .
-	 */
-	if (!section_is_early)
-		depopulate_section_memmap(pfn, nr_pages, altmap);
-	else if (memmap)
+	if (section_is_early && memmap)
 		free_map_bootmem(memmap);
+	else
+		depopulate_section_memmap(pfn, nr_pages, altmap);
 
 	if (empty)
 		ms->section_mem_map = (unsigned long)NULL;

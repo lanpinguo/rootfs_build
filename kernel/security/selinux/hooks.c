@@ -3332,12 +3332,7 @@ static int selinux_inode_getsecurity(struct inode *inode, const char *name, void
 	char *context = NULL;
 	struct inode_security_struct *isec;
 
-	/*
-	 * If we're not initialized yet, then we can't validate contexts, so
-	 * just let vfs_getxattr fall back to using the on-disk xattr.
-	 */
-	if (!selinux_initialized(&selinux_state) ||
-	    strcmp(name, XATTR_SELINUX_SUFFIX))
+	if (strcmp(name, XATTR_SELINUX_SUFFIX))
 		return -EOPNOTSUPP;
 
 	/*
@@ -3606,20 +3601,26 @@ static int selinux_file_ioctl(struct file *file, unsigned int cmd,
 
 	switch (cmd) {
 	case FIONREAD:
+	/* fall through */
 	case FIBMAP:
+	/* fall through */
 	case FIGETBSZ:
+	/* fall through */
 	case FS_IOC_GETFLAGS:
+	/* fall through */
 	case FS_IOC_GETVERSION:
 		error = file_has_perm(cred, file, FILE__GETATTR);
 		break;
 
 	case FS_IOC_SETFLAGS:
+	/* fall through */
 	case FS_IOC_SETVERSION:
 		error = file_has_perm(cred, file, FILE__SETATTR);
 		break;
 
 	/* sys_ioctl() checks */
 	case FIONBIO:
+	/* fall through */
 	case FIOASYNC:
 		error = file_has_perm(cred, file, 0);
 		break;
@@ -3777,7 +3778,7 @@ static int selinux_file_fcntl(struct file *file, unsigned int cmd,
 			err = file_has_perm(cred, file, FILE__WRITE);
 			break;
 		}
-		fallthrough;
+		/* fall through */
 	case F_SETOWN:
 	case F_SETSIG:
 	case F_GETFL:

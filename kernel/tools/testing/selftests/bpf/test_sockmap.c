@@ -1963,9 +1963,23 @@ int main(int argc, char **argv)
 	}
 
 	if (!cg_fd) {
-		cg_fd = cgroup_setup_and_join(CG_PATH);
-		if (cg_fd < 0)
+		if (setup_cgroup_environment()) {
+			fprintf(stderr, "ERROR: cgroup env failed\n");
+			return -EINVAL;
+		}
+
+		cg_fd = create_and_get_cgroup(CG_PATH);
+		if (cg_fd < 0) {
+			fprintf(stderr,
+				"ERROR: (%i) open cg path failed: %s\n",
+				cg_fd, strerror(errno));
 			return cg_fd;
+		}
+
+		if (join_cgroup(CG_PATH)) {
+			fprintf(stderr, "ERROR: failed to join cgroup\n");
+			return -EINVAL;
+		}
 		cg_created = 1;
 	}
 

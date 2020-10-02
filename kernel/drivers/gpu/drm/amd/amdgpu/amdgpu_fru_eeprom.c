@@ -26,13 +26,12 @@
 #include "amdgpu_i2c.h"
 #include "smu_v11_0_i2c.h"
 #include "atom.h"
-#include "amdgpu_fru_eeprom.h"
 
 #define I2C_PRODUCT_INFO_ADDR		0xAC
 #define I2C_PRODUCT_INFO_ADDR_SIZE	0x2
 #define I2C_PRODUCT_INFO_OFFSET		0xC0
 
-static bool is_fru_eeprom_supported(struct amdgpu_device *adev)
+bool is_fru_eeprom_supported(struct amdgpu_device *adev)
 {
 	/* TODO: Gaming SKUs don't have the FRU EEPROM.
 	 * Use this hack to address hangs on modprobe on gaming SKUs
@@ -48,7 +47,7 @@ static bool is_fru_eeprom_supported(struct amdgpu_device *adev)
 	return false;
 }
 
-static int amdgpu_fru_read_eeprom(struct amdgpu_device *adev, uint32_t addrptr,
+int amdgpu_fru_read_eeprom(struct amdgpu_device *adev, uint32_t addrptr,
 			   unsigned char *buff)
 {
 	int ret, size;

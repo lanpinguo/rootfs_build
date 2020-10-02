@@ -338,10 +338,6 @@ static struct test generic_tests[] = {
 		.func = test__demangle_java,
 	},
 	{
-		.desc = "Parse and process metrics",
-		.func = test__parse_metric,
-	},
-	{
 		.func = NULL,
 	},
 };

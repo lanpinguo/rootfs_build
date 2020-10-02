@@ -75,7 +75,7 @@ static void strip_it(char *str)
 		case '\r':
 		case ':':
 			*str = 0;
-			fallthrough;
+			/* Fallthrough */
 		case 0:
 			return;
 		}

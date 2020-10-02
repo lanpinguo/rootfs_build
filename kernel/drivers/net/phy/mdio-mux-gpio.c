@@ -42,21 +42,25 @@ static int mdio_mux_gpio_probe(struct platform_device *pdev)
 	struct gpio_descs *gpios;
 	int r;
 
-	gpios = devm_gpiod_get_array(&pdev->dev, NULL, GPIOD_OUT_LOW);
+	gpios = gpiod_get_array(&pdev->dev, NULL, GPIOD_OUT_LOW);
 	if (IS_ERR(gpios))
 		return PTR_ERR(gpios);
 
 	s = devm_kzalloc(&pdev->dev, sizeof(*s), GFP_KERNEL);
-	if (!s)
+	if (!s) {
+		gpiod_put_array(gpios);
 		return -ENOMEM;
+	}
 
 	s->gpios = gpios;
 
 	r = mdio_mux_init(&pdev->dev, pdev->dev.of_node,
 			  mdio_mux_gpio_switch_fn, &s->mux_handle, s, NULL);
 
-	if (r != 0)
+	if (r != 0) {
+		gpiod_put_array(s->gpios);
 		return r;
+	}
 
 	pdev->dev.platform_data = s;
 	return 0;
@@ -66,6 +70,7 @@ static int mdio_mux_gpio_remove(struct platform_device *pdev)
 {
 	struct mdio_mux_gpio_state *s = dev_get_platdata(&pdev->dev);
 	mdio_mux_uninit(s->mux_handle);
+	gpiod_put_array(s->gpios);
 	return 0;
 }
 

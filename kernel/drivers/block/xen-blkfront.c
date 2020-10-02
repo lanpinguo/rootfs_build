@@ -1403,6 +1403,7 @@ static enum blk_req_status blkif_rsp_to_req_status(int rsp)
 	case BLKIF_RSP_EOPNOTSUPP:
 		return REQ_EOPNOTSUPP;
 	case BLKIF_RSP_ERROR:
+		/* Fallthrough. */
 	default:
 		return REQ_ERROR;
 	}
@@ -1642,7 +1643,7 @@ static irqreturn_t blkif_interrupt(int irq, void *dev_id)
 				info->feature_flush = 0;
 				xlvbd_flush(info);
 			}
-			fallthrough;
+			/* fall through */
 		case BLKIF_OP_READ:
 		case BLKIF_OP_WRITE:
 			if (unlikely(bret->status != BLKIF_RSP_OKAY))
@@ -1654,8 +1655,7 @@ static irqreturn_t blkif_interrupt(int irq, void *dev_id)
 			BUG();
 		}
 
-		if (likely(!blk_should_fake_timeout(req->q)))
-			blk_mq_complete_request(req);
+		blk_mq_complete_request(req);
 	}
 
 	rinfo->ring.rsp_cons = i;
@@ -2483,7 +2483,7 @@ static void blkback_changed(struct xenbus_device *dev,
 	case XenbusStateClosed:
 		if (dev->state == XenbusStateClosed)
 			break;
-		fallthrough;
+		/* fall through */
 	case XenbusStateClosing:
 		if (info)
 			blkfront_closing(info);

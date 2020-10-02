@@ -65,8 +65,6 @@
 #define AGILEX_SDMMC_CLK		50
 #define AGILEX_SPI_M_CLK		51
 #define AGILEX_USB_CLK			52
-#define AGILEX_NAND_X_CLK		53
-#define AGILEX_NAND_ECC_CLK		54
-#define AGILEX_NUM_CLKS			55
+#define AGILEX_NUM_CLKS			53
 
 #endif	/* __AGILEX_CLOCK_H */

@@ -2,7 +2,7 @@
 /*
  * hdmi-codec.h - HDMI Codec driver API
  *
- * Copyright (C) 2014 Texas Instruments Incorporated - https://www.ti.com
+ * Copyright (C) 2014 Texas Instruments Incorporated - http://www.ti.com
  *
  * Author: Jyri Sarha <jsarha@ti.com>
  */
@@ -76,8 +76,7 @@ struct hdmi_codec_ops {
 	 * Mute/unmute HDMI audio stream.
 	 * Optional
 	 */
-	int (*mute_stream)(struct device *dev, void *data,
-			   bool enable, int direction);
+	int (*digital_mute)(struct device *dev, void *data, bool enable);
 
 	/*
 	 * Provides EDID-Like-Data from connected HDMI device.
@@ -100,9 +99,6 @@ struct hdmi_codec_ops {
 	int (*hook_plugged_cb)(struct device *dev, void *data,
 			       hdmi_codec_plugged_cb fn,
 			       struct device *codec_dev);
-
-	/* bit field */
-	unsigned int no_capture_mute:1;
 };
 
 /* HDMI codec initalization data */

@@ -34,7 +34,7 @@
 		Phone (337) 232-1234 or 1-800-738-2226
 		Fax   (337) 232-1297
 
-		https://www.hospiceacadiana.com/
+		http://www.hospiceacadiana.com/
 
 	Manuel
  */

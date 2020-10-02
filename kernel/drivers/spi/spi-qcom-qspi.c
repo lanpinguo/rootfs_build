@@ -2,14 +2,12 @@
 // Copyright (c) 2017-2018, The Linux foundation. All rights reserved.
 
 #include <linux/clk.h>
-#include <linux/interconnect.h>
 #include <linux/interrupt.h>
 #include <linux/io.h>
 #include <linux/module.h>
 #include <linux/of.h>
 #include <linux/of_platform.h>
 #include <linux/pm_runtime.h>
-#include <linux/pm_opp.h>
 #include <linux/spi/spi.h>
 #include <linux/spi/spi-mem.h>
 
@@ -141,11 +139,7 @@ struct qcom_qspi {
 	struct device *dev;
 	struct clk_bulk_data *clks;
 	struct qspi_xfer xfer;
-	struct icc_path *icc_path_cpu_to_qspi;
-	struct opp_table *opp_table;
-	bool has_opp_table;
-	unsigned long last_speed;
-	/* Lock to protect data accessed by IRQs */
+	/* Lock to protect xfer and IRQ accessed registers */
 	spinlock_t lock;
 };
 
@@ -227,38 +221,6 @@ static void qcom_qspi_handle_err(struct spi_master *master,
 	spin_unlock_irqrestore(&ctrl->lock, flags);
 }
 
-static int qcom_qspi_set_speed(struct qcom_qspi *ctrl, unsigned long speed_hz)
-{
-	int ret;
-	unsigned int avg_bw_cpu;
-
-	if (speed_hz == ctrl->last_speed)
-		return 0;
-
-	/* In regular operation (SBL_EN=1) core must be 4x transfer clock */
-	ret = dev_pm_opp_set_rate(ctrl->dev, speed_hz * 4);
-	if (ret) {
-		dev_err(ctrl->dev, "Failed to set core clk %d\n", ret);
-		return ret;
-	}
-
-	/*
-	 * Set BW quota for CPU as driver supports FIFO mode only.
-	 * We don't have explicit peak requirement so keep it equal to avg_bw.
-	 */
-	avg_bw_cpu = Bps_to_icc(speed_hz);
-	ret = icc_set_bw(ctrl->icc_path_cpu_to_qspi, avg_bw_cpu, avg_bw_cpu);
-	if (ret) {
-		dev_err(ctrl->dev, "%s: ICC BW voting failed for cpu: %d\n",
-			__func__, ret);
-		return ret;
-	}
-
-	ctrl->last_speed = speed_hz;
-
-	return 0;
-}
-
 static int qcom_qspi_transfer_one(struct spi_master *master,
 				  struct spi_device *slv,
 				  struct spi_transfer *xfer)
@@ -272,9 +234,12 @@ static int qcom_qspi_transfer_one(struct spi_master *master,
 	if (xfer->speed_hz)
 		speed_hz = xfer->speed_hz;
 
-	ret = qcom_qspi_set_speed(ctrl, speed_hz);
-	if (ret)
+	/* In regular operation (SBL_EN=1) core must be 4x transfer clock */
+	ret = clk_set_rate(ctrl->clks[QSPI_CLK_CORE].clk, speed_hz * 4);
+	if (ret) {
+		dev_err(ctrl->dev, "Failed to set core clk %d\n", ret);
 		return ret;
+	}
 
 	spin_lock_irqsave(&ctrl->lock, flags);
 
@@ -493,29 +458,6 @@ static int qcom_qspi_probe(struct platform_device *pdev)
 	if (ret)
 		goto exit_probe_master_put;
 
-	ctrl->icc_path_cpu_to_qspi = devm_of_icc_get(dev, "qspi-config");
-	if (IS_ERR(ctrl->icc_path_cpu_to_qspi)) {
-		ret = PTR_ERR(ctrl->icc_path_cpu_to_qspi);
-		if (ret != -EPROBE_DEFER)
-			dev_err(dev, "Failed to get cpu path: %d\n", ret);
-		goto exit_probe_master_put;
-	}
-	/* Set BW vote for register access */
-	ret = icc_set_bw(ctrl->icc_path_cpu_to_qspi, Bps_to_icc(1000),
-				Bps_to_icc(1000));
-	if (ret) {
-		dev_err(ctrl->dev, "%s: ICC BW voting failed for cpu: %d\n",
-				__func__, ret);
-		goto exit_probe_master_put;
-	}
-
-	ret = icc_disable(ctrl->icc_path_cpu_to_qspi);
-	if (ret) {
-		dev_err(ctrl->dev, "%s: ICC disable failed for cpu: %d\n",
-				__func__, ret);
-		goto exit_probe_master_put;
-	}
-
 	ret = platform_get_irq(pdev, 0);
 	if (ret < 0)
 		goto exit_probe_master_put;
@@ -539,22 +481,6 @@ static int qcom_qspi_probe(struct platform_device *pdev)
 	master->handle_err = qcom_qspi_handle_err;
 	master->auto_runtime_pm = true;
 
-	ctrl->opp_table = dev_pm_opp_set_clkname(&pdev->dev, "core");
-	if (IS_ERR(ctrl->opp_table)) {
-		ret = PTR_ERR(ctrl->opp_table);
-		goto exit_probe_master_put;
-	}
-	/* OPP table is optional */
-	ret = dev_pm_opp_of_add_table(&pdev->dev);
-	if (!ret) {
-		ctrl->has_opp_table = true;
-	} else if (ret != -ENODEV) {
-		dev_err(&pdev->dev, "invalid OPP table in device tree\n");
-		goto exit_probe_master_put;
-	}
-
-	pm_runtime_use_autosuspend(dev);
-	pm_runtime_set_autosuspend_delay(dev, 250);
 	pm_runtime_enable(dev);
 
 	ret = spi_register_master(master);
@@ -562,9 +488,6 @@ static int qcom_qspi_probe(struct platform_device *pdev)
 		return 0;
 
 	pm_runtime_disable(dev);
-	if (ctrl->has_opp_table)
-		dev_pm_opp_of_remove_table(&pdev->dev);
-	dev_pm_opp_put_clkname(ctrl->opp_table);
 
 exit_probe_master_put:
 	spi_master_put(master);
@@ -575,15 +498,11 @@ exit_probe_master_put:
 static int qcom_qspi_remove(struct platform_device *pdev)
 {
 	struct spi_master *master = platform_get_drvdata(pdev);
-	struct qcom_qspi *ctrl = spi_master_get_devdata(master);
 
 	/* Unregister _before_ disabling pm_runtime() so we stop transfers */
 	spi_unregister_master(master);
 
 	pm_runtime_disable(&pdev->dev);
-	if (ctrl->has_opp_table)
-		dev_pm_opp_of_remove_table(&pdev->dev);
-	dev_pm_opp_put_clkname(ctrl->opp_table);
 
 	return 0;
 }
@@ -592,18 +511,8 @@ static int __maybe_unused qcom_qspi_runtime_suspend(struct device *dev)
 {
 	struct spi_master *master = dev_get_drvdata(dev);
 	struct qcom_qspi *ctrl = spi_master_get_devdata(master);
-	int ret;
 
-	/* Drop the performance state vote */
-	dev_pm_opp_set_rate(dev, 0);
 	clk_bulk_disable_unprepare(QSPI_NUM_CLKS, ctrl->clks);
-
-	ret = icc_disable(ctrl->icc_path_cpu_to_qspi);
-	if (ret) {
-		dev_err_ratelimited(ctrl->dev, "%s: ICC disable failed for cpu: %d\n",
-			__func__, ret);
-		return ret;
-	}
 
 	return 0;
 }
@@ -612,20 +521,8 @@ static int __maybe_unused qcom_qspi_runtime_resume(struct device *dev)
 {
 	struct spi_master *master = dev_get_drvdata(dev);
 	struct qcom_qspi *ctrl = spi_master_get_devdata(master);
-	int ret;
 
-	ret = icc_enable(ctrl->icc_path_cpu_to_qspi);
-	if (ret) {
-		dev_err_ratelimited(ctrl->dev, "%s: ICC enable failed for cpu: %d\n",
-			__func__, ret);
-		return ret;
-	}
-
-	ret = clk_bulk_prepare_enable(QSPI_NUM_CLKS, ctrl->clks);
-	if (ret)
-		return ret;
-
-	return dev_pm_opp_set_rate(dev, ctrl->last_speed * 4);
+	return clk_bulk_prepare_enable(QSPI_NUM_CLKS, ctrl->clks);
 }
 
 static int __maybe_unused qcom_qspi_suspend(struct device *dev)

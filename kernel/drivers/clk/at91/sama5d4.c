@@ -223,8 +223,7 @@ static void __init sama5d4_pmc_setup(struct device_node *np)
 
 		hw = at91_clk_register_programmable(regmap, name,
 						    parent_names, 5, i,
-						    &at91sam9x5_programmable_layout,
-						    NULL);
+						    &at91sam9x5_programmable_layout);
 		if (IS_ERR(hw))
 			goto err_free;
 
@@ -247,7 +246,7 @@ static void __init sama5d4_pmc_setup(struct device_node *np)
 							 sama5d4_periphck[i].n,
 							 "masterck",
 							 sama5d4_periphck[i].id,
-							 &range, INT_MIN);
+							 &range);
 		if (IS_ERR(hw))
 			goto err_free;
 
@@ -260,7 +259,7 @@ static void __init sama5d4_pmc_setup(struct device_node *np)
 							 sama5d4_periph32ck[i].n,
 							 "h32mxck",
 							 sama5d4_periph32ck[i].id,
-							 &range, INT_MIN);
+							 &range);
 		if (IS_ERR(hw))
 			goto err_free;
 

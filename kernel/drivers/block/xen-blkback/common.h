@@ -36,6 +36,7 @@
 #include <linux/io.h>
 #include <linux/rbtree.h>
 #include <asm/setup.h>
+#include <asm/pgalloc.h>
 #include <asm/hypervisor.h>
 #include <xen/grant_table.h>
 #include <xen/page.h>

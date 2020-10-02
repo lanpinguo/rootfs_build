@@ -34,7 +34,8 @@ Arguments
     File descriptor returned by :ref:`open() <frontend_f_open>`.
 
 ``argp``
-    pointer to struct :c:type:`dvb_frontend_info`
+    pointer to struct struct
+    :c:type:`dvb_frontend_info`
 
 
 Description

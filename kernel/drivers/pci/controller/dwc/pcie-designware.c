@@ -3,7 +3,7 @@
  * Synopsys DesignWare PCIe host controller driver
  *
  * Copyright (C) 2013 Samsung Electronics Co., Ltd.
- *		https://www.samsung.com
+ *		http://www.samsung.com
  *
  * Author: Jingoo Han <jg1.han@samsung.com>
  */

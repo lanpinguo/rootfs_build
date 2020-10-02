@@ -7,7 +7,7 @@
  *
  * Detailed datasheet of the chip is available here:
  *
- *  https://www.abracon.com/realtimeclock/AB-RTCMC-32.768kHz-B5ZE-S3-Application-Manual.pdf
+ *  http://www.abracon.com/realtimeclock/AB-RTCMC-32.768kHz-B5ZE-S3-Application-Manual.pdf
  *
  * This work is based on ISL12057 driver (drivers/rtc/rtc-isl12057.c).
  *

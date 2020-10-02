@@ -11,7 +11,7 @@
  * Continuation Type 1 IOCBs to allocate.
  *
  * @vha: HA context
- * @dsds: number of data segment descriptors needed
+ * @dsds: number of data segment decriptors needed
  *
  * Returns the number of IOCB entries needed to store @dsds.
  */

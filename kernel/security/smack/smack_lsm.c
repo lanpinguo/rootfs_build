@@ -3365,7 +3365,7 @@ static void smack_d_instantiate(struct dentry *opt_dentry, struct inode *inode)
 		 * to set mount options simulate setting the
 		 * superblock default.
 		 */
-		fallthrough;
+		/* Fall through */
 	default:
 		/*
 		 * This isn't an understood special case.

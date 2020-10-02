@@ -232,17 +232,12 @@ static int set_param_str(const char *val, const struct kernel_param *kp)
 static int get_param_str(char *buffer, const struct kernel_param *kp)
 {
 	action_fn fn = (action_fn) kp->arg;
-	int rv, len;
+	int       rv;
 
 	rv = fn(NULL, buffer);
 	if (rv)
 		return rv;
-
-	len = strlen(buffer);
-	buffer[len++] = '\n';
-	buffer[len] = 0;
-
-	return len;
+	return strlen(buffer);
 }
 
 

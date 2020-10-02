@@ -62,10 +62,7 @@ static int options[MAX_UNITS];
 
 #include "8390.h"
 
-static int ne2k_msg_enable;
-
-static const int default_msg_level = (NETIF_MSG_DRV | NETIF_MSG_PROBE |
-				      NETIF_MSG_RX_ERR | NETIF_MSG_TX_ERR);
+static u32 ne2k_msg_enable;
 
 #if defined(__powerpc__)
 #define inl_le(addr)  le32_to_cpu(inl(addr))
@@ -77,7 +74,7 @@ MODULE_DESCRIPTION(DRV_DESCRIPTION);
 MODULE_VERSION(DRV_VERSION);
 MODULE_LICENSE("GPL");
 
-module_param_named(msg_enable, ne2k_msg_enable, int, 0444);
+module_param_named(msg_enable, ne2k_msg_enable, uint, 0444);
 module_param_array(options, int, NULL, 0);
 module_param_array(full_duplex, int, NULL, 0);
 MODULE_PARM_DESC(msg_enable, "Debug message level (see linux/netdevice.h for bitmap)");
@@ -285,7 +282,7 @@ static int ne2k_pci_init_one(struct pci_dev *pdev,
 	}
 	dev->netdev_ops = &ne2k_netdev_ops;
 	ei_local = netdev_priv(dev);
-	ei_local->msg_enable = netif_msg_init(ne2k_msg_enable, default_msg_level);
+	ei_local->msg_enable = ne2k_msg_enable;
 
 	SET_NETDEV_DEV(dev, &pdev->dev);
 
@@ -702,18 +699,30 @@ static void ne2k_pci_remove_one(struct pci_dev *pdev)
 	pci_disable_device(pdev);
 }
 
-static int __maybe_unused ne2k_pci_suspend(struct device *dev_d)
+#ifdef CONFIG_PM
+static int ne2k_pci_suspend(struct pci_dev *pdev, pm_message_t state)
 {
-	struct net_device *dev = dev_get_drvdata(dev_d);
+	struct net_device *dev = pci_get_drvdata(pdev);
 
 	netif_device_detach(dev);
+	pci_save_state(pdev);
+	pci_disable_device(pdev);
+	pci_set_power_state(pdev, pci_choose_state(pdev, state));
 
 	return 0;
 }
 
-static int __maybe_unused ne2k_pci_resume(struct device *dev_d)
+static int ne2k_pci_resume(struct pci_dev *pdev)
 {
-	struct net_device *dev = dev_get_drvdata(dev_d);
+	struct net_device *dev = pci_get_drvdata(pdev);
+	int rc;
+
+	pci_set_power_state(pdev, PCI_D0);
+	pci_restore_state(pdev);
+
+	rc = pci_enable_device(pdev);
+	if (rc)
+		return rc;
 
 	NS8390_init(dev, 1);
 	netif_device_attach(dev);
@@ -721,14 +730,19 @@ static int __maybe_unused ne2k_pci_resume(struct device *dev_d)
 	return 0;
 }
 
-static SIMPLE_DEV_PM_OPS(ne2k_pci_pm_ops, ne2k_pci_suspend, ne2k_pci_resume);
+#endif /* CONFIG_PM */
+
 
 static struct pci_driver ne2k_driver = {
 	.name		= DRV_NAME,
 	.probe		= ne2k_pci_init_one,
 	.remove		= ne2k_pci_remove_one,
 	.id_table	= ne2k_pci_tbl,
-	.driver.pm	= &ne2k_pci_pm_ops,
+#ifdef CONFIG_PM
+	.suspend	= ne2k_pci_suspend,
+	.resume		= ne2k_pci_resume,
+#endif
+
 };
 
 

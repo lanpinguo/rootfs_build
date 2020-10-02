@@ -163,10 +163,10 @@ static void do_loaddata_free(struct work_struct *work)
 		aa_put_ns(ns);
 	}
 
-	kfree_sensitive(d->hash);
-	kfree_sensitive(d->name);
+	kzfree(d->hash);
+	kzfree(d->name);
 	kvfree(d->data);
-	kfree_sensitive(d);
+	kzfree(d);
 }
 
 void aa_loaddata_kref(struct kref *kref)
@@ -894,7 +894,7 @@ static struct aa_profile *unpack_profile(struct aa_ext *e, char **ns_name)
 		while (unpack_strdup(e, &key, NULL)) {
 			data = kzalloc(sizeof(*data), GFP_KERNEL);
 			if (!data) {
-				kfree_sensitive(key);
+				kzfree(key);
 				goto fail;
 			}
 
@@ -902,8 +902,8 @@ static struct aa_profile *unpack_profile(struct aa_ext *e, char **ns_name)
 			data->size = unpack_blob(e, &data->data, NULL);
 			data->data = kvmemdup(data->data, data->size);
 			if (data->size && !data->data) {
-				kfree_sensitive(data->key);
-				kfree_sensitive(data);
+				kzfree(data->key);
+				kzfree(data);
 				goto fail;
 			}
 
@@ -1037,7 +1037,7 @@ void aa_load_ent_free(struct aa_load_ent *ent)
 		aa_put_profile(ent->old);
 		aa_put_profile(ent->new);
 		kfree(ent->ns_name);
-		kfree_sensitive(ent);
+		kzfree(ent);
 	}
 }
 

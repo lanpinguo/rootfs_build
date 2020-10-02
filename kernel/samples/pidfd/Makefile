@@ -1,4 +1,6 @@
 # SPDX-License-Identifier: GPL-2.0
-usertprogs-always-y += pidfd-metadata
+
+usertprogs := pidfd-metadata
+always-y := $(userprogs)
 
 userccflags += -I usr/include

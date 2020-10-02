@@ -71,7 +71,7 @@ good_area:
 	do {
 		vm_fault_t fault;
 
-		fault = handle_mm_fault(vma, address, flags, NULL);
+		fault = handle_mm_fault(vma, address, flags);
 
 		if ((fault & VM_FAULT_RETRY) && fatal_signal_pending(current))
 			goto out_nosemaphore;
@@ -88,6 +88,10 @@ good_area:
 			BUG();
 		}
 		if (flags & FAULT_FLAG_ALLOW_RETRY) {
+			if (fault & VM_FAULT_MAJOR)
+				current->maj_flt++;
+			else
+				current->min_flt++;
 			if (fault & VM_FAULT_RETRY) {
 				flags |= FAULT_FLAG_TRIED;
 

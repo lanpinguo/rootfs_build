@@ -1443,7 +1443,7 @@ static int netdev_ioctl(struct net_device *dev, struct ifreq *rq, int cmd)
 	switch(cmd) {
 	case SIOCGMIIPHY:		/* Get address of MII PHY in use. */
 		data->phy_id = ((struct netdev_private *)netdev_priv(dev))->phys[0] & 0x1f;
-		fallthrough;
+		/* Fall Through */
 
 	case SIOCGMIIREG:		/* Read MII PHY register. */
 		spin_lock_irq(&np->lock);
@@ -1530,6 +1530,8 @@ static void w840_remove1(struct pci_dev *pdev)
 	}
 }
 
+#ifdef CONFIG_PM
+
 /*
  * suspend/resume synchronization:
  * - open, close, do_ioctl:
@@ -1553,9 +1555,9 @@ static void w840_remove1(struct pci_dev *pdev)
  * Detach must occur under spin_unlock_irq(), interrupts from a detached
  * device would cause an irq storm.
  */
-static int __maybe_unused w840_suspend(struct device *dev_d)
+static int w840_suspend (struct pci_dev *pdev, pm_message_t state)
 {
-	struct net_device *dev = dev_get_drvdata(dev_d);
+	struct net_device *dev = pci_get_drvdata (pdev);
 	struct netdev_private *np = netdev_priv(dev);
 	void __iomem *ioaddr = np->base_addr;
 
@@ -1588,15 +1590,21 @@ static int __maybe_unused w840_suspend(struct device *dev_d)
 	return 0;
 }
 
-static int __maybe_unused w840_resume(struct device *dev_d)
+static int w840_resume (struct pci_dev *pdev)
 {
-	struct net_device *dev = dev_get_drvdata(dev_d);
+	struct net_device *dev = pci_get_drvdata (pdev);
 	struct netdev_private *np = netdev_priv(dev);
+	int retval = 0;
 
 	rtnl_lock();
 	if (netif_device_present(dev))
 		goto out; /* device not suspended */
 	if (netif_running(dev)) {
+		if ((retval = pci_enable_device(pdev))) {
+			dev_err(&dev->dev,
+				"pci_enable_device failed in resume\n");
+			goto out;
+		}
 		spin_lock_irq(&np->lock);
 		iowrite32(1, np->base_addr+PCIBusCfg);
 		ioread32(np->base_addr+PCIBusCfg);
@@ -1614,17 +1622,19 @@ static int __maybe_unused w840_resume(struct device *dev_d)
 	}
 out:
 	rtnl_unlock();
-	return 0;
+	return retval;
 }
-
-static SIMPLE_DEV_PM_OPS(w840_pm_ops, w840_suspend, w840_resume);
+#endif
 
 static struct pci_driver w840_driver = {
 	.name		= DRV_NAME,
 	.id_table	= w840_pci_tbl,
 	.probe		= w840_probe1,
 	.remove		= w840_remove1,
-	.driver.pm	= &w840_pm_ops,
+#ifdef CONFIG_PM
+	.suspend	= w840_suspend,
+	.resume		= w840_resume,
+#endif
 };
 
 static int __init w840_init(void)

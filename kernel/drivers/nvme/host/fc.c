@@ -227,7 +227,6 @@ static DECLARE_COMPLETION(nvme_fc_unload_proceed);
  */
 static struct device *fc_udev_device;
 
-static void nvme_fc_complete_rq(struct request *rq);
 
 /* *********************** FC-NVME Port Management ************************ */
 
@@ -2035,8 +2034,7 @@ done:
 	}
 
 	__nvme_fc_fcpop_chk_teardowns(ctrl, op, opstate);
-	if (!nvme_try_complete_req(rq, status, result))
-		nvme_fc_complete_rq(rq);
+	nvme_end_request(rq, status, result);
 
 check_error:
 	if (terminate_assoc)
@@ -3003,9 +3001,8 @@ nvme_fc_create_association(struct nvme_fc_ctrl *ctrl)
 	if (ret)
 		goto out_disconnect_admin_queue;
 
-	ctrl->ctrl.max_segments = ctrl->lport->ops->max_sgl_segments;
-	ctrl->ctrl.max_hw_sectors = ctrl->ctrl.max_segments <<
-						(ilog2(SZ_4K) - 9);
+	ctrl->ctrl.max_hw_sectors =
+		(ctrl->lport->ops->max_sgl_segments - 1) << (PAGE_SHIFT - 9);
 
 	blk_mq_unquiesce_queue(ctrl->ctrl.admin_q);
 

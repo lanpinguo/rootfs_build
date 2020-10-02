@@ -109,15 +109,20 @@ static void imx_drm_crtc_reset(struct drm_crtc *crtc)
 {
 	struct imx_crtc_state *state;
 
-	if (crtc->state)
-		__drm_atomic_helper_crtc_destroy_state(crtc->state);
+	if (crtc->state) {
+		if (crtc->state->mode_blob)
+			drm_property_blob_put(crtc->state->mode_blob);
 
-	kfree(to_imx_crtc_state(crtc->state));
-	crtc->state = NULL;
+		state = to_imx_crtc_state(crtc->state);
+		memset(state, 0, sizeof(*state));
+	} else {
+		state = kzalloc(sizeof(*state), GFP_KERNEL);
+		if (!state)
+			return;
+		crtc->state = &state->base;
+	}
 
-	state = kzalloc(sizeof(*state), GFP_KERNEL);
-	if (state)
-		__drm_atomic_helper_crtc_reset(crtc, &state->base);
+	state->base.crtc = crtc;
 }
 
 static struct drm_crtc_state *imx_drm_crtc_duplicate_state(struct drm_crtc *crtc)

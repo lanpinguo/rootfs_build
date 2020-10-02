@@ -121,7 +121,7 @@ static void __init sama5d3_pmc_setup(struct device_node *np)
 		return;
 	mainxtal_name = of_clk_get_parent_name(np, i);
 
-	regmap = device_node_to_regmap(np);
+	regmap = syscon_node_to_regmap(np);
 	if (IS_ERR(regmap))
 		return;
 
@@ -200,8 +200,7 @@ static void __init sama5d3_pmc_setup(struct device_node *np)
 
 		hw = at91_clk_register_programmable(regmap, name,
 						    parent_names, 5, i,
-						    &at91sam9x5_programmable_layout,
-						    NULL);
+						    &at91sam9x5_programmable_layout);
 		if (IS_ERR(hw))
 			goto err_free;
 
@@ -224,8 +223,7 @@ static void __init sama5d3_pmc_setup(struct device_node *np)
 							 sama5d3_periphck[i].n,
 							 "masterck",
 							 sama5d3_periphck[i].id,
-							 &sama5d3_periphck[i].r,
-							 INT_MIN);
+							 &sama5d3_periphck[i].r);
 		if (IS_ERR(hw))
 			goto err_free;
 

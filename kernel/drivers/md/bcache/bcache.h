@@ -762,32 +762,11 @@ struct bbio {
 #define bucket_bytes(c)		((c)->sb.bucket_size << 9)
 #define block_bytes(c)		((c)->sb.block_size << 9)
 
-static inline unsigned int meta_bucket_pages(struct cache_sb *sb)
-{
-	unsigned int n, max_pages;
-
-	max_pages = min_t(unsigned int,
-			  __rounddown_pow_of_two(USHRT_MAX) / PAGE_SECTORS,
-			  MAX_ORDER_NR_PAGES);
-
-	n = sb->bucket_size / PAGE_SECTORS;
-	if (n > max_pages)
-		n = max_pages;
-
-	return n;
-}
-
-static inline unsigned int meta_bucket_bytes(struct cache_sb *sb)
-{
-	return meta_bucket_pages(sb) << PAGE_SHIFT;
-}
-
-#define prios_per_bucket(ca)						\
-	((meta_bucket_bytes(&(ca)->sb) - sizeof(struct prio_set)) /	\
+#define prios_per_bucket(c)				\
+	((bucket_bytes(c) - sizeof(struct prio_set)) /	\
 	 sizeof(struct bucket_disk))
-
-#define prio_buckets(ca)						\
-	DIV_ROUND_UP((size_t) (ca)->sb.nbuckets, prios_per_bucket(ca))
+#define prio_buckets(c)					\
+	DIV_ROUND_UP((size_t) (c)->sb.nbuckets, prios_per_bucket(c))
 
 static inline size_t sector_to_bucket(struct cache_set *c, sector_t s)
 {
@@ -950,7 +929,7 @@ static inline void closure_bio_submit(struct cache_set *c,
 		bio_endio(bio);
 		return;
 	}
-	submit_bio_noacct(bio);
+	generic_make_request(bio);
 }
 
 /*

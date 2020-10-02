@@ -6,7 +6,7 @@
  *	http://armlinux.simtec.co.uk/
  */
 
-/* Note on 2410 error handling
+/* Hote on 2410 error handling
  *
  * The s3c2410 manual has a love/hate affair with the contents of the
  * UERSTAT register in the UART blocks, and keeps marking some of the
@@ -327,6 +327,7 @@ static void s3c24xx_serial_tx_dma_complete(void *args)
 	unsigned long flags;
 	int count;
 
+
 	dmaengine_tx_status(dma->tx_chan, dma->tx_cookie, &state);
 	count = dma->tx_bytes_requested - state.residue;
 	async_tx_ack(dma->tx_desc);
@@ -407,6 +408,7 @@ static int s3c24xx_serial_start_tx_dma(struct s3c24xx_uart_port *ourport,
 	struct uart_port *port = &ourport->port;
 	struct circ_buf *xmit = &port->state->xmit;
 	struct s3c24xx_uart_dma *dma = ourport->dma;
+
 
 	if (ourport->tx_mode != S3C24XX_TX_DMA)
 		enable_tx_dma(ourport);
@@ -814,6 +816,7 @@ static irqreturn_t s3c24xx_serial_rx_chars_pio(void *dev_id)
 	return IRQ_HANDLED;
 }
 
+
 static irqreturn_t s3c24xx_serial_rx_chars(int irq, void *dev_id)
 {
 	struct s3c24xx_uart_port *ourport = dev_id;
@@ -839,8 +842,8 @@ static irqreturn_t s3c24xx_serial_tx_chars(int irq, void *id)
 	    count >= ourport->min_dma_size) {
 		int align = dma_get_cache_alignment() -
 			(xmit->tail & (dma_get_cache_alignment() - 1));
-		if (count - align >= ourport->min_dma_size) {
-			dma_count = count - align;
+		if (count-align >= ourport->min_dma_size) {
+			dma_count = count-align;
 			count = align;
 		}
 	}
@@ -1586,6 +1589,7 @@ s3c24xx_serial_verify_port(struct uart_port *port, struct serial_struct *ser)
 	return 0;
 }
 
+
 #ifdef CONFIG_SERIAL_SAMSUNG_CONSOLE
 
 static struct console s3c24xx_serial_console;
@@ -1668,6 +1672,7 @@ s3c24xx_serial_ports[CONFIG_SERIAL_SAMSUNG_UARTS] = {
 		}
 	},
 #if CONFIG_SERIAL_SAMSUNG_UARTS > 2
+
 	[2] = {
 		.port = {
 			.lock		= __PORT_LOCK_UNLOCKED(2),
@@ -1722,6 +1727,7 @@ static void s3c24xx_serial_resetport(struct uart_port *port,
 	/* some delay is required after fifo reset */
 	udelay(1);
 }
+
 
 #ifdef CONFIG_ARM_S3C24XX_CPUFREQ
 
@@ -1897,9 +1903,9 @@ static int s3c24xx_serial_init_port(struct s3c24xx_uart_port *ourport,
 
 	port->mapbase = res->start;
 	ret = platform_get_irq(platdev, 0);
-	if (ret < 0) {
+	if (ret < 0)
 		port->irq = 0;
-	} else {
+	else {
 		port->irq = ret;
 		ourport->rx_irq = ret;
 		ourport->tx_irq = ret + 1;
@@ -1973,8 +1979,8 @@ static const struct of_device_id s3c24xx_uart_dt_match[];
 
 static int probe_index;
 
-static inline struct s3c24xx_serial_drv_data *
-s3c24xx_get_driver_data(struct platform_device *pdev)
+static inline struct s3c24xx_serial_drv_data *s3c24xx_get_driver_data(
+			struct platform_device *pdev)
 {
 #ifdef CONFIG_OF
 	if (pdev->dev.of_node) {
@@ -2325,6 +2331,7 @@ s3c24xx_serial_get_options(struct uart_port *port, int *baud,
 		*baud = rate / (16 * (ubrdiv + 1));
 		dev_dbg(port->dev, "calculated baud %d\n", *baud);
 	}
+
 }
 
 static int __init
@@ -2691,7 +2698,6 @@ static int __init s3c2410_early_console_setup(struct earlycon_device *device,
 	device->port.private_data = &s3c2410_early_console_data;
 	return samsung_early_console_setup(device, opt);
 }
-
 OF_EARLYCON_DECLARE(s3c2410, "samsung,s3c2410-uart",
 			s3c2410_early_console_setup);
 
@@ -2706,7 +2712,6 @@ static int __init s3c2440_early_console_setup(struct earlycon_device *device,
 	device->port.private_data = &s3c2440_early_console_data;
 	return samsung_early_console_setup(device, opt);
 }
-
 OF_EARLYCON_DECLARE(s3c2412, "samsung,s3c2412-uart",
 			s3c2440_early_console_setup);
 OF_EARLYCON_DECLARE(s3c2440, "samsung,s3c2440-uart",
@@ -2725,7 +2730,6 @@ static int __init s5pv210_early_console_setup(struct earlycon_device *device,
 	device->port.private_data = &s5pv210_early_console_data;
 	return samsung_early_console_setup(device, opt);
 }
-
 OF_EARLYCON_DECLARE(s5pv210, "samsung,s5pv210-uart",
 			s5pv210_early_console_setup);
 OF_EARLYCON_DECLARE(exynos4210, "samsung,exynos4210-uart",

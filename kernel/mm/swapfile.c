@@ -672,7 +672,7 @@ static void swap_range_alloc(struct swap_info_struct *si, unsigned long offset,
 	if (offset == si->lowest_bit)
 		si->lowest_bit += nr_entries;
 	if (end == si->highest_bit)
-		WRITE_ONCE(si->highest_bit, si->highest_bit - nr_entries);
+		si->highest_bit -= nr_entries;
 	si->inuse_pages += nr_entries;
 	if (si->inuse_pages == si->pages) {
 		si->lowest_bit = si->max;
@@ -696,7 +696,6 @@ static void add_to_avail_list(struct swap_info_struct *p)
 static void swap_range_free(struct swap_info_struct *si, unsigned long offset,
 			    unsigned int nr_entries)
 {
-	unsigned long begin = offset;
 	unsigned long end = offset + nr_entries - 1;
 	void (*swap_slot_free_notify)(struct block_device *, unsigned long);
 
@@ -705,7 +704,7 @@ static void swap_range_free(struct swap_info_struct *si, unsigned long offset,
 	if (end > si->highest_bit) {
 		bool was_full = !si->highest_bit;
 
-		WRITE_ONCE(si->highest_bit, end);
+		si->highest_bit = end;
 		if (was_full && (si->flags & SWP_WRITEOK))
 			add_to_avail_list(si);
 	}
@@ -722,7 +721,6 @@ static void swap_range_free(struct swap_info_struct *si, unsigned long offset,
 			swap_slot_free_notify(si->bdev, offset);
 		offset++;
 	}
-	clear_shadow_from_swap_cache(si->type, begin, end);
 }
 
 static void set_cluster_next(struct swap_info_struct *si, unsigned long next)
@@ -870,7 +868,7 @@ checks:
 		else
 			goto done;
 	}
-	WRITE_ONCE(si->swap_map[offset], usage);
+	si->swap_map[offset] = usage;
 	inc_cluster_info_page(si, si->cluster_info, offset);
 	unlock_cluster(ci);
 
@@ -929,13 +927,12 @@ done:
 
 scan:
 	spin_unlock(&si->lock);
-	while (++offset <= READ_ONCE(si->highest_bit)) {
-		if (data_race(!si->swap_map[offset])) {
+	while (++offset <= si->highest_bit) {
+		if (!si->swap_map[offset]) {
 			spin_lock(&si->lock);
 			goto checks;
 		}
-		if (vm_swap_full() &&
-		    READ_ONCE(si->swap_map[offset]) == SWAP_HAS_CACHE) {
+		if (vm_swap_full() && si->swap_map[offset] == SWAP_HAS_CACHE) {
 			spin_lock(&si->lock);
 			goto checks;
 		}
@@ -947,12 +944,11 @@ scan:
 	}
 	offset = si->lowest_bit;
 	while (offset < scan_base) {
-		if (data_race(!si->swap_map[offset])) {
+		if (!si->swap_map[offset]) {
 			spin_lock(&si->lock);
 			goto checks;
 		}
-		if (vm_swap_full() &&
-		    READ_ONCE(si->swap_map[offset]) == SWAP_HAS_CACHE) {
+		if (vm_swap_full() && si->swap_map[offset] == SWAP_HAS_CACHE) {
 			spin_lock(&si->lock);
 			goto checks;
 		}
@@ -1151,7 +1147,7 @@ static struct swap_info_struct *__swap_info_get(swp_entry_t entry)
 	p = swp_swap_info(entry);
 	if (!p)
 		goto bad_nofile;
-	if (data_race(!(p->flags & SWP_USED)))
+	if (!(p->flags & SWP_USED))
 		goto bad_device;
 	offset = swp_offset(entry);
 	if (offset >= p->max)
@@ -1177,7 +1173,7 @@ static struct swap_info_struct *_swap_info_get(swp_entry_t entry)
 	p = __swap_info_get(entry);
 	if (!p)
 		goto out;
-	if (data_race(!p->swap_map[swp_offset(entry)]))
+	if (!p->swap_map[swp_offset(entry)])
 		goto bad_free;
 	return p;
 
@@ -1246,10 +1242,7 @@ static unsigned char __swap_entry_free_locked(struct swap_info_struct *p,
 	}
 
 	usage = count | has_cache;
-	if (usage)
-		WRITE_ONCE(p->swap_map[offset], usage);
-	else
-		WRITE_ONCE(p->swap_map[offset], SWAP_HAS_CACHE);
+	p->swap_map[offset] = usage ? : SWAP_HAS_CACHE;
 
 	return usage;
 }
@@ -1301,7 +1294,7 @@ struct swap_info_struct *get_swap_device(swp_entry_t entry)
 		goto bad_nofile;
 
 	rcu_read_lock();
-	if (data_race(!(si->flags & SWP_VALID)))
+	if (!(si->flags & SWP_VALID))
 		goto unlock_out;
 	offset = swp_offset(entry);
 	if (offset >= si->max)
@@ -1375,7 +1368,7 @@ void put_swap_page(struct page *page, swp_entry_t entry)
 	unsigned char *map;
 	unsigned int i, free_entries = 0;
 	unsigned char val;
-	int size = swap_entry_size(thp_nr_pages(page));
+	int size = swap_entry_size(hpage_nr_pages(page));
 
 	si = _swap_info_get(entry);
 	if (!si)
@@ -1922,7 +1915,7 @@ static int unuse_pte(struct vm_area_struct *vma, pmd_t *pmd,
 		page_add_anon_rmap(page, vma, addr, false);
 	} else { /* ksm created a completely new copy */
 		page_add_new_anon_rmap(page, vma, addr, false);
-		lru_cache_add_inactive_or_unevictable(page, vma);
+		lru_cache_add_active_or_unevictable(page, vma);
 	}
 	swap_free(entry);
 	/*
@@ -2936,7 +2929,7 @@ static int claim_swapfile(struct swap_info_struct *p, struct inode *inode)
 		 * write only restriction.  Hence zoned block devices are not
 		 * suitable for swapping.  Disallow them here.
 		 */
-		if (blk_queue_is_zoned(p->bdev->bd_disk->queue))
+		if (blk_queue_is_zoned(p->bdev->bd_queue))
 			return -EINVAL;
 		p->flags |= SWP_BLKDEV;
 	} else if (S_ISREG(inode->i_mode)) {
@@ -3489,7 +3482,7 @@ static int __swap_duplicate(swp_entry_t entry, unsigned char usage)
 	} else
 		err = -ENOENT;			/* unused swap entry */
 
-	WRITE_ONCE(p->swap_map[offset], count | has_cache);
+	p->swap_map[offset] = count | has_cache;
 
 unlock_out:
 	unlock_cluster_or_swap_info(p, ci);

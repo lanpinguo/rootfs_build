@@ -7,7 +7,6 @@
  */
 
 #include <linux/kernel.h>
-#include <linux/thread_info.h>
 
 #include <asm/apic.h>
 #include <asm/cpu_device_id.h>

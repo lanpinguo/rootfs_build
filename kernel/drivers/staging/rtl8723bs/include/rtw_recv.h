@@ -40,7 +40,8 @@
 #define MAX_SUBFRAME_COUNT	64
 
 /* for Rx reordering buffer control */
-struct recv_reorder_ctrl {
+struct recv_reorder_ctrl
+{
 	struct adapter	*padapter;
 	u8 enable;
 	u16 indicate_seq;/* wstart_b, init_value = 0xffff */
@@ -111,7 +112,8 @@ struct phy_info {
 };
 
 #ifdef DBG_RX_SIGNAL_DISPLAY_RAW_DATA
-struct rx_raw_rssi {
+struct rx_raw_rssi
+{
 	u8 data_rate;
 	u8 pwdball;
 	s8 pwr_all;
@@ -290,7 +292,8 @@ struct sta_recv_priv {
 };
 
 
-struct recv_buf {
+struct recv_buf
+{
 	struct list_head list;
 
 	_lock recvbuf_lock;
@@ -328,7 +331,8 @@ struct recv_buf {
 	len = (unsigned int)(tail - data);
 
 */
-struct recv_frame_hdr {
+struct recv_frame_hdr
+{
 	struct list_head	list;
 #ifndef CONFIG_BSD_RX_USE_MBUF
 	struct sk_buff	 *pkt;

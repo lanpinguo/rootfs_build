@@ -80,56 +80,56 @@ int create_orc(struct objtool_file *file)
 	return 0;
 }
 
-static int create_orc_entry(struct elf *elf, struct section *u_sec, struct section *ip_relocsec,
+static int create_orc_entry(struct elf *elf, struct section *u_sec, struct section *ip_relasec,
 				unsigned int idx, struct section *insn_sec,
 				unsigned long insn_off, struct orc_entry *o)
 {
 	struct orc_entry *orc;
-	struct reloc *reloc;
+	struct rela *rela;
 
 	/* populate ORC data */
 	orc = (struct orc_entry *)u_sec->data->d_buf + idx;
 	memcpy(orc, o, sizeof(*orc));
 
-	/* populate reloc for ip */
-	reloc = malloc(sizeof(*reloc));
-	if (!reloc) {
+	/* populate rela for ip */
+	rela = malloc(sizeof(*rela));
+	if (!rela) {
 		perror("malloc");
 		return -1;
 	}
-	memset(reloc, 0, sizeof(*reloc));
+	memset(rela, 0, sizeof(*rela));
 
 	if (insn_sec->sym) {
-		reloc->sym = insn_sec->sym;
-		reloc->addend = insn_off;
+		rela->sym = insn_sec->sym;
+		rela->addend = insn_off;
 	} else {
 		/*
 		 * The Clang assembler doesn't produce section symbols, so we
 		 * have to reference the function symbol instead:
 		 */
-		reloc->sym = find_symbol_containing(insn_sec, insn_off);
-		if (!reloc->sym) {
+		rela->sym = find_symbol_containing(insn_sec, insn_off);
+		if (!rela->sym) {
 			/*
 			 * Hack alert.  This happens when we need to reference
 			 * the NOP pad insn immediately after the function.
 			 */
-			reloc->sym = find_symbol_containing(insn_sec,
+			rela->sym = find_symbol_containing(insn_sec,
 							   insn_off - 1);
 		}
-		if (!reloc->sym) {
+		if (!rela->sym) {
 			WARN("missing symbol for insn at offset 0x%lx\n",
 			     insn_off);
 			return -1;
 		}
 
-		reloc->addend = insn_off - reloc->sym->offset;
+		rela->addend = insn_off - rela->sym->offset;
 	}
 
-	reloc->type = R_X86_64_PC32;
-	reloc->offset = idx * sizeof(int);
-	reloc->sec = ip_relocsec;
+	rela->type = R_X86_64_PC32;
+	rela->offset = idx * sizeof(int);
+	rela->sec = ip_relasec;
 
-	elf_add_reloc(elf, reloc);
+	elf_add_rela(elf, rela);
 
 	return 0;
 }
@@ -137,7 +137,7 @@ static int create_orc_entry(struct elf *elf, struct section *u_sec, struct secti
 int create_orc_sections(struct objtool_file *file)
 {
 	struct instruction *insn, *prev_insn;
-	struct section *sec, *u_sec, *ip_relocsec;
+	struct section *sec, *u_sec, *ip_relasec;
 	unsigned int idx;
 
 	struct orc_entry empty = {
@@ -181,8 +181,8 @@ int create_orc_sections(struct objtool_file *file)
 	if (!sec)
 		return -1;
 
-	ip_relocsec = elf_create_reloc_section(file->elf, sec, SHT_RELA);
-	if (!ip_relocsec)
+	ip_relasec = elf_create_rela_section(file->elf, sec);
+	if (!ip_relasec)
 		return -1;
 
 	/* create .orc_unwind section */
@@ -200,7 +200,7 @@ int create_orc_sections(struct objtool_file *file)
 			if (!prev_insn || memcmp(&insn->orc, &prev_insn->orc,
 						 sizeof(struct orc_entry))) {
 
-				if (create_orc_entry(file->elf, u_sec, ip_relocsec, idx,
+				if (create_orc_entry(file->elf, u_sec, ip_relasec, idx,
 						     insn->sec, insn->offset,
 						     &insn->orc))
 					return -1;
@@ -212,7 +212,7 @@ int create_orc_sections(struct objtool_file *file)
 
 		/* section terminator */
 		if (prev_insn) {
-			if (create_orc_entry(file->elf, u_sec, ip_relocsec, idx,
+			if (create_orc_entry(file->elf, u_sec, ip_relasec, idx,
 					     prev_insn->sec,
 					     prev_insn->offset + prev_insn->len,
 					     &empty))
@@ -222,7 +222,7 @@ int create_orc_sections(struct objtool_file *file)
 		}
 	}
 
-	if (elf_rebuild_reloc_section(file->elf, ip_relocsec))
+	if (elf_rebuild_rela_section(file->elf, ip_relasec))
 		return -1;
 
 	return 0;

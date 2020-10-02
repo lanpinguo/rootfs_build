@@ -945,7 +945,7 @@ static void dpaa_fq_setup(struct dpaa_priv *priv,
 			break;
 		case FQ_TYPE_TX_CONF_MQ:
 			priv->conf_fqs[conf_cnt++] = &fq->fq_base;
-			fallthrough;
+			/* fall through */
 		case FQ_TYPE_TX_CONFIRM:
 			dpaa_setup_ingress(priv, fq, &fq_cbs->tx_defq);
 			break;

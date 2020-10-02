@@ -8,6 +8,7 @@
 
 #ifndef __ASM_SH_PROCESSOR_32_H
 #define __ASM_SH_PROCESSOR_32_H
+#ifdef __KERNEL__
 
 #include <linux/compiler.h>
 #include <linux/linkage.h>
@@ -202,4 +203,5 @@ static inline void prefetchw(const void *x)
 }
 #endif
 
+#endif /* __KERNEL__ */
 #endif /* __ASM_SH_PROCESSOR_32_H */

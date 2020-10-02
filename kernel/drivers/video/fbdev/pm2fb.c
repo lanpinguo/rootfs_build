@@ -233,10 +233,10 @@ static u32 to3264(u32 timing, int bpp, int is64)
 	switch (bpp) {
 	case 24:
 		timing *= 3;
-		fallthrough;
+		/* fall through */
 	case 8:
 		timing >>= 1;
-		fallthrough;
+		/* fall through */
 	case 16:
 		timing >>= 1;
 	case 32:

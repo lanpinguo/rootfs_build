@@ -36,6 +36,7 @@ struct nvme_loop_ctrl {
 	struct nvme_loop_iod	async_event_iod;
 	struct nvme_ctrl	ctrl;
 
+	struct nvmet_ctrl	*target_ctrl;
 	struct nvmet_port	*port;
 };
 
@@ -115,8 +116,7 @@ static void nvme_loop_queue_response(struct nvmet_req *req)
 			return;
 		}
 
-		if (!nvme_try_complete_req(rq, cqe->status, cqe->result))
-			nvme_loop_complete_rq(rq);
+		nvme_end_request(rq, cqe->status, cqe->result);
 	}
 }
 
@@ -444,6 +444,7 @@ static void nvme_loop_reset_ctrl_work(struct work_struct *work)
 {
 	struct nvme_loop_ctrl *ctrl =
 		container_of(work, struct nvme_loop_ctrl, ctrl.reset_work);
+	bool changed;
 	int ret;
 
 	nvme_stop_ctrl(&ctrl->ctrl);
@@ -470,8 +471,8 @@ static void nvme_loop_reset_ctrl_work(struct work_struct *work)
 	blk_mq_update_nr_hw_queues(&ctrl->tag_set,
 			ctrl->ctrl.queue_count - 1);
 
-	if (!nvme_change_ctrl_state(&ctrl->ctrl, NVME_CTRL_LIVE))
-		WARN_ON_ONCE(1);
+	changed = nvme_change_ctrl_state(&ctrl->ctrl, NVME_CTRL_LIVE);
+	WARN_ON_ONCE(!changed);
 
 	nvme_start_ctrl(&ctrl->ctrl);
 
@@ -566,6 +567,7 @@ static struct nvme_ctrl *nvme_loop_create_ctrl(struct device *dev,
 		struct nvmf_ctrl_options *opts)
 {
 	struct nvme_loop_ctrl *ctrl;
+	bool changed;
 	int ret;
 
 	ctrl = kzalloc(sizeof(*ctrl), GFP_KERNEL);
@@ -581,8 +583,8 @@ static struct nvme_ctrl *nvme_loop_create_ctrl(struct device *dev,
 	if (ret)
 		goto out_put_ctrl;
 
-	if (!nvme_change_ctrl_state(&ctrl->ctrl, NVME_CTRL_CONNECTING))
-		WARN_ON_ONCE(1);
+	changed = nvme_change_ctrl_state(&ctrl->ctrl, NVME_CTRL_CONNECTING);
+	WARN_ON_ONCE(!changed);
 
 	ret = -ENOMEM;
 
@@ -618,8 +620,8 @@ static struct nvme_ctrl *nvme_loop_create_ctrl(struct device *dev,
 	dev_info(ctrl->ctrl.device,
 		 "new ctrl: \"%s\"\n", ctrl->ctrl.opts->subsysnqn);
 
-	if (!nvme_change_ctrl_state(&ctrl->ctrl, NVME_CTRL_LIVE))
-		WARN_ON_ONCE(1);
+	changed = nvme_change_ctrl_state(&ctrl->ctrl, NVME_CTRL_LIVE);
+	WARN_ON_ONCE(!changed);
 
 	mutex_lock(&nvme_loop_ctrl_mutex);
 	list_add_tail(&ctrl->list, &nvme_loop_ctrl_list);

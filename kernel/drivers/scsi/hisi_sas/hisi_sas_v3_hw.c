@@ -2235,10 +2235,8 @@ static void slot_complete_v3_hw(struct hisi_hba *hisi_hba,
 				 dw0, dw1, complete_hdr->act, dw3,
 				 error_info[0], error_info[1],
 				 error_info[2], error_info[3]);
-		if (unlikely(slot->abort)) {
-			sas_task_abort(task);
+		if (unlikely(slot->abort))
 			return;
-		}
 		goto out;
 	}
 

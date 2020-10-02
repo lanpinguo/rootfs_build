@@ -638,14 +638,12 @@ struct kvm_vcpu_arch {
 	u32 ccr1;
 	u32 dbsr;
 
-	u64 mmcr[4];	/* MMCR0, MMCR1, MMCR2, MMCR3 */
-	u64 mmcra;
-	u64 mmcrs;
+	u64 mmcr[5];
 	u32 pmc[8];
 	u32 spmc[2];
 	u64 siar;
 	u64 sdar;
-	u64 sier[3];
+	u64 sier;
 #ifdef CONFIG_PPC_TRANSACTIONAL_MEM
 	u64 tfhar;
 	u64 texasr;

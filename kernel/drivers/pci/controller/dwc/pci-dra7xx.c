@@ -2,7 +2,7 @@
 /*
  * pcie-dra7xx - PCIe controller driver for TI DRA7xx SoCs
  *
- * Copyright (C) 2013-2014 Texas Instruments Incorporated - https://www.ti.com
+ * Copyright (C) 2013-2014 Texas Instruments Incorporated - http://www.ti.com
  *
  * Authors: Kishon Vijay Abraham I <kishon@ti.com>
  */
@@ -593,12 +593,13 @@ static int __init dra7xx_add_pcie_ep(struct dra7xx_pcie *dra7xx,
 	ep = &pci->ep;
 	ep->ops = &pcie_ep_ops;
 
-	pci->dbi_base = devm_platform_ioremap_resource_byname(pdev, "ep_dbics");
+	res = platform_get_resource_byname(pdev, IORESOURCE_MEM, "ep_dbics");
+	pci->dbi_base = devm_ioremap_resource(dev, res);
 	if (IS_ERR(pci->dbi_base))
 		return PTR_ERR(pci->dbi_base);
 
-	pci->dbi_base2 =
-		devm_platform_ioremap_resource_byname(pdev, "ep_dbics2");
+	res = platform_get_resource_byname(pdev, IORESOURCE_MEM, "ep_dbics2");
+	pci->dbi_base2 = devm_ioremap_resource(dev, res);
 	if (IS_ERR(pci->dbi_base2))
 		return PTR_ERR(pci->dbi_base2);
 
@@ -625,16 +626,20 @@ static int __init dra7xx_add_pcie_port(struct dra7xx_pcie *dra7xx,
 	struct dw_pcie *pci = dra7xx->pci;
 	struct pcie_port *pp = &pci->pp;
 	struct device *dev = pci->dev;
+	struct resource *res;
 
 	pp->irq = platform_get_irq(pdev, 1);
-	if (pp->irq < 0)
+	if (pp->irq < 0) {
+		dev_err(dev, "missing IRQ resource\n");
 		return pp->irq;
+	}
 
 	ret = dra7xx_pcie_init_irq_domain(pp);
 	if (ret < 0)
 		return ret;
 
-	pci->dbi_base = devm_platform_ioremap_resource_byname(pdev, "rc_dbics");
+	res = platform_get_resource_byname(pdev, IORESOURCE_MEM, "rc_dbics");
+	pci->dbi_base = devm_ioremap_resource(dev, res);
 	if (IS_ERR(pci->dbi_base))
 		return PTR_ERR(pci->dbi_base);
 
@@ -866,8 +871,10 @@ static int __init dra7xx_pcie_probe(struct platform_device *pdev)
 	pci->ops = &dw_pcie_ops;
 
 	irq = platform_get_irq(pdev, 0);
-	if (irq < 0)
+	if (irq < 0) {
+		dev_err(dev, "missing IRQ resource: %d\n", irq);
 		return irq;
+	}
 
 	base = devm_platform_ioremap_resource_byname(pdev, "ti_conf");
 	if (IS_ERR(base))
@@ -991,8 +998,9 @@ static int __init dra7xx_pcie_probe(struct platform_device *pdev)
 	return 0;
 
 err_gpio:
-err_get_sync:
 	pm_runtime_put(dev);
+
+err_get_sync:
 	pm_runtime_disable(dev);
 	dra7xx_pcie_disable_phy(dra7xx);
 

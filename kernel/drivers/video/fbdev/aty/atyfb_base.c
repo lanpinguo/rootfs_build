@@ -317,7 +317,12 @@ static int mclk;
 static int xclk;
 static int comp_sync = -1;
 static char *mode;
-static int backlight = IS_BUILTIN(CONFIG_PMAC_BACKLIGHT);
+
+#ifdef CONFIG_PMAC_BACKLIGHT
+static int backlight = 1;
+#else
+static int backlight = 0;
+#endif
 
 #ifdef CONFIG_PPC
 static int default_vmode = VMODE_CHOOSE;

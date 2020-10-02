@@ -18,7 +18,7 @@
 	http://www.scyld.com/network/sundance.html
 	[link no longer provides useful info -jgarzik]
 	Archives of the mailing list are still available at
-	https://www.beowulf.org/pipermail/netdrivers/
+	http://www.beowulf.org/pipermail/netdrivers/
 
 */
 
@@ -1928,9 +1928,11 @@ static void sundance_remove1(struct pci_dev *pdev)
 	}
 }
 
-static int __maybe_unused sundance_suspend(struct device *dev_d)
+#ifdef CONFIG_PM
+
+static int sundance_suspend(struct pci_dev *pci_dev, pm_message_t state)
 {
-	struct net_device *dev = dev_get_drvdata(dev_d);
+	struct net_device *dev = pci_get_drvdata(pci_dev);
 	struct netdev_private *np = netdev_priv(dev);
 	void __iomem *ioaddr = np->base;
 
@@ -1940,23 +1942,29 @@ static int __maybe_unused sundance_suspend(struct device *dev_d)
 	netdev_close(dev);
 	netif_device_detach(dev);
 
+	pci_save_state(pci_dev);
 	if (np->wol_enabled) {
 		iowrite8(AcceptBroadcast | AcceptMyPhys, ioaddr + RxMode);
 		iowrite16(RxEnable, ioaddr + MACCtrl1);
 	}
-
-	device_set_wakeup_enable(dev_d, np->wol_enabled);
+	pci_enable_wake(pci_dev, pci_choose_state(pci_dev, state),
+			np->wol_enabled);
+	pci_set_power_state(pci_dev, pci_choose_state(pci_dev, state));
 
 	return 0;
 }
 
-static int __maybe_unused sundance_resume(struct device *dev_d)
+static int sundance_resume(struct pci_dev *pci_dev)
 {
-	struct net_device *dev = dev_get_drvdata(dev_d);
+	struct net_device *dev = pci_get_drvdata(pci_dev);
 	int err = 0;
 
 	if (!netif_running(dev))
 		return 0;
+
+	pci_set_power_state(pci_dev, PCI_D0);
+	pci_restore_state(pci_dev);
+	pci_enable_wake(pci_dev, PCI_D0, 0);
 
 	err = netdev_open(dev);
 	if (err) {
@@ -1971,14 +1979,17 @@ out:
 	return err;
 }
 
-static SIMPLE_DEV_PM_OPS(sundance_pm_ops, sundance_suspend, sundance_resume);
+#endif /* CONFIG_PM */
 
 static struct pci_driver sundance_driver = {
 	.name		= DRV_NAME,
 	.id_table	= sundance_pci_tbl,
 	.probe		= sundance_probe1,
 	.remove		= sundance_remove1,
-	.driver.pm	= &sundance_pm_ops,
+#ifdef CONFIG_PM
+	.suspend	= sundance_suspend,
+	.resume		= sundance_resume,
+#endif /* CONFIG_PM */
 };
 
 static int __init sundance_init(void)

@@ -6,13 +6,15 @@
 #include <asm/trapnr.h>
 
 #ifndef __ASSEMBLY__
-#include <linux/entry-common.h>
 #include <linux/hardirq.h>
 
 #include <asm/irq_stack.h>
 
-bool idtentry_enter_nmi(struct pt_regs *regs);
-void idtentry_exit_nmi(struct pt_regs *regs, bool irq_state);
+void idtentry_enter_user(struct pt_regs *regs);
+void idtentry_exit_user(struct pt_regs *regs);
+
+bool idtentry_enter_cond_rcu(struct pt_regs *regs);
+void idtentry_exit_cond_rcu(struct pt_regs *regs, bool rcu_exit);
 
 /**
  * DECLARE_IDTENTRY - Declare functions for simple IDT entry points
@@ -43,8 +45,8 @@ void idtentry_exit_nmi(struct pt_regs *regs, bool irq_state);
  * The macro is written so it acts as function definition. Append the
  * body with a pair of curly brackets.
  *
- * irqentry_enter() contains common code which has to be invoked before
- * arbitrary code in the body. irqentry_exit() contains common code
+ * idtentry_enter() contains common code which has to be invoked before
+ * arbitrary code in the body. idtentry_exit() contains common code
  * which has to run before returning to the low level assembly code.
  */
 #define DEFINE_IDTENTRY(func)						\
@@ -52,12 +54,12 @@ static __always_inline void __##func(struct pt_regs *regs);		\
 									\
 __visible noinstr void func(struct pt_regs *regs)			\
 {									\
-	irqentry_state_t state = irqentry_enter(regs);			\
+	bool rcu_exit = idtentry_enter_cond_rcu(regs);			\
 									\
 	instrumentation_begin();					\
 	__##func (regs);						\
 	instrumentation_end();						\
-	irqentry_exit(regs, state);					\
+	idtentry_exit_cond_rcu(regs, rcu_exit);				\
 }									\
 									\
 static __always_inline void __##func(struct pt_regs *regs)
@@ -99,12 +101,12 @@ static __always_inline void __##func(struct pt_regs *regs,		\
 __visible noinstr void func(struct pt_regs *regs,			\
 			    unsigned long error_code)			\
 {									\
-	irqentry_state_t state = irqentry_enter(regs);			\
+	bool rcu_exit = idtentry_enter_cond_rcu(regs);			\
 									\
 	instrumentation_begin();					\
 	__##func (regs, error_code);					\
 	instrumentation_end();						\
-	irqentry_exit(regs, state);					\
+	idtentry_exit_cond_rcu(regs, rcu_exit);				\
 }									\
 									\
 static __always_inline void __##func(struct pt_regs *regs,		\
@@ -159,7 +161,7 @@ __visible noinstr void func(struct pt_regs *regs)
  * body with a pair of curly brackets.
  *
  * Contrary to DEFINE_IDTENTRY_ERRORCODE() this does not invoke the
- * irqentry_enter/exit() helpers before and after the body invocation. This
+ * idtentry_enter/exit() helpers before and after the body invocation. This
  * needs to be done in the body itself if applicable. Use if extra work
  * is required before the enter/exit() helpers are invoked.
  */
@@ -185,9 +187,11 @@ __visible noinstr void func(struct pt_regs *regs, unsigned long error_code)
  * to the function as error_code argument which needs to be truncated
  * to an u8 because the push is sign extending.
  *
+ * On 64-bit idtentry_enter/exit() are invoked in the ASM entry code before
+ * and after switching to the interrupt stack. On 32-bit this happens in C.
+ *
  * irq_enter/exit_rcu() are invoked before the function body and the
- * KVM L1D flush request is set. Stack switching to the interrupt stack
- * has to be done in the function body if necessary.
+ * KVM L1D flush request is set.
  */
 #define DEFINE_IDTENTRY_IRQ(func)					\
 static __always_inline void __##func(struct pt_regs *regs, u8 vector);	\
@@ -195,7 +199,7 @@ static __always_inline void __##func(struct pt_regs *regs, u8 vector);	\
 __visible noinstr void func(struct pt_regs *regs,			\
 			    unsigned long error_code)			\
 {									\
-	irqentry_state_t state = irqentry_enter(regs);			\
+	bool rcu_exit = idtentry_enter_cond_rcu(regs);			\
 									\
 	instrumentation_begin();					\
 	irq_enter_rcu();						\
@@ -203,7 +207,7 @@ __visible noinstr void func(struct pt_regs *regs,			\
 	__##func (regs, (u8)error_code);				\
 	irq_exit_rcu();							\
 	instrumentation_end();						\
-	irqentry_exit(regs, state);					\
+	idtentry_exit_cond_rcu(regs, rcu_exit);				\
 }									\
 									\
 static __always_inline void __##func(struct pt_regs *regs, u8 vector)
@@ -227,7 +231,7 @@ static __always_inline void __##func(struct pt_regs *regs, u8 vector)
  * DEFINE_IDTENTRY_SYSVEC - Emit code for system vector IDT entry points
  * @func:	Function name of the entry point
  *
- * irqentry_enter/exit() and irq_enter/exit_rcu() are invoked before the
+ * idtentry_enter/exit() and irq_enter/exit_rcu() are invoked before the
  * function body. KVM L1D flush request is set.
  *
  * Runs the function on the interrupt stack if the entry hit kernel mode
@@ -237,7 +241,7 @@ static void __##func(struct pt_regs *regs);				\
 									\
 __visible noinstr void func(struct pt_regs *regs)			\
 {									\
-	irqentry_state_t state = irqentry_enter(regs);			\
+	bool rcu_exit = idtentry_enter_cond_rcu(regs);			\
 									\
 	instrumentation_begin();					\
 	irq_enter_rcu();						\
@@ -245,7 +249,7 @@ __visible noinstr void func(struct pt_regs *regs)			\
 	run_on_irqstack_cond(__##func, regs, regs);			\
 	irq_exit_rcu();							\
 	instrumentation_end();						\
-	irqentry_exit(regs, state);					\
+	idtentry_exit_cond_rcu(regs, rcu_exit);				\
 }									\
 									\
 static noinline void __##func(struct pt_regs *regs)
@@ -266,7 +270,7 @@ static __always_inline void __##func(struct pt_regs *regs);		\
 									\
 __visible noinstr void func(struct pt_regs *regs)			\
 {									\
-	irqentry_state_t state = irqentry_enter(regs);			\
+	bool rcu_exit = idtentry_enter_cond_rcu(regs);			\
 									\
 	instrumentation_begin();					\
 	__irq_enter_raw();						\
@@ -274,7 +278,7 @@ __visible noinstr void func(struct pt_regs *regs)			\
 	__##func (regs);						\
 	__irq_exit_raw();						\
 	instrumentation_end();						\
-	irqentry_exit(regs, state);					\
+	idtentry_exit_cond_rcu(regs, rcu_exit);				\
 }									\
 									\
 static __always_inline void __##func(struct pt_regs *regs)
@@ -630,10 +634,6 @@ DECLARE_IDTENTRY_SYSVEC(HYPERVISOR_CALLBACK_VECTOR,	sysvec_acrn_hv_callback);
 
 #ifdef CONFIG_XEN_PVHVM
 DECLARE_IDTENTRY_SYSVEC(HYPERVISOR_CALLBACK_VECTOR,	sysvec_xen_hvm_callback);
-#endif
-
-#ifdef CONFIG_KVM_GUEST
-DECLARE_IDTENTRY_SYSVEC(HYPERVISOR_CALLBACK_VECTOR,	sysvec_kvm_asyncpf_interrupt);
 #endif
 
 #undef X86_TRAP_OTHER

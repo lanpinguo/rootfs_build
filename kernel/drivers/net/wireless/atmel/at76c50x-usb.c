@@ -17,7 +17,7 @@
  *
  * TODO list is at the wiki:
  *
- * https://wireless.wiki.kernel.org/en/users/Drivers/at76c50x-usb#TODO
+ * http://wireless.kernel.org/en/users/Drivers/at76c50x-usb#TODO
  */
 
 #include <linux/init.h>

@@ -572,6 +572,7 @@ int hts221_probe(struct device *dev, int irq, const char *name,
 		return err;
 
 	iio_dev->modes = INDIO_DIRECT_MODE;
+	iio_dev->dev.parent = hw->dev;
 	iio_dev->available_scan_masks = hts221_scan_masks;
 	iio_dev->channels = hts221_channels;
 	iio_dev->num_channels = ARRAY_SIZE(hts221_channels);
@@ -620,11 +621,11 @@ int hts221_probe(struct device *dev, int irq, const char *name,
 	}
 
 	if (hw->irq > 0) {
-		err = hts221_allocate_buffers(iio_dev);
+		err = hts221_allocate_buffers(hw);
 		if (err < 0)
 			return err;
 
-		err = hts221_allocate_trigger(iio_dev);
+		err = hts221_allocate_trigger(hw);
 		if (err)
 			return err;
 	}

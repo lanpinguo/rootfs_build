@@ -233,9 +233,10 @@ unsigned int stack_trace_save_user(unsigned long *store, unsigned int size)
 	if (current->flags & PF_KTHREAD)
 		return 0;
 
-	fs = force_uaccess_begin();
+	fs = get_fs();
+	set_fs(USER_DS);
 	arch_stack_walk_user(consume_entry, &c, task_pt_regs(current));
-	force_uaccess_end(fs);
+	set_fs(fs);
 
 	return c.len;
 }

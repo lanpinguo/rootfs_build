@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
 #include <linux/cpu.h>
-#include <linux/dma-direct.h>
 #include <linux/dma-noncoherent.h>
 #include <linux/gfp.h>
 #include <linux/highmem.h>
@@ -43,18 +42,15 @@ unsigned long xen_get_swiotlb_free_pages(unsigned int order)
 static bool hypercall_cflush = false;
 
 /* buffers in highmem or foreign pages cannot cross page boundaries */
-static void dma_cache_maint(struct device *dev, dma_addr_t handle,
-			    size_t size, u32 op)
+static void dma_cache_maint(dma_addr_t handle, size_t size, u32 op)
 {
 	struct gnttab_cache_flush cflush;
 
+	cflush.a.dev_bus_addr = handle & XEN_PAGE_MASK;
 	cflush.offset = xen_offset_in_page(handle);
 	cflush.op = op;
-	handle &= XEN_PAGE_MASK;
 
 	do {
-		cflush.a.dev_bus_addr = dma_to_phys(dev, handle);
-
 		if (size + cflush.offset > XEN_PAGE_SIZE)
 			cflush.length = XEN_PAGE_SIZE - cflush.offset;
 		else
@@ -63,7 +59,7 @@ static void dma_cache_maint(struct device *dev, dma_addr_t handle,
 		HYPERVISOR_grant_table_op(GNTTABOP_cache_flush, &cflush, 1);
 
 		cflush.offset = 0;
-		handle += cflush.length;
+		cflush.a.dev_bus_addr += cflush.length;
 		size -= cflush.length;
 	} while (size);
 }
@@ -75,20 +71,24 @@ static void dma_cache_maint(struct device *dev, dma_addr_t handle,
  * pfn_valid returns true the pages is local and we can use the native
  * dma-direct functions, otherwise we call the Xen specific version.
  */
-void xen_dma_sync_for_cpu(struct device *dev, dma_addr_t handle,
-			  size_t size, enum dma_data_direction dir)
+void xen_dma_sync_for_cpu(dma_addr_t handle, phys_addr_t paddr, size_t size,
+		enum dma_data_direction dir)
 {
-	if (dir != DMA_TO_DEVICE)
-		dma_cache_maint(dev, handle, size, GNTTAB_CACHE_INVAL);
+	if (pfn_valid(PFN_DOWN(handle)))
+		arch_sync_dma_for_cpu(paddr, size, dir);
+	else if (dir != DMA_TO_DEVICE)
+		dma_cache_maint(handle, size, GNTTAB_CACHE_INVAL);
 }
 
-void xen_dma_sync_for_device(struct device *dev, dma_addr_t handle,
-			     size_t size, enum dma_data_direction dir)
+void xen_dma_sync_for_device(dma_addr_t handle, phys_addr_t paddr, size_t size,
+		enum dma_data_direction dir)
 {
-	if (dir == DMA_FROM_DEVICE)
-		dma_cache_maint(dev, handle, size, GNTTAB_CACHE_INVAL);
+	if (pfn_valid(PFN_DOWN(handle)))
+		arch_sync_dma_for_device(paddr, size, dir);
+	else if (dir == DMA_FROM_DEVICE)
+		dma_cache_maint(handle, size, GNTTAB_CACHE_INVAL);
 	else
-		dma_cache_maint(dev, handle, size, GNTTAB_CACHE_CLEAN);
+		dma_cache_maint(handle, size, GNTTAB_CACHE_CLEAN);
 }
 
 bool xen_arch_need_swiotlb(struct device *dev,
@@ -96,7 +96,7 @@ bool xen_arch_need_swiotlb(struct device *dev,
 			   dma_addr_t dev_addr)
 {
 	unsigned int xen_pfn = XEN_PFN_DOWN(phys);
-	unsigned int bfn = XEN_PFN_DOWN(dma_to_phys(dev, dev_addr));
+	unsigned int bfn = XEN_PFN_DOWN(dev_addr);
 
 	/*
 	 * The swiotlb buffer should be used if

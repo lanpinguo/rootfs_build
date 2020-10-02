@@ -836,7 +836,7 @@ static size_t rk_iommu_unmap(struct iommu_domain *domain, unsigned long _iova,
 
 static struct rk_iommu *rk_iommu_from_dev(struct device *dev)
 {
-	struct rk_iommudata *data = dev_iommu_priv_get(dev);
+	struct rk_iommudata *data = dev->archdata.iommu;
 
 	return data ? data->iommu : NULL;
 }
@@ -1059,7 +1059,7 @@ static struct iommu_device *rk_iommu_probe_device(struct device *dev)
 	struct rk_iommudata *data;
 	struct rk_iommu *iommu;
 
-	data = dev_iommu_priv_get(dev);
+	data = dev->archdata.iommu;
 	if (!data)
 		return ERR_PTR(-ENODEV);
 
@@ -1073,7 +1073,7 @@ static struct iommu_device *rk_iommu_probe_device(struct device *dev)
 
 static void rk_iommu_release_device(struct device *dev)
 {
-	struct rk_iommudata *data = dev_iommu_priv_get(dev);
+	struct rk_iommudata *data = dev->archdata.iommu;
 
 	device_link_del(data->link);
 }
@@ -1100,7 +1100,7 @@ static int rk_iommu_of_xlate(struct device *dev,
 	iommu_dev = of_find_device_by_node(args->np);
 
 	data->iommu = platform_get_drvdata(iommu_dev);
-	dev_iommu_priv_set(dev, data);
+	dev->archdata.iommu = data;
 
 	platform_device_put(iommu_dev);
 

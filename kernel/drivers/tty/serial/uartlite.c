@@ -32,7 +32,7 @@
  * Register definitions
  *
  * For register details see datasheet:
- * https://www.xilinx.com/support/documentation/ip_documentation/opb_uartlite.pdf
+ * http://www.xilinx.com/support/documentation/ip_documentation/opb_uartlite.pdf
  */
 
 #define ULITE_RX		0x00

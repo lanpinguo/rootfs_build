@@ -52,9 +52,9 @@ static unsigned long order_comb_long[][2] = {
 
 static int __init test_bitops_startup(void)
 {
-	int i, bit_set;
+	int i;
 
-	pr_info("Starting bitops test\n");
+	pr_warn("Loaded test module\n");
 	set_bit(BITOPS_4, g_bitmap);
 	set_bit(BITOPS_7, g_bitmap);
 	set_bit(BITOPS_11, g_bitmap);
@@ -81,8 +81,12 @@ static int __init test_bitops_startup(void)
 				       order_comb_long[i][0]);
 	}
 #endif
+	return 0;
+}
 
-	barrier();
+static void __exit test_bitops_unstartup(void)
+{
+	int bit_set;
 
 	clear_bit(BITOPS_4, g_bitmap);
 	clear_bit(BITOPS_7, g_bitmap);
@@ -94,13 +98,7 @@ static int __init test_bitops_startup(void)
 	if (bit_set != BITOPS_LAST)
 		pr_err("ERROR: FOUND SET BIT %d\n", bit_set);
 
-	pr_info("Completed bitops test\n");
-
-	return 0;
-}
-
-static void __exit test_bitops_unstartup(void)
-{
+	pr_warn("Unloaded test module\n");
 }
 
 module_init(test_bitops_startup);

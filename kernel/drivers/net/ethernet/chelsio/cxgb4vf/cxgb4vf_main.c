@@ -517,7 +517,7 @@ static int fwevtq_handler(struct sge_rspq *rspq, const __be64 *rsp,
 		}
 		cpl = (void *)p;
 	}
-		fallthrough;
+		/* Fall through */
 
 	case CPL_SGE_EGR_UPDATE: {
 		/*
@@ -2916,39 +2916,6 @@ static const struct net_device_ops cxgb4vf_netdev_ops	= {
 #endif
 };
 
-/**
- *	cxgb4vf_get_port_mask - Get port mask for the VF based on mac
- *				address stored on the adapter
- *	@adapter: The adapter
- *
- *	Find the the port mask for the VF based on the index of mac
- *	address stored in the adapter. If no mac address is stored on
- *	the adapter for the VF, use the port mask received from the
- *	firmware.
- */
-static unsigned int cxgb4vf_get_port_mask(struct adapter *adapter)
-{
-	unsigned int naddr = 1, pidx = 0;
-	unsigned int pmask, rmask = 0;
-	u8 mac[ETH_ALEN];
-	int err;
-
-	pmask = adapter->params.vfres.pmask;
-	while (pmask) {
-		if (pmask & 1) {
-			err = t4vf_get_vf_mac_acl(adapter, pidx, &naddr, mac);
-			if (!err && !is_zero_ether_addr(mac))
-				rmask |= (1 << pidx);
-		}
-		pmask >>= 1;
-		pidx++;
-	}
-	if (!rmask)
-		rmask = adapter->params.vfres.pmask;
-
-	return rmask;
-}
-
 /*
  * "Probe" a device: initialize a device and construct all kernel and driver
  * state needed to manage the device.  This routine is called "init_one" in
@@ -2957,12 +2924,13 @@ static unsigned int cxgb4vf_get_port_mask(struct adapter *adapter)
 static int cxgb4vf_pci_probe(struct pci_dev *pdev,
 			     const struct pci_device_id *ent)
 {
-	struct adapter *adapter;
-	struct net_device *netdev;
-	struct port_info *pi;
-	unsigned int pmask;
 	int pci_using_dac;
 	int err, pidx;
+	unsigned int pmask;
+	struct adapter *adapter;
+	struct port_info *pi;
+	struct net_device *netdev;
+	unsigned int pf;
 
 	/*
 	 * Initialize generic PCI device state.
@@ -3105,7 +3073,8 @@ static int cxgb4vf_pci_probe(struct pci_dev *pdev,
 	/*
 	 * Allocate our "adapter ports" and stitch everything together.
 	 */
-	pmask = cxgb4vf_get_port_mask(adapter);
+	pmask = adapter->params.vfres.pmask;
+	pf = t4vf_get_pf_from_vf(adapter);
 	for_each_port(adapter, pidx) {
 		int port_id, viid;
 		u8 mac[ETH_ALEN];
@@ -3188,7 +3157,7 @@ static int cxgb4vf_pci_probe(struct pci_dev *pdev,
 			goto err_free_dev;
 		}
 
-		err = t4vf_get_vf_mac_acl(adapter, port_id, &naddr, mac);
+		err = t4vf_get_vf_mac_acl(adapter, pf, &naddr, mac);
 		if (err) {
 			dev_err(&pdev->dev,
 				"unable to determine MAC ACL address, "

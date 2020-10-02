@@ -7,7 +7,6 @@
 #include <linux/pstore_blk.h>
 #include <linux/mtd/mtd.h>
 #include <linux/bitops.h>
-#include <linux/slab.h>
 
 static struct mtdpstore_context {
 	int index;

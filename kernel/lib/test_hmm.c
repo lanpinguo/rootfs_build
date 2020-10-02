@@ -214,14 +214,6 @@ static bool dmirror_interval_invalidate(struct mmu_interval_notifier *mni,
 {
 	struct dmirror *dmirror = container_of(mni, struct dmirror, notifier);
 
-	/*
-	 * Ignore invalidation callbacks for device private pages since
-	 * the invalidation is handled as part of the migration process.
-	 */
-	if (range->event == MMU_NOTIFY_MIGRATE &&
-	    range->migrate_pgmap_owner == dmirror->mdevice)
-		return true;
-
 	if (mmu_notifier_range_blockable(range))
 		mutex_lock(&dmirror->mutex);
 	else if (!mutex_trylock(&dmirror->mutex))
@@ -593,6 +585,15 @@ static void dmirror_migrate_alloc_and_copy(struct migrate_vma *args,
 		 */
 		spage = migrate_pfn_to_page(*src);
 
+		/*
+		 * Don't migrate device private pages from our own driver or
+		 * others. For our own we would do a device private memory copy
+		 * not a migration and for others, we would need to fault the
+		 * other device's page into system memory first.
+		 */
+		if (spage && is_zone_device_page(spage))
+			continue;
+
 		dpage = dmirror_devmem_alloc_page(mdevice);
 		if (!dpage)
 			continue;
@@ -701,8 +702,7 @@ static int dmirror_migrate(struct dmirror *dmirror,
 		args.dst = dst_pfns;
 		args.start = addr;
 		args.end = next;
-		args.pgmap_owner = dmirror->mdevice;
-		args.flags = MIGRATE_VMA_SELECT_SYSTEM;
+		args.src_owner = NULL;
 		ret = migrate_vma_setup(&args);
 		if (ret)
 			goto out;
@@ -766,10 +766,6 @@ static void dmirror_mkentry(struct dmirror *dmirror, struct hmm_range *range,
 		*perm |= HMM_DMIRROR_PROT_WRITE;
 	else
 		*perm |= HMM_DMIRROR_PROT_READ;
-	if (hmm_pfn_to_map_order(entry) + PAGE_SHIFT == PMD_SHIFT)
-		*perm |= HMM_DMIRROR_PROT_PMD;
-	else if (hmm_pfn_to_map_order(entry) + PAGE_SHIFT == PUD_SHIFT)
-		*perm |= HMM_DMIRROR_PROT_PUD;
 }
 
 static bool dmirror_snapshot_invalidate(struct mmu_interval_notifier *mni,
@@ -991,7 +987,7 @@ static void dmirror_devmem_free(struct page *page)
 }
 
 static vm_fault_t dmirror_devmem_fault_alloc_and_copy(struct migrate_vma *args,
-						      struct dmirror *dmirror)
+						struct dmirror_device *mdevice)
 {
 	const unsigned long *src = args->src;
 	unsigned long *dst = args->dst;
@@ -1013,13 +1009,21 @@ static vm_fault_t dmirror_devmem_fault_alloc_and_copy(struct migrate_vma *args,
 			continue;
 
 		lock_page(dpage);
-		xa_erase(&dmirror->pt, addr >> PAGE_SHIFT);
 		copy_highpage(dpage, spage);
 		*dst = migrate_pfn(page_to_pfn(dpage)) | MIGRATE_PFN_LOCKED;
 		if (*src & MIGRATE_PFN_WRITE)
 			*dst |= MIGRATE_PFN_WRITE;
 	}
 	return 0;
+}
+
+static void dmirror_devmem_fault_finalize_and_map(struct migrate_vma *args,
+						  struct dmirror *dmirror)
+{
+	/* Invalidate the device's page table mapping. */
+	mutex_lock(&dmirror->mutex);
+	dmirror_do_update(dmirror, args->start, args->end);
+	mutex_unlock(&dmirror->mutex);
 }
 
 static vm_fault_t dmirror_devmem_fault(struct vm_fault *vmf)
@@ -1045,21 +1049,16 @@ static vm_fault_t dmirror_devmem_fault(struct vm_fault *vmf)
 	args.end = args.start + PAGE_SIZE;
 	args.src = &src_pfns;
 	args.dst = &dst_pfns;
-	args.pgmap_owner = dmirror->mdevice;
-	args.flags = MIGRATE_VMA_SELECT_DEVICE_PRIVATE;
+	args.src_owner = dmirror->mdevice;
 
 	if (migrate_vma_setup(&args))
 		return VM_FAULT_SIGBUS;
 
-	ret = dmirror_devmem_fault_alloc_and_copy(&args, dmirror);
+	ret = dmirror_devmem_fault_alloc_and_copy(&args, dmirror->mdevice);
 	if (ret)
 		return ret;
 	migrate_vma_pages(&args);
-	/*
-	 * No device finalize step is needed since
-	 * dmirror_devmem_fault_alloc_and_copy() will have already
-	 * invalidated the device page table.
-	 */
+	dmirror_devmem_fault_finalize_and_map(&args, dmirror);
 	migrate_vma_finalize(&args);
 	return 0;
 }

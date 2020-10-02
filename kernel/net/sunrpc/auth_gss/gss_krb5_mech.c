@@ -443,7 +443,7 @@ context_derive_keys_rc4(struct krb5_ctx *ctx)
 	desc->tfm = hmac;
 
 	err = crypto_shash_digest(desc, sigkeyconstant, slen, ctx->cksum);
-	kfree_sensitive(desc);
+	kzfree(desc);
 	if (err)
 		goto out_err_free_hmac;
 	/*

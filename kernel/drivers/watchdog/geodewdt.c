@@ -185,7 +185,7 @@ static long geodewdt_ioctl(struct file *file, unsigned int cmd,
 
 		if (geodewdt_set_heartbeat(interval))
 			return -EINVAL;
-		fallthrough;
+	/* Fall through */
 	case WDIOC_GETTIMEOUT:
 		return put_user(timeout, p);
 

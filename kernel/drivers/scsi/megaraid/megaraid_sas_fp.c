@@ -80,20 +80,21 @@ u32 mega_mod64(u64 dividend, u32 divisor)
 }
 
 /**
- * mega_div64_32 - Do a 64-bit division
- * @dividend:	Dividend
- * @divisor:	Divisor
+ * @param dividend    : Dividend
+ * @param divisor    : Divisor
  *
  * @return quotient
  **/
 static u64 mega_div64_32(uint64_t dividend, uint32_t divisor)
 {
-	u64 d = dividend;
+	u32 remainder;
+	u64 d;
 
 	if (!divisor)
 		printk(KERN_ERR "megasas : DIVISOR is zero in mod fn\n");
 
-	do_div(d, divisor);
+	d = dividend;
+	remainder = do_div(d, divisor);
 
 	return d;
 }

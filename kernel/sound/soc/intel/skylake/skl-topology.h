@@ -97,7 +97,7 @@ struct skl_audio_data_format {
 	u8 number_of_channels;
 	u8 valid_bit_depth;
 	u8 sample_type;
-	u8 reserved;
+	u8 reserved[1];
 } __packed;
 
 struct skl_base_cfg {

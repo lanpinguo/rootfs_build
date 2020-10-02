@@ -191,16 +191,17 @@ static void emulate_load_store_insn(struct pt_regs *regs,
 			 * memory, so we need to "switch" the address limit to
 			 * user space, so that address check can work properly.
 			 */
-			seg = force_uaccess_begin();
+			seg = get_fs();
+			set_fs(USER_DS);
 			switch (insn.spec3_format.func) {
 			case lhe_op:
 				if (!access_ok(addr, 2)) {
-					force_uaccess_end(seg);
+					set_fs(seg);
 					goto sigbus;
 				}
 				LoadHWE(addr, value, res);
 				if (res) {
-					force_uaccess_end(seg);
+					set_fs(seg);
 					goto fault;
 				}
 				compute_return_epc(regs);
@@ -208,12 +209,12 @@ static void emulate_load_store_insn(struct pt_regs *regs,
 				break;
 			case lwe_op:
 				if (!access_ok(addr, 4)) {
-					force_uaccess_end(seg);
+					set_fs(seg);
 					goto sigbus;
 				}
 				LoadWE(addr, value, res);
 				if (res) {
-					force_uaccess_end(seg);
+					set_fs(seg);
 					goto fault;
 				}
 				compute_return_epc(regs);
@@ -221,12 +222,12 @@ static void emulate_load_store_insn(struct pt_regs *regs,
 				break;
 			case lhue_op:
 				if (!access_ok(addr, 2)) {
-					force_uaccess_end(seg);
+					set_fs(seg);
 					goto sigbus;
 				}
 				LoadHWUE(addr, value, res);
 				if (res) {
-					force_uaccess_end(seg);
+					set_fs(seg);
 					goto fault;
 				}
 				compute_return_epc(regs);
@@ -234,35 +235,35 @@ static void emulate_load_store_insn(struct pt_regs *regs,
 				break;
 			case she_op:
 				if (!access_ok(addr, 2)) {
-					force_uaccess_end(seg);
+					set_fs(seg);
 					goto sigbus;
 				}
 				compute_return_epc(regs);
 				value = regs->regs[insn.spec3_format.rt];
 				StoreHWE(addr, value, res);
 				if (res) {
-					force_uaccess_end(seg);
+					set_fs(seg);
 					goto fault;
 				}
 				break;
 			case swe_op:
 				if (!access_ok(addr, 4)) {
-					force_uaccess_end(seg);
+					set_fs(seg);
 					goto sigbus;
 				}
 				compute_return_epc(regs);
 				value = regs->regs[insn.spec3_format.rt];
 				StoreWE(addr, value, res);
 				if (res) {
-					force_uaccess_end(seg);
+					set_fs(seg);
 					goto fault;
 				}
 				break;
 			default:
-				force_uaccess_end(seg);
+				set_fs(seg);
 				goto sigill;
 			}
-			force_uaccess_end(seg);
+			set_fs(seg);
 		}
 #endif
 		break;

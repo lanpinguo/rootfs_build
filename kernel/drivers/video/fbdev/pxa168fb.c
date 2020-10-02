@@ -60,6 +60,8 @@ static int determine_best_pix_fmt(struct fb_var_screeninfo *var)
 			else
 				return PIX_FMT_BGR1555;
 		}
+
+		/* fall through */
 	}
 
 	/*
@@ -85,6 +87,8 @@ static int determine_best_pix_fmt(struct fb_var_screeninfo *var)
 			else
 				return PIX_FMT_BGR888UNPACK;
 		}
+
+		/* fall through */
 	}
 
 	return -EINVAL;

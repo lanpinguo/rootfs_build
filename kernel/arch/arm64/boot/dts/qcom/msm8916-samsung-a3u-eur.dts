@@ -22,12 +22,6 @@
 	};
 };
 
-&accelerometer {
-	mount-matrix = "0", "1", "0",
-		       "1", "0", "0",
-		       "0", "0", "1";
-};
-
 &dsi0 {
 	panel@0 {
 		reg = <0>;
@@ -57,10 +51,14 @@
 
 &msmgpio {
 	panel_vdd3_default: panel-vdd3-default {
-		pins = "gpio9";
-		function = "gpio";
-
-		drive-strength = <2>;
-		bias-disable;
+		pinmux {
+			function = "gpio";
+			pins = "gpio9";
+		};
+		pinconf {
+			pins = "gpio9";
+			drive-strength = <2>;
+			bias-disable;
+		};
 	};
 };

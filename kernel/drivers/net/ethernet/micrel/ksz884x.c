@@ -4390,9 +4390,9 @@ static int ksz_alloc_desc(struct dev_info *adapter)
 		DESC_ALIGNMENT;
 
 	adapter->desc_pool.alloc_virt =
-		dma_alloc_coherent(&adapter->pdev->dev,
-				   adapter->desc_pool.alloc_size,
-				   &adapter->desc_pool.dma_addr, GFP_KERNEL);
+		pci_zalloc_consistent(adapter->pdev,
+				      adapter->desc_pool.alloc_size,
+				      &adapter->desc_pool.dma_addr);
 	if (adapter->desc_pool.alloc_virt == NULL) {
 		adapter->desc_pool.alloc_size = 0;
 		return 1;
@@ -4431,8 +4431,7 @@ static int ksz_alloc_desc(struct dev_info *adapter)
 static void free_dma_buf(struct dev_info *adapter, struct ksz_dma_buf *dma_buf,
 	int direction)
 {
-	dma_unmap_single(&adapter->pdev->dev, dma_buf->dma, dma_buf->len,
-			 direction);
+	pci_unmap_single(adapter->pdev, dma_buf->dma, dma_buf->len, direction);
 	dev_kfree_skb(dma_buf->skb);
 	dma_buf->skb = NULL;
 	dma_buf->dma = 0;
@@ -4457,15 +4456,16 @@ static void ksz_init_rx_buffers(struct dev_info *adapter)
 
 		dma_buf = DMA_BUFFER(desc);
 		if (dma_buf->skb && dma_buf->len != adapter->mtu)
-			free_dma_buf(adapter, dma_buf, DMA_FROM_DEVICE);
+			free_dma_buf(adapter, dma_buf, PCI_DMA_FROMDEVICE);
 		dma_buf->len = adapter->mtu;
 		if (!dma_buf->skb)
 			dma_buf->skb = alloc_skb(dma_buf->len, GFP_ATOMIC);
 		if (dma_buf->skb && !dma_buf->dma)
-			dma_buf->dma = dma_map_single(&adapter->pdev->dev,
-						skb_tail_pointer(dma_buf->skb),
-						dma_buf->len,
-						DMA_FROM_DEVICE);
+			dma_buf->dma = pci_map_single(
+				adapter->pdev,
+				skb_tail_pointer(dma_buf->skb),
+				dma_buf->len,
+				PCI_DMA_FROMDEVICE);
 
 		/* Set descriptor. */
 		set_rx_buf(desc, dma_buf->dma);
@@ -4543,10 +4543,11 @@ static void ksz_free_desc(struct dev_info *adapter)
 
 	/* Free memory. */
 	if (adapter->desc_pool.alloc_virt)
-		dma_free_coherent(&adapter->pdev->dev,
-				  adapter->desc_pool.alloc_size,
-				  adapter->desc_pool.alloc_virt,
-				  adapter->desc_pool.dma_addr);
+		pci_free_consistent(
+			adapter->pdev,
+			adapter->desc_pool.alloc_size,
+			adapter->desc_pool.alloc_virt,
+			adapter->desc_pool.dma_addr);
 
 	/* Reset resource pool. */
 	adapter->desc_pool.alloc_size = 0;
@@ -4589,10 +4590,12 @@ static void ksz_free_buffers(struct dev_info *adapter,
 static void ksz_free_mem(struct dev_info *adapter)
 {
 	/* Free transmit buffers. */
-	ksz_free_buffers(adapter, &adapter->hw.tx_desc_info, DMA_TO_DEVICE);
+	ksz_free_buffers(adapter, &adapter->hw.tx_desc_info,
+		PCI_DMA_TODEVICE);
 
 	/* Free receive buffers. */
-	ksz_free_buffers(adapter, &adapter->hw.rx_desc_info, DMA_FROM_DEVICE);
+	ksz_free_buffers(adapter, &adapter->hw.rx_desc_info,
+		PCI_DMA_FROMDEVICE);
 
 	/* Free descriptors. */
 	ksz_free_desc(adapter);
@@ -4654,8 +4657,9 @@ static void send_packet(struct sk_buff *skb, struct net_device *dev)
 
 		dma_buf->len = skb_headlen(skb);
 
-		dma_buf->dma = dma_map_single(&hw_priv->pdev->dev, skb->data,
-					      dma_buf->len, DMA_TO_DEVICE);
+		dma_buf->dma = pci_map_single(
+			hw_priv->pdev, skb->data, dma_buf->len,
+			PCI_DMA_TODEVICE);
 		set_tx_buf(desc, dma_buf->dma);
 		set_tx_len(desc, dma_buf->len);
 
@@ -4672,10 +4676,11 @@ static void send_packet(struct sk_buff *skb, struct net_device *dev)
 			dma_buf = DMA_BUFFER(desc);
 			dma_buf->len = skb_frag_size(this_frag);
 
-			dma_buf->dma = dma_map_single(&hw_priv->pdev->dev,
-						      skb_frag_address(this_frag),
-						      dma_buf->len,
-						      DMA_TO_DEVICE);
+			dma_buf->dma = pci_map_single(
+				hw_priv->pdev,
+				skb_frag_address(this_frag),
+				dma_buf->len,
+				PCI_DMA_TODEVICE);
 			set_tx_buf(desc, dma_buf->dma);
 			set_tx_len(desc, dma_buf->len);
 
@@ -4695,8 +4700,9 @@ static void send_packet(struct sk_buff *skb, struct net_device *dev)
 	} else {
 		dma_buf->len = len;
 
-		dma_buf->dma = dma_map_single(&hw_priv->pdev->dev, skb->data,
-					      dma_buf->len, DMA_TO_DEVICE);
+		dma_buf->dma = pci_map_single(
+			hw_priv->pdev, skb->data, dma_buf->len,
+			PCI_DMA_TODEVICE);
 		set_tx_buf(desc, dma_buf->dma);
 		set_tx_len(desc, dma_buf->len);
 	}
@@ -4750,8 +4756,9 @@ static void transmit_cleanup(struct dev_info *hw_priv, int normal)
 		}
 
 		dma_buf = DMA_BUFFER(desc);
-		dma_unmap_single(&hw_priv->pdev->dev, dma_buf->dma,
-				 dma_buf->len, DMA_TO_DEVICE);
+		pci_unmap_single(
+			hw_priv->pdev, dma_buf->dma, dma_buf->len,
+			PCI_DMA_TODEVICE);
 
 		/* This descriptor contains the last buffer in the packet. */
 		if (dma_buf->skb) {
@@ -4984,8 +4991,9 @@ static inline int rx_proc(struct net_device *dev, struct ksz_hw* hw,
 	packet_len = status.rx.frame_len - 4;
 
 	dma_buf = DMA_BUFFER(desc);
-	dma_sync_single_for_cpu(&hw_priv->pdev->dev, dma_buf->dma,
-				packet_len + 4, DMA_FROM_DEVICE);
+	pci_dma_sync_single_for_cpu(
+		hw_priv->pdev, dma_buf->dma, packet_len + 4,
+		PCI_DMA_FROMDEVICE);
 
 	do {
 		/* skb->data != skb->head */
@@ -6927,8 +6935,8 @@ static int pcidev_init(struct pci_dev *pdev, const struct pci_device_id *id)
 
 	result = -ENODEV;
 
-	if (dma_set_mask(&pdev->dev, DMA_BIT_MASK(32)) ||
-	    dma_set_coherent_mask(&pdev->dev, DMA_BIT_MASK(32)))
+	if (pci_set_dma_mask(pdev, DMA_BIT_MASK(32)) ||
+			pci_set_consistent_dma_mask(pdev, DMA_BIT_MASK(32)))
 		return result;
 
 	reg_base = pci_resource_start(pdev, 0);
@@ -7147,14 +7155,17 @@ static void pcidev_exit(struct pci_dev *pdev)
 	kfree(info);
 }
 
-static int __maybe_unused pcidev_resume(struct device *dev_d)
+#ifdef CONFIG_PM
+static int pcidev_resume(struct pci_dev *pdev)
 {
 	int i;
-	struct platform_info *info = dev_get_drvdata(dev_d);
+	struct platform_info *info = pci_get_drvdata(pdev);
 	struct dev_info *hw_priv = &info->dev_info;
 	struct ksz_hw *hw = &hw_priv->hw;
 
-	device_wakeup_disable(dev_d);
+	pci_set_power_state(pdev, PCI_D0);
+	pci_restore_state(pdev);
+	pci_enable_wake(pdev, PCI_D0, 0);
 
 	if (hw_priv->wol_enable)
 		hw_cfg_wol_pme(hw, 0);
@@ -7171,10 +7182,10 @@ static int __maybe_unused pcidev_resume(struct device *dev_d)
 	return 0;
 }
 
-static int __maybe_unused pcidev_suspend(struct device *dev_d)
+static int pcidev_suspend(struct pci_dev *pdev, pm_message_t state)
 {
 	int i;
-	struct platform_info *info = dev_get_drvdata(dev_d);
+	struct platform_info *info = pci_get_drvdata(pdev);
 	struct dev_info *hw_priv = &info->dev_info;
 	struct ksz_hw *hw = &hw_priv->hw;
 
@@ -7196,9 +7207,12 @@ static int __maybe_unused pcidev_suspend(struct device *dev_d)
 		hw_cfg_wol_pme(hw, 1);
 	}
 
-	device_wakeup_enable(dev_d);
+	pci_save_state(pdev);
+	pci_enable_wake(pdev, pci_choose_state(pdev, state), 1);
+	pci_set_power_state(pdev, pci_choose_state(pdev, state));
 	return 0;
 }
+#endif
 
 static char pcidev_name[] = "ksz884xp";
 
@@ -7212,10 +7226,11 @@ static const struct pci_device_id pcidev_table[] = {
 
 MODULE_DEVICE_TABLE(pci, pcidev_table);
 
-static SIMPLE_DEV_PM_OPS(pcidev_pm_ops, pcidev_suspend, pcidev_resume);
-
 static struct pci_driver pci_device_driver = {
-	.driver.pm	= &pcidev_pm_ops,
+#ifdef CONFIG_PM
+	.suspend	= pcidev_suspend,
+	.resume		= pcidev_resume,
+#endif
 	.name		= pcidev_name,
 	.id_table	= pcidev_table,
 	.probe		= pcidev_init,

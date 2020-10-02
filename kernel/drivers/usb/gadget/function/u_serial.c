@@ -386,7 +386,7 @@ static void gs_rx_push(struct work_struct *work)
 			/* presumably a transient fault */
 			pr_warn("ttyGS%d: unexpected RX status %d\n",
 				port->port_num, req->status);
-			fallthrough;
+			/* FALLTHROUGH */
 		case 0:
 			/* normal completion */
 			break;
@@ -472,7 +472,7 @@ static void gs_write_complete(struct usb_ep *ep, struct usb_request *req)
 		/* presumably a transient fault */
 		pr_warn("%s: unexpected %s status %d\n",
 			__func__, ep->name, req->status);
-		fallthrough;
+		/* FALL THROUGH */
 	case 0:
 		/* normal completion */
 		gs_start_tx(port);
@@ -527,7 +527,7 @@ static int gs_alloc_requests(struct usb_ep *ep, struct list_head *head,
 
 /**
  * gs_start_io - start USB I/O streams
- * @port: port to use
+ * @dev: encapsulates endpoints to use
  * Context: holding port_lock; port_tty and port_usb are non-null
  *
  * We only start I/O when something is connected to both sides of
@@ -871,7 +871,7 @@ static void gs_console_complete_out(struct usb_ep *ep, struct usb_request *req)
 	default:
 		pr_warn("%s: unexpected %s status %d\n",
 			__func__, ep->name, req->status);
-		fallthrough;
+		/* fall through */
 	case 0:
 		/* normal completion */
 		spin_lock(&cons->lock);

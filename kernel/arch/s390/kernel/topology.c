@@ -356,9 +356,9 @@ static atomic_t topology_poll = ATOMIC_INIT(0);
 static void set_topology_timer(void)
 {
 	if (atomic_add_unless(&topology_poll, -1, 0))
-		mod_timer(&topology_timer, jiffies + msecs_to_jiffies(100));
+		mod_timer(&topology_timer, jiffies + HZ / 10);
 	else
-		mod_timer(&topology_timer, jiffies + msecs_to_jiffies(60 * MSEC_PER_SEC));
+		mod_timer(&topology_timer, jiffies + HZ * 60);
 }
 
 void topology_expect_change(void)

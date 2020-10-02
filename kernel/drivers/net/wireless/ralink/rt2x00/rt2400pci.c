@@ -1834,7 +1834,8 @@ static struct pci_driver rt2400pci_driver = {
 	.id_table	= rt2400pci_device_table,
 	.probe		= rt2400pci_probe,
 	.remove		= rt2x00pci_remove,
-	.driver.pm	= &rt2x00pci_pm_ops,
+	.suspend	= rt2x00pci_suspend,
+	.resume		= rt2x00pci_resume,
 };
 
 module_pci_driver(rt2400pci_driver);

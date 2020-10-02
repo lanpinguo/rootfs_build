@@ -568,7 +568,10 @@ out:
 }
 
 static struct amba_id catu_ids[] = {
-	CS_AMBA_ID(0x000bb9ee),
+	{
+		.id	= 0x000bb9ee,
+		.mask	= 0x000fffff,
+	},
 	{},
 };
 

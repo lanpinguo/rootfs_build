@@ -3,7 +3,6 @@
 #define _ASM_X86_BUG_H
 
 #include <linux/stringify.h>
-#include <linux/instrumentation.h>
 
 /*
  * Despite that some emulators terminate on UD2, we use it for WARN().

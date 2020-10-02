@@ -39,7 +39,7 @@ struct tpacket_kbdq_core {
 	char		*nxt_offset;
 	struct sk_buff	*skb;
 
-	rwlock_t	blk_fill_in_prog_lock;
+	atomic_t	blk_fill_in_prog;
 
 	/* Default is set to 8ms */
 #define DEFAULT_PRB_RETIRE_TOV	(8)

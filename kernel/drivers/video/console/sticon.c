@@ -132,21 +132,21 @@ static void sticon_cursor(struct vc_data *conp, int mode)
 {
     unsigned short car1;
 
-    car1 = conp->vc_screenbuf[conp->state.x + conp->state.y * conp->vc_cols];
+    car1 = conp->vc_screenbuf[conp->vc_x + conp->vc_y * conp->vc_cols];
     switch (mode) {
     case CM_ERASE:
-	sti_putc(sticon_sti, car1, conp->state.y, conp->state.x);
+	sti_putc(sticon_sti, car1, conp->vc_y, conp->vc_x);
 	break;
     case CM_MOVE:
     case CM_DRAW:
-	switch (CUR_SIZE(conp->vc_cursor_type)) {
+	switch (conp->vc_cursor_type & 0x0f) {
 	case CUR_UNDERLINE:
 	case CUR_LOWER_THIRD:
 	case CUR_LOWER_HALF:
 	case CUR_TWO_THIRDS:
 	case CUR_BLOCK:
 	    sti_putc(sticon_sti, (car1 & 255) + (0 << 8) + (7 << 11),
-		     conp->state.y, conp->state.x);
+		     conp->vc_y, conp->vc_x);
 	    break;
 	}
 	break;
@@ -288,10 +288,8 @@ static unsigned long sticon_getxy(struct vc_data *conp, unsigned long pos,
     return ret;
 }
 
-static u8 sticon_build_attr(struct vc_data *conp, u8 color,
-			    enum vc_intensity intens,
-			    bool blink, bool underline, bool reverse,
-			    bool italic)
+static u8 sticon_build_attr(struct vc_data *conp, u8 color, u8 intens,
+			    u8 blink, u8 underline, u8 reverse, u8 italic)
 {
     u8 attr = ((color & 0x70) >> 1) | ((color & 7));
 

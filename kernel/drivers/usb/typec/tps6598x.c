@@ -100,7 +100,7 @@ struct tps6598x {
 
 /*
  * Max data bytes for Data1, Data2, and other registers. See ch 1.3.2:
- * https://www.ti.com/lit/ug/slvuan1a/slvuan1a.pdf
+ * http://www.ti.com/lit/ug/slvuan1a/slvuan1a.pdf
  */
 #define TPS_MAX_LEN	64
 

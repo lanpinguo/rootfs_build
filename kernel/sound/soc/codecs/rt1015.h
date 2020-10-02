@@ -368,11 +368,6 @@ enum {
 	FIXED_ADAPTIVE,
 };
 
-enum {
-	RT1015_Enable_Boost = 0,
-	RT1015_Bypass_Boost,
-};
-
 struct rt1015_priv {
 	struct snd_soc_component *component;
 	struct regmap *regmap;

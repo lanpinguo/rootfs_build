@@ -47,6 +47,7 @@
  */
 
 #include <linux/amba/bus.h>
+#include <linux/amba/clcd-regs.h>
 #include <linux/dma-buf.h>
 #include <linux/module.h>
 #include <linux/of.h>

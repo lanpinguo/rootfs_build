@@ -31,7 +31,6 @@ powerpc
     transactional_memory
     ultravisor
     vas-api
-    vcpudispatch_stats
 
 .. only::  subproject and html
 

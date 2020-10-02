@@ -502,15 +502,15 @@ struct drm_amdgpu_gem_op {
 #define AMDGPU_VM_MTYPE_MASK		(0xf << 5)
 /* Default MTYPE. Pre-AI must use this.  Recommended for newer ASICs. */
 #define AMDGPU_VM_MTYPE_DEFAULT		(0 << 5)
-/* Use Non Coherent MTYPE instead of default MTYPE */
+/* Use NC MTYPE instead of default MTYPE */
 #define AMDGPU_VM_MTYPE_NC		(1 << 5)
-/* Use Write Combine MTYPE instead of default MTYPE */
+/* Use WC MTYPE instead of default MTYPE */
 #define AMDGPU_VM_MTYPE_WC		(2 << 5)
-/* Use Cache Coherent MTYPE instead of default MTYPE */
+/* Use CC MTYPE instead of default MTYPE */
 #define AMDGPU_VM_MTYPE_CC		(3 << 5)
-/* Use UnCached MTYPE instead of default MTYPE */
+/* Use UC MTYPE instead of default MTYPE */
 #define AMDGPU_VM_MTYPE_UC		(4 << 5)
-/* Use Read Write MTYPE instead of default MTYPE */
+/* Use RW MTYPE instead of default MTYPE */
 #define AMDGPU_VM_MTYPE_RW		(5 << 5)
 
 struct drm_amdgpu_gem_va {

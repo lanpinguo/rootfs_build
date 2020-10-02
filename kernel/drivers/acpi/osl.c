@@ -77,10 +77,7 @@ struct acpi_ioremap {
 	void __iomem *virt;
 	acpi_physical_address phys;
 	acpi_size size;
-	union {
-		unsigned long refcount;
-		struct rcu_work rwork;
-	} track;
+	unsigned long refcount;
 };
 
 static LIST_HEAD(acpi_ioremaps);
@@ -253,7 +250,7 @@ void __iomem *acpi_os_get_iomem(acpi_physical_address phys, unsigned int size)
 	map = acpi_map_lookup(phys, size);
 	if (map) {
 		virt = map->virt + (phys - map->phys);
-		map->track.refcount++;
+		map->refcount++;
 	}
 	mutex_unlock(&acpi_ioremap_lock);
 	return virt;
@@ -338,7 +335,7 @@ void __iomem __ref
 	/* Check if there's a suitable mapping already. */
 	map = acpi_map_lookup(phys, size);
 	if (map) {
-		map->track.refcount++;
+		map->refcount++;
 		goto out;
 	}
 
@@ -350,7 +347,7 @@ void __iomem __ref
 
 	pg_off = round_down(phys, PAGE_SIZE);
 	pg_sz = round_up(phys + size, PAGE_SIZE) - pg_off;
-	virt = acpi_map(phys, size);
+	virt = acpi_map(pg_off, pg_sz);
 	if (!virt) {
 		mutex_unlock(&acpi_ioremap_lock);
 		kfree(map);
@@ -358,10 +355,10 @@ void __iomem __ref
 	}
 
 	INIT_LIST_HEAD(&map->list);
-	map->virt = (void __iomem __force *)((unsigned long)virt & PAGE_MASK);
+	map->virt = virt;
 	map->phys = pg_off;
 	map->size = pg_sz;
-	map->track.refcount = 1;
+	map->refcount = 1;
 
 	list_add_tail_rcu(&map->list, &acpi_ioremaps);
 
@@ -377,26 +374,21 @@ void *__ref acpi_os_map_memory(acpi_physical_address phys, acpi_size size)
 }
 EXPORT_SYMBOL_GPL(acpi_os_map_memory);
 
-static void acpi_os_map_remove(struct work_struct *work)
+/* Must be called with mutex_lock(&acpi_ioremap_lock) */
+static unsigned long acpi_os_drop_map_ref(struct acpi_ioremap *map)
 {
-	struct acpi_ioremap *map = container_of(to_rcu_work(work),
-						struct acpi_ioremap,
-						track.rwork);
+	unsigned long refcount = --map->refcount;
 
-	acpi_unmap(map->phys, map->virt);
-	kfree(map);
+	if (!refcount)
+		list_del_rcu(&map->list);
+	return refcount;
 }
 
-/* Must be called with mutex_lock(&acpi_ioremap_lock) */
-static void acpi_os_drop_map_ref(struct acpi_ioremap *map)
+static void acpi_os_map_cleanup(struct acpi_ioremap *map)
 {
-	if (--map->track.refcount)
-		return;
-
-	list_del_rcu(&map->list);
-
-	INIT_RCU_WORK(&map->track.rwork, acpi_os_map_remove);
-	queue_rcu_work(system_wq, &map->track.rwork);
+	synchronize_rcu_expedited();
+	acpi_unmap(map->phys, map->virt);
+	kfree(map);
 }
 
 /**
@@ -405,8 +397,8 @@ static void acpi_os_drop_map_ref(struct acpi_ioremap *map)
  * @size: Size of the address range to drop a reference to.
  *
  * Look up the given virtual address range in the list of existing ACPI memory
- * mappings, drop a reference to it and if there are no more active references
- * to it, queue it up for later removal.
+ * mappings, drop a reference to it and unmap it if there are no more active
+ * references to it.
  *
  * During early init (when acpi_permanent_mmap has not been set yet) this
  * routine simply calls __acpi_unmap_table() to get the job done.  Since
@@ -416,6 +408,7 @@ static void acpi_os_drop_map_ref(struct acpi_ioremap *map)
 void __ref acpi_os_unmap_iomem(void __iomem *virt, acpi_size size)
 {
 	struct acpi_ioremap *map;
+	unsigned long refcount;
 
 	if (!acpi_permanent_mmap) {
 		__acpi_unmap_table(virt, size);
@@ -423,27 +416,23 @@ void __ref acpi_os_unmap_iomem(void __iomem *virt, acpi_size size)
 	}
 
 	mutex_lock(&acpi_ioremap_lock);
-
 	map = acpi_map_lookup_virt(virt, size);
 	if (!map) {
 		mutex_unlock(&acpi_ioremap_lock);
 		WARN(true, PREFIX "%s: bad address %p\n", __func__, virt);
 		return;
 	}
-	acpi_os_drop_map_ref(map);
-
+	refcount = acpi_os_drop_map_ref(map);
 	mutex_unlock(&acpi_ioremap_lock);
+
+	if (!refcount)
+		acpi_os_map_cleanup(map);
 }
 EXPORT_SYMBOL_GPL(acpi_os_unmap_iomem);
 
-/**
- * acpi_os_unmap_memory - Drop a memory mapping reference.
- * @virt: Start of the address range to drop a reference to.
- * @size: Size of the address range to drop a reference to.
- */
 void __ref acpi_os_unmap_memory(void *virt, acpi_size size)
 {
-	acpi_os_unmap_iomem((void __iomem *)virt, size);
+	return acpi_os_unmap_iomem((void __iomem *)virt, size);
 }
 EXPORT_SYMBOL_GPL(acpi_os_unmap_memory);
 
@@ -472,6 +461,7 @@ void acpi_os_unmap_generic_address(struct acpi_generic_address *gas)
 {
 	u64 addr;
 	struct acpi_ioremap *map;
+	unsigned long refcount;
 
 	if (gas->space_id != ACPI_ADR_SPACE_SYSTEM_MEMORY)
 		return;
@@ -482,15 +472,16 @@ void acpi_os_unmap_generic_address(struct acpi_generic_address *gas)
 		return;
 
 	mutex_lock(&acpi_ioremap_lock);
-
 	map = acpi_map_lookup(addr, gas->bit_width / 8);
 	if (!map) {
 		mutex_unlock(&acpi_ioremap_lock);
 		return;
 	}
-	acpi_os_drop_map_ref(map);
-
+	refcount = acpi_os_drop_map_ref(map);
 	mutex_unlock(&acpi_ioremap_lock);
+
+	if (!refcount)
+		acpi_os_map_cleanup(map);
 }
 EXPORT_SYMBOL(acpi_os_unmap_generic_address);
 
@@ -1575,26 +1566,11 @@ static acpi_status acpi_deactivate_mem_region(acpi_handle handle, u32 level,
 acpi_status acpi_release_memory(acpi_handle handle, struct resource *res,
 				u32 level)
 {
-	acpi_status status;
-
 	if (!(res->flags & IORESOURCE_MEM))
 		return AE_TYPE;
 
-	status = acpi_walk_namespace(ACPI_TYPE_REGION, handle, level,
-				     acpi_deactivate_mem_region, NULL,
-				     res, NULL);
-	if (ACPI_FAILURE(status))
-		return status;
-
-	/*
-	 * Wait for all of the mappings queued up for removal by
-	 * acpi_deactivate_mem_region() to actually go away.
-	 */
-	synchronize_rcu();
-	rcu_barrier();
-	flush_scheduled_work();
-
-	return AE_OK;
+	return acpi_walk_namespace(ACPI_TYPE_REGION, handle, level,
+				   acpi_deactivate_mem_region, NULL, res, NULL);
 }
 EXPORT_SYMBOL_GPL(acpi_release_memory);
 

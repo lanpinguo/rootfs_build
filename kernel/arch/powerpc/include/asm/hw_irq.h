@@ -200,14 +200,17 @@ static inline bool arch_irqs_disabled(void)
 #define powerpc_local_irq_pmu_save(flags)			\
 	 do {							\
 		raw_local_irq_pmu_save(flags);			\
-		if (!raw_irqs_disabled_flags(flags))		\
-			trace_hardirqs_off();			\
+		trace_hardirqs_off();				\
 	} while(0)
 #define powerpc_local_irq_pmu_restore(flags)			\
 	do {							\
-		if (!raw_irqs_disabled_flags(flags))		\
+		if (raw_irqs_disabled_flags(flags)) {		\
+			raw_local_irq_pmu_restore(flags);	\
+			trace_hardirqs_off();			\
+		} else {					\
 			trace_hardirqs_on();			\
-		raw_local_irq_pmu_restore(flags);		\
+			raw_local_irq_pmu_restore(flags);	\
+		}						\
 	} while(0)
 #else
 #define powerpc_local_irq_pmu_save(flags)			\

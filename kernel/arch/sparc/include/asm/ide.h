@@ -13,6 +13,7 @@
 
 #include <asm/io.h>
 #ifdef CONFIG_SPARC64
+#include <asm/pgalloc.h>
 #include <asm/spitfire.h>
 #include <asm/cacheflush.h>
 #include <asm/page.h>

@@ -188,7 +188,8 @@ static int imx8m_probe(struct snd_sof_dev *sdev)
 	}
 
 	sdev->bar[SOF_FW_BLK_TYPE_SRAM] = devm_ioremap_wc(sdev->dev, res.start,
-							  resource_size(&res));
+							  res.end - res.start +
+							  1);
 	if (!sdev->bar[SOF_FW_BLK_TYPE_SRAM]) {
 		dev_err(sdev->dev, "failed to ioremap mem 0x%x size 0x%x\n",
 			base, size);
@@ -238,7 +239,7 @@ static int imx8m_ipc_pcm_params(struct snd_sof_dev *sdev,
 
 static struct snd_soc_dai_driver imx8m_dai[] = {
 {
-	.name = "sai3",
+	.name = "sai-port",
 	.playback = {
 		.channels_min = 1,
 		.channels_max = 32,
@@ -279,7 +280,7 @@ struct snd_sof_dsp_ops sof_imx8m_ops = {
 
 	/* DAI drivers */
 	.drv = imx8m_dai,
-	.num_drv = ARRAY_SIZE(imx8m_dai),
+	.num_drv = 1, /* we have only 1 SAI interface on i.MX8M */
 
 	.hw_info = SNDRV_PCM_INFO_MMAP |
 		SNDRV_PCM_INFO_MMAP_VALID |

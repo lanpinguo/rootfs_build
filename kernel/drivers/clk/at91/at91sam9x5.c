@@ -226,8 +226,7 @@ static void __init at91sam9x5_pmc_setup(struct device_node *np,
 
 		hw = at91_clk_register_programmable(regmap, name,
 						    parent_names, 5, i,
-						    &at91sam9x5_programmable_layout,
-						    NULL);
+						    &at91sam9x5_programmable_layout);
 		if (IS_ERR(hw))
 			goto err_free;
 
@@ -258,7 +257,7 @@ static void __init at91sam9x5_pmc_setup(struct device_node *np,
 							 at91sam9x5_periphck[i].n,
 							 "masterck",
 							 at91sam9x5_periphck[i].id,
-							 &range, INT_MIN);
+							 &range);
 		if (IS_ERR(hw))
 			goto err_free;
 
@@ -271,7 +270,7 @@ static void __init at91sam9x5_pmc_setup(struct device_node *np,
 							 extra_pcks[i].n,
 							 "masterck",
 							 extra_pcks[i].id,
-							 &range, INT_MIN);
+							 &range);
 		if (IS_ERR(hw))
 			goto err_free;
 

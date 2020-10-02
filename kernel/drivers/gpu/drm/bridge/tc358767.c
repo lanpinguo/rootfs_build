@@ -1306,7 +1306,6 @@ static bool tc_bridge_mode_fixup(struct drm_bridge *bridge,
 }
 
 static enum drm_mode_status tc_mode_valid(struct drm_bridge *bridge,
-					  const struct drm_display_info *info,
 					  const struct drm_display_mode *mode)
 {
 	struct tc_data *tc = bridge_to_tc(bridge);

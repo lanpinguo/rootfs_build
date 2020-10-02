@@ -24,7 +24,12 @@
 
 #define RING_TYPE(ring) ((ring)->is_tx ? "TX ring" : "RX ring")
 
-#define RING_FIRST_USABLE_HOPID	1
+/*
+ * Used to enable end-to-end workaround for missing RX packets. Do not
+ * use this ring for anything else.
+ */
+#define RING_E2E_UNUSED_HOPID	2
+#define RING_FIRST_USABLE_HOPID	TB_PATH_MIN_HOPID
 
 /*
  * Minimal number of vectors when we use MSI-X. Two for control channel
@@ -435,7 +440,7 @@ static int nhi_alloc_hop(struct tb_nhi *nhi, struct tb_ring *ring)
 
 		/*
 		 * Automatically allocate HopID from the non-reserved
-		 * range 1 .. hop_count - 1.
+		 * range 8 .. hop_count - 1.
 		 */
 		for (i = RING_FIRST_USABLE_HOPID; i < nhi->hop_count; i++) {
 			if (ring->is_tx) {
@@ -490,6 +495,10 @@ static struct tb_ring *tb_ring_alloc(struct tb_nhi *nhi, u32 hop, int size,
 
 	dev_dbg(&nhi->pdev->dev, "allocating %s ring %d of size %d\n",
 		transmit ? "TX" : "RX", hop, size);
+
+	/* Tx Ring 2 is reserved for E2E workaround */
+	if (transmit && hop == RING_E2E_UNUSED_HOPID)
+		return NULL;
 
 	ring = kzalloc(sizeof(*ring), GFP_KERNEL);
 	if (!ring)
@@ -603,6 +612,19 @@ void tb_ring_start(struct tb_ring *ring)
 	} else {
 		frame_size = TB_FRAME_SIZE;
 		flags = RING_FLAG_ENABLE | RING_FLAG_RAW;
+	}
+
+	if (ring->flags & RING_FLAG_E2E && !ring->is_tx) {
+		u32 hop;
+
+		/*
+		 * In order not to lose Rx packets we enable end-to-end
+		 * workaround which transfers Rx credits to an unused Tx
+		 * HopID.
+		 */
+		hop = RING_E2E_UNUSED_HOPID << REG_RX_OPTIONS_E2E_HOP_SHIFT;
+		hop &= REG_RX_OPTIONS_E2E_HOP_MASK;
+		flags |= hop | RING_FLAG_E2E_FLOW_CONTROL;
 	}
 
 	ring_iowrite64desc(ring, ring->descriptors_dma, 0);
@@ -1101,7 +1123,9 @@ static int nhi_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	/* cannot fail - table is allocated bin pcim_iomap_regions */
 	nhi->iobase = pcim_iomap_table(pdev)[0];
 	nhi->hop_count = ioread32(nhi->iobase + REG_HOP_COUNT) & 0x3ff;
-	dev_dbg(&pdev->dev, "total paths: %d\n", nhi->hop_count);
+	if (nhi->hop_count != 12 && nhi->hop_count != 32)
+		dev_warn(&pdev->dev, "unexpected hop count: %d\n",
+			 nhi->hop_count);
 
 	nhi->tx_rings = devm_kcalloc(&pdev->dev, nhi->hop_count,
 				     sizeof(*nhi->tx_rings), GFP_KERNEL);

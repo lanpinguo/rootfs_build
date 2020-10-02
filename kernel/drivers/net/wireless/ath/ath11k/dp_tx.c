@@ -121,10 +121,8 @@ tcl_ring_sel:
 	spin_unlock_bh(&tx_ring->tx_idr_lock);
 
 	if (ret < 0) {
-		if (ring_map == (BIT(DP_TCL_NUM_RING_MAX) - 1)) {
-			atomic_inc(&ab->soc_stats.tx_err.misc_fail);
+		if (ring_map == (BIT(DP_TCL_NUM_RING_MAX) - 1))
 			return -ENOSPC;
-		}
 
 		/* Check if the next ring is available */
 		ring_selector++;
@@ -182,13 +180,11 @@ tcl_ring_sel:
 	default:
 		/* TODO: Take care of other encap modes as well */
 		ret = -EINVAL;
-		atomic_inc(&ab->soc_stats.tx_err.misc_fail);
 		goto fail_remove_idr;
 	}
 
 	ti.paddr = dma_map_single(ab->dev, skb->data, skb->len, DMA_TO_DEVICE);
 	if (dma_mapping_error(ab->dev, ti.paddr)) {
-		atomic_inc(&ab->soc_stats.tx_err.misc_fail);
 		ath11k_warn(ab, "failed to DMA map data Tx buffer\n");
 		ret = -ENOMEM;
 		goto fail_remove_idr;
@@ -212,7 +208,6 @@ tcl_ring_sel:
 		 * desc because the desc is directly enqueued onto hw queue.
 		 */
 		ath11k_hal_srng_access_end(ab, tcl_ring);
-		ab->soc_stats.tx_err.desc_na[ti.ring_id]++;
 		spin_unlock_bh(&tcl_ring->lock);
 		ret = -ENOMEM;
 

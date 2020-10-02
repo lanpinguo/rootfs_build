@@ -20,7 +20,7 @@ last known snapshot and evolved the driver to the state it is in
 here.
 
 More information on this driver can be found at:
-https://www.isely.net/pvrusb2.html
+http://www.isely.net/pvrusb2.html
 
 
 This driver has a strong separation of layers.  They are very

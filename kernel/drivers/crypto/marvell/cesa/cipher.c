@@ -508,8 +508,7 @@ struct skcipher_alg mv_cesa_ecb_des_alg = {
 		.cra_name = "ecb(des)",
 		.cra_driver_name = "mv-ecb-des",
 		.cra_priority = 300,
-		.cra_flags = CRYPTO_ALG_KERN_DRIVER_ONLY | CRYPTO_ALG_ASYNC |
-			     CRYPTO_ALG_ALLOCATES_MEMORY,
+		.cra_flags = CRYPTO_ALG_KERN_DRIVER_ONLY | CRYPTO_ALG_ASYNC,
 		.cra_blocksize = DES_BLOCK_SIZE,
 		.cra_ctxsize = sizeof(struct mv_cesa_des_ctx),
 		.cra_alignmask = 0,
@@ -559,8 +558,7 @@ struct skcipher_alg mv_cesa_cbc_des_alg = {
 		.cra_name = "cbc(des)",
 		.cra_driver_name = "mv-cbc-des",
 		.cra_priority = 300,
-		.cra_flags = CRYPTO_ALG_KERN_DRIVER_ONLY | CRYPTO_ALG_ASYNC |
-			     CRYPTO_ALG_ALLOCATES_MEMORY,
+		.cra_flags = CRYPTO_ALG_KERN_DRIVER_ONLY | CRYPTO_ALG_ASYNC,
 		.cra_blocksize = DES_BLOCK_SIZE,
 		.cra_ctxsize = sizeof(struct mv_cesa_des_ctx),
 		.cra_alignmask = 0,
@@ -618,8 +616,7 @@ struct skcipher_alg mv_cesa_ecb_des3_ede_alg = {
 		.cra_name = "ecb(des3_ede)",
 		.cra_driver_name = "mv-ecb-des3-ede",
 		.cra_priority = 300,
-		.cra_flags = CRYPTO_ALG_KERN_DRIVER_ONLY | CRYPTO_ALG_ASYNC |
-			     CRYPTO_ALG_ALLOCATES_MEMORY,
+		.cra_flags = CRYPTO_ALG_KERN_DRIVER_ONLY | CRYPTO_ALG_ASYNC,
 		.cra_blocksize = DES3_EDE_BLOCK_SIZE,
 		.cra_ctxsize = sizeof(struct mv_cesa_des3_ctx),
 		.cra_alignmask = 0,
@@ -672,8 +669,7 @@ struct skcipher_alg mv_cesa_cbc_des3_ede_alg = {
 		.cra_name = "cbc(des3_ede)",
 		.cra_driver_name = "mv-cbc-des3-ede",
 		.cra_priority = 300,
-		.cra_flags = CRYPTO_ALG_KERN_DRIVER_ONLY | CRYPTO_ALG_ASYNC |
-			     CRYPTO_ALG_ALLOCATES_MEMORY,
+		.cra_flags = CRYPTO_ALG_KERN_DRIVER_ONLY | CRYPTO_ALG_ASYNC,
 		.cra_blocksize = DES3_EDE_BLOCK_SIZE,
 		.cra_ctxsize = sizeof(struct mv_cesa_des3_ctx),
 		.cra_alignmask = 0,
@@ -745,8 +741,7 @@ struct skcipher_alg mv_cesa_ecb_aes_alg = {
 		.cra_name = "ecb(aes)",
 		.cra_driver_name = "mv-ecb-aes",
 		.cra_priority = 300,
-		.cra_flags = CRYPTO_ALG_KERN_DRIVER_ONLY | CRYPTO_ALG_ASYNC |
-			     CRYPTO_ALG_ALLOCATES_MEMORY,
+		.cra_flags = CRYPTO_ALG_KERN_DRIVER_ONLY | CRYPTO_ALG_ASYNC,
 		.cra_blocksize = AES_BLOCK_SIZE,
 		.cra_ctxsize = sizeof(struct mv_cesa_aes_ctx),
 		.cra_alignmask = 0,
@@ -795,8 +790,7 @@ struct skcipher_alg mv_cesa_cbc_aes_alg = {
 		.cra_name = "cbc(aes)",
 		.cra_driver_name = "mv-cbc-aes",
 		.cra_priority = 300,
-		.cra_flags = CRYPTO_ALG_KERN_DRIVER_ONLY | CRYPTO_ALG_ASYNC |
-			     CRYPTO_ALG_ALLOCATES_MEMORY,
+		.cra_flags = CRYPTO_ALG_KERN_DRIVER_ONLY | CRYPTO_ALG_ASYNC,
 		.cra_blocksize = AES_BLOCK_SIZE,
 		.cra_ctxsize = sizeof(struct mv_cesa_aes_ctx),
 		.cra_alignmask = 0,

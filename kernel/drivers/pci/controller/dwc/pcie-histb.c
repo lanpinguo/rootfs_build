@@ -304,6 +304,7 @@ static int histb_pcie_probe(struct platform_device *pdev)
 	struct histb_pcie *hipcie;
 	struct dw_pcie *pci;
 	struct pcie_port *pp;
+	struct resource *res;
 	struct device_node *np = pdev->dev.of_node;
 	struct device *dev = &pdev->dev;
 	enum of_gpio_flags of_flags;
@@ -323,13 +324,15 @@ static int histb_pcie_probe(struct platform_device *pdev)
 	pci->dev = dev;
 	pci->ops = &dw_pcie_ops;
 
-	hipcie->ctrl = devm_platform_ioremap_resource_byname(pdev, "control");
+	res = platform_get_resource_byname(pdev, IORESOURCE_MEM, "control");
+	hipcie->ctrl = devm_ioremap_resource(dev, res);
 	if (IS_ERR(hipcie->ctrl)) {
 		dev_err(dev, "cannot get control reg base\n");
 		return PTR_ERR(hipcie->ctrl);
 	}
 
-	pci->dbi_base = devm_platform_ioremap_resource_byname(pdev, "rc-dbi");
+	res = platform_get_resource_byname(pdev, IORESOURCE_MEM, "rc-dbi");
+	pci->dbi_base = devm_ioremap_resource(dev, res);
 	if (IS_ERR(pci->dbi_base)) {
 		dev_err(dev, "cannot get rc-dbi base\n");
 		return PTR_ERR(pci->dbi_base);
@@ -399,8 +402,10 @@ static int histb_pcie_probe(struct platform_device *pdev)
 
 	if (IS_ENABLED(CONFIG_PCI_MSI)) {
 		pp->msi_irq = platform_get_irq_byname(pdev, "msi");
-		if (pp->msi_irq < 0)
+		if (pp->msi_irq < 0) {
+			dev_err(dev, "Failed to get MSI IRQ\n");
 			return pp->msi_irq;
+		}
 	}
 
 	hipcie->phy = devm_phy_get(dev, "phy");

@@ -831,7 +831,8 @@ static void hso_net_tx_timeout(struct net_device *net, unsigned int txqueue)
 	dev_warn(&net->dev, "Tx timed out.\n");
 
 	/* Tear the waiting frame off the list */
-	if (odev->mux_bulk_tx_urb)
+	if (odev->mux_bulk_tx_urb &&
+	    (odev->mux_bulk_tx_urb->status == -EINPROGRESS))
 		usb_unlink_urb(odev->mux_bulk_tx_urb);
 
 	/* Update statistics */
@@ -2356,7 +2357,7 @@ static int remove_net_device(struct hso_device *hso_dev)
 }
 
 /* Frees our network device */
-static void hso_free_net_device(struct hso_device *hso_dev, bool bailout)
+static void hso_free_net_device(struct hso_device *hso_dev)
 {
 	int i;
 	struct hso_net *hso_net = dev2net(hso_dev);
@@ -2379,7 +2380,7 @@ static void hso_free_net_device(struct hso_device *hso_dev, bool bailout)
 	kfree(hso_net->mux_bulk_tx_buf);
 	hso_net->mux_bulk_tx_buf = NULL;
 
-	if (hso_net->net && !bailout)
+	if (hso_net->net)
 		free_netdev(hso_net->net);
 
 	kfree(hso_dev);
@@ -2464,9 +2465,10 @@ static void hso_create_rfkill(struct hso_device *hso_dev,
 				       &interface_to_usbdev(interface)->dev,
 				       RFKILL_TYPE_WWAN,
 				       &hso_rfkill_ops, hso_dev);
-	if (!hso_net->rfkill)
+	if (!hso_net->rfkill) {
+		dev_err(dev, "%s - Out of memory\n", __func__);
 		return;
-
+	}
 	if (rfkill_register(hso_net->rfkill) < 0) {
 		rfkill_destroy(hso_net->rfkill);
 		hso_net->rfkill = NULL;
@@ -2554,7 +2556,7 @@ static struct hso_device *hso_create_net_device(struct usb_interface *interface,
 
 	return hso_dev;
 exit:
-	hso_free_net_device(hso_dev, true);
+	hso_free_net_device(hso_dev);
 	return NULL;
 }
 
@@ -3131,7 +3133,7 @@ static void hso_free_interface(struct usb_interface *interface)
 				rfkill_unregister(rfk);
 				rfkill_destroy(rfk);
 			}
-			hso_free_net_device(network_table[i], false);
+			hso_free_net_device(network_table[i]);
 		}
 	}
 }

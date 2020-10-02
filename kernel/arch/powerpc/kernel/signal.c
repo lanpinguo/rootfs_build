@@ -205,14 +205,8 @@ static void check_syscall_restart(struct pt_regs *regs, struct k_sigaction *ka,
 		return;
 
 	/* error signalled ? */
-	if (trap_is_scv(regs)) {
-		/* 32-bit compat mode sign extend? */
-		if (!IS_ERR_VALUE(ret))
-			return;
-		ret = -ret;
-	} else if (!(regs->ccr & 0x10000000)) {
+	if (!(regs->ccr & 0x10000000))
 		return;
-	}
 
 	switch (ret) {
 	case ERESTART_RESTARTBLOCK:
@@ -245,14 +239,9 @@ static void check_syscall_restart(struct pt_regs *regs, struct k_sigaction *ka,
 		regs->nip -= 4;
 		regs->result = 0;
 	} else {
-		if (trap_is_scv(regs)) {
-			regs->result = -EINTR;
-			regs->gpr[3] = -EINTR;
-		} else {
-			regs->result = -EINTR;
-			regs->gpr[3] = EINTR;
-			regs->ccr |= 0x10000000;
-		}
+		regs->result = -EINTR;
+		regs->gpr[3] = EINTR;
+		regs->ccr |= 0x10000000;
 	}
 }
 

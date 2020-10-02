@@ -18,6 +18,7 @@
 #include <linux/kcmp.h>
 
 #include "pidfd.h"
+#include "../kselftest.h"
 #include "../kselftest_harness.h"
 
 /*

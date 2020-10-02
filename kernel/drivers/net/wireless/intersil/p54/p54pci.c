@@ -153,12 +153,12 @@ static void p54p_refill_rx_ring(struct ieee80211_hw *dev,
 			if (!skb)
 				break;
 
-			mapping = dma_map_single(&priv->pdev->dev,
+			mapping = pci_map_single(priv->pdev,
 						 skb_tail_pointer(skb),
 						 priv->common.rx_mtu + 32,
-						 DMA_FROM_DEVICE);
+						 PCI_DMA_FROMDEVICE);
 
-			if (dma_mapping_error(&priv->pdev->dev, mapping)) {
+			if (pci_dma_mapping_error(priv->pdev, mapping)) {
 				dev_kfree_skb_any(skb);
 				dev_err(&priv->pdev->dev,
 					"RX DMA Mapping error\n");
@@ -215,22 +215,19 @@ static void p54p_check_rx_ring(struct ieee80211_hw *dev, u32 *index,
 			len = priv->common.rx_mtu;
 		}
 		dma_addr = le32_to_cpu(desc->host_addr);
-		dma_sync_single_for_cpu(&priv->pdev->dev, dma_addr,
-					priv->common.rx_mtu + 32,
-					DMA_FROM_DEVICE);
+		pci_dma_sync_single_for_cpu(priv->pdev, dma_addr,
+			priv->common.rx_mtu + 32, PCI_DMA_FROMDEVICE);
 		skb_put(skb, len);
 
 		if (p54_rx(dev, skb)) {
-			dma_unmap_single(&priv->pdev->dev, dma_addr,
-					 priv->common.rx_mtu + 32,
-					 DMA_FROM_DEVICE);
+			pci_unmap_single(priv->pdev, dma_addr,
+				priv->common.rx_mtu + 32, PCI_DMA_FROMDEVICE);
 			rx_buf[i] = NULL;
 			desc->host_addr = cpu_to_le32(0);
 		} else {
 			skb_trim(skb, 0);
-			dma_sync_single_for_device(&priv->pdev->dev, dma_addr,
-						   priv->common.rx_mtu + 32,
-						   DMA_FROM_DEVICE);
+			pci_dma_sync_single_for_device(priv->pdev, dma_addr,
+				priv->common.rx_mtu + 32, PCI_DMA_FROMDEVICE);
 			desc->len = cpu_to_le16(priv->common.rx_mtu + 32);
 		}
 
@@ -261,9 +258,8 @@ static void p54p_check_tx_ring(struct ieee80211_hw *dev, u32 *index,
 		skb = tx_buf[i];
 		tx_buf[i] = NULL;
 
-		dma_unmap_single(&priv->pdev->dev,
-				 le32_to_cpu(desc->host_addr),
-				 le16_to_cpu(desc->len), DMA_TO_DEVICE);
+		pci_unmap_single(priv->pdev, le32_to_cpu(desc->host_addr),
+				 le16_to_cpu(desc->len), PCI_DMA_TODEVICE);
 
 		desc->host_addr = 0;
 		desc->device_addr = 0;
@@ -338,9 +334,9 @@ static void p54p_tx(struct ieee80211_hw *dev, struct sk_buff *skb)
 	idx = le32_to_cpu(ring_control->host_idx[1]);
 	i = idx % ARRAY_SIZE(ring_control->tx_data);
 
-	mapping = dma_map_single(&priv->pdev->dev, skb->data, skb->len,
-				 DMA_TO_DEVICE);
-	if (dma_mapping_error(&priv->pdev->dev, mapping)) {
+	mapping = pci_map_single(priv->pdev, skb->data, skb->len,
+				 PCI_DMA_TODEVICE);
+	if (pci_dma_mapping_error(priv->pdev, mapping)) {
 		spin_unlock_irqrestore(&priv->lock, flags);
 		p54_free_skb(dev, skb);
 		dev_err(&priv->pdev->dev, "TX DMA mapping error\n");
@@ -382,10 +378,10 @@ static void p54p_stop(struct ieee80211_hw *dev)
 	for (i = 0; i < ARRAY_SIZE(priv->rx_buf_data); i++) {
 		desc = &ring_control->rx_data[i];
 		if (desc->host_addr)
-			dma_unmap_single(&priv->pdev->dev,
+			pci_unmap_single(priv->pdev,
 					 le32_to_cpu(desc->host_addr),
 					 priv->common.rx_mtu + 32,
-					 DMA_FROM_DEVICE);
+					 PCI_DMA_FROMDEVICE);
 		kfree_skb(priv->rx_buf_data[i]);
 		priv->rx_buf_data[i] = NULL;
 	}
@@ -393,10 +389,10 @@ static void p54p_stop(struct ieee80211_hw *dev)
 	for (i = 0; i < ARRAY_SIZE(priv->rx_buf_mgmt); i++) {
 		desc = &ring_control->rx_mgmt[i];
 		if (desc->host_addr)
-			dma_unmap_single(&priv->pdev->dev,
+			pci_unmap_single(priv->pdev,
 					 le32_to_cpu(desc->host_addr),
 					 priv->common.rx_mtu + 32,
-					 DMA_FROM_DEVICE);
+					 PCI_DMA_FROMDEVICE);
 		kfree_skb(priv->rx_buf_mgmt[i]);
 		priv->rx_buf_mgmt[i] = NULL;
 	}
@@ -404,10 +400,10 @@ static void p54p_stop(struct ieee80211_hw *dev)
 	for (i = 0; i < ARRAY_SIZE(priv->tx_buf_data); i++) {
 		desc = &ring_control->tx_data[i];
 		if (desc->host_addr)
-			dma_unmap_single(&priv->pdev->dev,
+			pci_unmap_single(priv->pdev,
 					 le32_to_cpu(desc->host_addr),
 					 le16_to_cpu(desc->len),
-					 DMA_TO_DEVICE);
+					 PCI_DMA_TODEVICE);
 
 		p54_free_skb(dev, priv->tx_buf_data[i]);
 		priv->tx_buf_data[i] = NULL;
@@ -416,10 +412,10 @@ static void p54p_stop(struct ieee80211_hw *dev)
 	for (i = 0; i < ARRAY_SIZE(priv->tx_buf_mgmt); i++) {
 		desc = &ring_control->tx_mgmt[i];
 		if (desc->host_addr)
-			dma_unmap_single(&priv->pdev->dev,
+			pci_unmap_single(priv->pdev,
 					 le32_to_cpu(desc->host_addr),
 					 le16_to_cpu(desc->len),
-					 DMA_TO_DEVICE);
+					 PCI_DMA_TODEVICE);
 
 		p54_free_skb(dev, priv->tx_buf_mgmt[i]);
 		priv->tx_buf_mgmt[i] = NULL;
@@ -572,9 +568,9 @@ static int p54p_probe(struct pci_dev *pdev,
 		goto err_disable_dev;
 	}
 
-	err = dma_set_mask(&pdev->dev, DMA_BIT_MASK(32));
+	err = pci_set_dma_mask(pdev, DMA_BIT_MASK(32));
 	if (!err)
-		err = dma_set_coherent_mask(&pdev->dev, DMA_BIT_MASK(32));
+		err = pci_set_consistent_dma_mask(pdev, DMA_BIT_MASK(32));
 	if (err) {
 		dev_err(&pdev->dev, "No suitable DMA available\n");
 		goto err_free_reg;
@@ -607,9 +603,8 @@ static int p54p_probe(struct pci_dev *pdev,
 		goto err_free_dev;
 	}
 
-	priv->ring_control = dma_alloc_coherent(&pdev->dev,
-						sizeof(*priv->ring_control),
-						&priv->ring_control_dma, GFP_KERNEL);
+	priv->ring_control = pci_alloc_consistent(pdev, sizeof(*priv->ring_control),
+						  &priv->ring_control_dma);
 	if (!priv->ring_control) {
 		dev_err(&pdev->dev, "Cannot allocate rings\n");
 		err = -ENOMEM;
@@ -628,8 +623,8 @@ static int p54p_probe(struct pci_dev *pdev,
 	if (!err)
 		return 0;
 
-	dma_free_coherent(&pdev->dev, sizeof(*priv->ring_control),
-			  priv->ring_control, priv->ring_control_dma);
+	pci_free_consistent(pdev, sizeof(*priv->ring_control),
+			    priv->ring_control, priv->ring_control_dma);
 
  err_iounmap:
 	iounmap(priv->map);
@@ -658,8 +653,8 @@ static void p54p_remove(struct pci_dev *pdev)
 	wait_for_completion(&priv->fw_loaded);
 	p54_unregister_common(dev);
 	release_firmware(priv->firmware);
-	dma_free_coherent(&pdev->dev, sizeof(*priv->ring_control),
-			  priv->ring_control, priv->ring_control_dma);
+	pci_free_consistent(pdev, sizeof(*priv->ring_control),
+			    priv->ring_control, priv->ring_control_dma);
 	iounmap(priv->map);
 	pci_release_regions(pdev);
 	pci_disable_device(pdev);

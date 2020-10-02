@@ -760,7 +760,7 @@ int omapfb_ioctl(struct fb_info *fbi, unsigned int cmd, unsigned long arg)
 			r = -ENODEV;
 			break;
 		}
-		fallthrough;
+		/* FALLTHROUGH */
 
 	case OMAPFB_WAITFORVSYNC:
 		DBG("ioctl WAITFORVSYNC\n");

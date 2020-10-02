@@ -44,7 +44,11 @@
 #include "s3c2410fb.h"
 
 /* Debugging stuff */
-static int debug = IS_BUILTIN(CONFIG_FB_S3C2410_DEBUG);
+#ifdef CONFIG_FB_S3C2410_DEBUG
+static int debug	= 1;
+#else
+static int debug;
+#endif
 
 #define dprintk(msg...) \
 do { \

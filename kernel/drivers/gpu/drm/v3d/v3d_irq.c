@@ -72,7 +72,7 @@ v3d_overflow_mem_work(struct work_struct *work)
 	V3D_CORE_WRITE(0, V3D_PTB_BPOS, obj->size);
 
 out:
-	drm_gem_object_put(obj);
+	drm_gem_object_put_unlocked(obj);
 }
 
 static irqreturn_t

@@ -32,8 +32,6 @@
  * MODULE_LICENSE("GPL");
  */
 
-#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
-
 #include <linux/module.h>
 #include <linux/types.h>
 #include <linux/bitops.h>
@@ -82,6 +80,7 @@ enum velocity_bus_type {
 };
 
 static int velocity_nics;
+static int msglevel = MSG_LEVEL_INFO;
 
 static void velocity_set_power_state(struct velocity_info *vptr, char state)
 {
@@ -406,22 +405,24 @@ static const char *get_chip_name(enum chip_type chip_id)
  *	@max: highest value allowed
  *	@def: default value
  *	@name: property name
+ *	@dev: device name
  *
  *	Set an integer property in the module options. This function does
  *	all the verification and checking as well as reporting so that
  *	we don't duplicate code for each option.
  */
 static void velocity_set_int_opt(int *opt, int val, int min, int max, int def,
-				 char *name)
+				 char *name, const char *devname)
 {
 	if (val == -1)
 		*opt = def;
 	else if (val < min || val > max) {
-		pr_notice("the value of parameter %s is invalid, the valid range is (%d-%d)\n",
-			  name, min, max);
+		VELOCITY_PRT(MSG_LEVEL_INFO, KERN_NOTICE "%s: the value of parameter %s is invalid, the valid range is (%d-%d)\n",
+					devname, name, min, max);
 		*opt = def;
 	} else {
-		pr_info("set value of parameter %s to %d\n", name, val);
+		VELOCITY_PRT(MSG_LEVEL_INFO, KERN_INFO "%s: set value of parameter %s to %d\n",
+					devname, name, val);
 		*opt = val;
 	}
 }
@@ -433,24 +434,25 @@ static void velocity_set_int_opt(int *opt, int val, int min, int max, int def,
  *	@def: default value (yes/no)
  *	@flag: numeric value to set for true.
  *	@name: property name
+ *	@dev: device name
  *
  *	Set a boolean property in the module options. This function does
  *	all the verification and checking as well as reporting so that
  *	we don't duplicate code for each option.
  */
 static void velocity_set_bool_opt(u32 *opt, int val, int def, u32 flag,
-				  char *name)
+				  char *name, const char *devname)
 {
 	(*opt) &= (~flag);
 	if (val == -1)
 		*opt |= (def ? flag : 0);
 	else if (val < 0 || val > 1) {
-		pr_notice("the value of parameter %s is invalid, the valid range is (%d-%d)\n",
-			  name, 0, 1);
+		printk(KERN_NOTICE "%s: the value of parameter %s is invalid, the valid range is (0-1)\n",
+			devname, name);
 		*opt |= (def ? flag : 0);
 	} else {
-		pr_info("set parameter %s to %s\n",
-			name, val ? "TRUE" : "FALSE");
+		printk(KERN_INFO "%s: set parameter %s to %s\n",
+			devname, name, val ? "TRUE" : "FALSE");
 		*opt |= (val ? flag : 0);
 	}
 }
@@ -459,38 +461,24 @@ static void velocity_set_bool_opt(u32 *opt, int val, int def, u32 flag,
  *	velocity_get_options	-	set options on device
  *	@opts: option structure for the device
  *	@index: index of option to use in module options array
+ *	@devname: device name
  *
  *	Turn the module and command options into a single structure
  *	for the current device
  */
-static void velocity_get_options(struct velocity_opt *opts, int index)
+static void velocity_get_options(struct velocity_opt *opts, int index,
+				 const char *devname)
 {
 
-	velocity_set_int_opt(&opts->rx_thresh, rx_thresh[index],
-			     RX_THRESH_MIN, RX_THRESH_MAX, RX_THRESH_DEF,
-			     "rx_thresh");
-	velocity_set_int_opt(&opts->DMA_length, DMA_length[index],
-			     DMA_LENGTH_MIN, DMA_LENGTH_MAX, DMA_LENGTH_DEF,
-			     "DMA_length");
-	velocity_set_int_opt(&opts->numrx, RxDescriptors[index],
-			     RX_DESC_MIN, RX_DESC_MAX, RX_DESC_DEF,
-			     "RxDescriptors");
-	velocity_set_int_opt(&opts->numtx, TxDescriptors[index],
-			     TX_DESC_MIN, TX_DESC_MAX, TX_DESC_DEF,
-			     "TxDescriptors");
+	velocity_set_int_opt(&opts->rx_thresh, rx_thresh[index], RX_THRESH_MIN, RX_THRESH_MAX, RX_THRESH_DEF, "rx_thresh", devname);
+	velocity_set_int_opt(&opts->DMA_length, DMA_length[index], DMA_LENGTH_MIN, DMA_LENGTH_MAX, DMA_LENGTH_DEF, "DMA_length", devname);
+	velocity_set_int_opt(&opts->numrx, RxDescriptors[index], RX_DESC_MIN, RX_DESC_MAX, RX_DESC_DEF, "RxDescriptors", devname);
+	velocity_set_int_opt(&opts->numtx, TxDescriptors[index], TX_DESC_MIN, TX_DESC_MAX, TX_DESC_DEF, "TxDescriptors", devname);
 
-	velocity_set_int_opt(&opts->flow_cntl, flow_control[index],
-			     FLOW_CNTL_MIN, FLOW_CNTL_MAX, FLOW_CNTL_DEF,
-			     "flow_control");
-	velocity_set_bool_opt(&opts->flags, IP_byte_align[index],
-			      IP_ALIG_DEF, VELOCITY_FLAGS_IP_ALIGN,
-			      "IP_byte_align");
-	velocity_set_int_opt((int *) &opts->spd_dpx, speed_duplex[index],
-			     MED_LNK_MIN, MED_LNK_MAX, MED_LNK_DEF,
-			     "Media link mode");
-	velocity_set_int_opt(&opts->wol_opts, wol_opts[index],
-			     WOL_OPT_MIN, WOL_OPT_MAX, WOL_OPT_DEF,
-			     "Wake On Lan options");
+	velocity_set_int_opt(&opts->flow_cntl, flow_control[index], FLOW_CNTL_MIN, FLOW_CNTL_MAX, FLOW_CNTL_DEF, "flow_control", devname);
+	velocity_set_bool_opt(&opts->flags, IP_byte_align[index], IP_ALIG_DEF, VELOCITY_FLAGS_IP_ALIGN, "IP_byte_align", devname);
+	velocity_set_int_opt((int *) &opts->spd_dpx, speed_duplex[index], MED_LNK_MIN, MED_LNK_MAX, MED_LNK_DEF, "Media link mode", devname);
+	velocity_set_int_opt(&opts->wol_opts, wol_opts[index], WOL_OPT_MIN, WOL_OPT_MAX, WOL_OPT_DEF, "Wake On Lan options", devname);
 	opts->numrx = (opts->numrx & ~3);
 }
 
@@ -892,7 +880,7 @@ static int velocity_set_media_mode(struct velocity_info *vptr, u32 mii_status)
 	       (mii_status==curr_status)) {
 	   vptr->mii_status=mii_check_media_mode(vptr->mac_regs);
 	   vptr->mii_status=check_connection_type(vptr->mac_regs);
-	   netdev_info(vptr->netdev, "Velocity link no change\n");
+	   VELOCITY_PRT(MSG_LEVEL_INFO, "Velocity link no change\n");
 	   return 0;
 	   }
 	 */
@@ -904,7 +892,7 @@ static int velocity_set_media_mode(struct velocity_info *vptr, u32 mii_status)
 	 *	If connection type is AUTO
 	 */
 	if (mii_status & VELOCITY_AUTONEG_ENABLE) {
-		netdev_info(vptr->netdev, "Velocity is in AUTO mode\n");
+		VELOCITY_PRT(MSG_LEVEL_INFO, "Velocity is AUTO mode\n");
 		/* clear force MAC mode bit */
 		BYTE_REG_BITS_OFF(CHIPGCR_FCMODE, &regs->CHIPGCR);
 		/* set duplex mode of MAC according to duplex mode of MII */
@@ -939,14 +927,12 @@ static int velocity_set_media_mode(struct velocity_info *vptr, u32 mii_status)
 		if (mii_status & VELOCITY_DUPLEX_FULL) {
 			CHIPGCR |= CHIPGCR_FCFDX;
 			writeb(CHIPGCR, &regs->CHIPGCR);
-			netdev_info(vptr->netdev,
-				    "set Velocity to forced full mode\n");
+			VELOCITY_PRT(MSG_LEVEL_INFO, "set Velocity to forced full mode\n");
 			if (vptr->rev_id < REV_ID_VT3216_A0)
 				BYTE_REG_BITS_OFF(TCR_TB2BDIS, &regs->TCR);
 		} else {
 			CHIPGCR &= ~CHIPGCR_FCFDX;
-			netdev_info(vptr->netdev,
-				    "set Velocity to forced half mode\n");
+			VELOCITY_PRT(MSG_LEVEL_INFO, "set Velocity to forced half mode\n");
 			writeb(CHIPGCR, &regs->CHIPGCR);
 			if (vptr->rev_id < REV_ID_VT3216_A0)
 				BYTE_REG_BITS_ON(TCR_TB2BDIS, &regs->TCR);
@@ -999,61 +985,45 @@ static int velocity_set_media_mode(struct velocity_info *vptr, u32 mii_status)
  */
 static void velocity_print_link_status(struct velocity_info *vptr)
 {
-	const char *link;
-	const char *speed;
-	const char *duplex;
 
 	if (vptr->mii_status & VELOCITY_LINK_FAIL) {
-		netdev_notice(vptr->netdev, "failed to detect cable link\n");
-		return;
-	}
-
-	if (vptr->options.spd_dpx == SPD_DPX_AUTO) {
-		link = "auto-negotiation";
+		VELOCITY_PRT(MSG_LEVEL_INFO, KERN_NOTICE "%s: failed to detect cable link\n", vptr->netdev->name);
+	} else if (vptr->options.spd_dpx == SPD_DPX_AUTO) {
+		VELOCITY_PRT(MSG_LEVEL_INFO, KERN_NOTICE "%s: Link auto-negotiation", vptr->netdev->name);
 
 		if (vptr->mii_status & VELOCITY_SPEED_1000)
-			speed = "1000";
+			VELOCITY_PRT(MSG_LEVEL_INFO, " speed 1000M bps");
 		else if (vptr->mii_status & VELOCITY_SPEED_100)
-			speed = "100";
+			VELOCITY_PRT(MSG_LEVEL_INFO, " speed 100M bps");
 		else
-			speed = "10";
+			VELOCITY_PRT(MSG_LEVEL_INFO, " speed 10M bps");
 
 		if (vptr->mii_status & VELOCITY_DUPLEX_FULL)
-			duplex = "full";
+			VELOCITY_PRT(MSG_LEVEL_INFO, " full duplex\n");
 		else
-			duplex = "half";
+			VELOCITY_PRT(MSG_LEVEL_INFO, " half duplex\n");
 	} else {
-		link = "forced";
-
+		VELOCITY_PRT(MSG_LEVEL_INFO, KERN_NOTICE "%s: Link forced", vptr->netdev->name);
 		switch (vptr->options.spd_dpx) {
 		case SPD_DPX_1000_FULL:
-			speed = "1000";
-			duplex = "full";
+			VELOCITY_PRT(MSG_LEVEL_INFO, " speed 1000M bps full duplex\n");
 			break;
 		case SPD_DPX_100_HALF:
-			speed = "100";
-			duplex = "half";
+			VELOCITY_PRT(MSG_LEVEL_INFO, " speed 100M bps half duplex\n");
 			break;
 		case SPD_DPX_100_FULL:
-			speed = "100";
-			duplex = "full";
+			VELOCITY_PRT(MSG_LEVEL_INFO, " speed 100M bps full duplex\n");
 			break;
 		case SPD_DPX_10_HALF:
-			speed = "10";
-			duplex = "half";
+			VELOCITY_PRT(MSG_LEVEL_INFO, " speed 10M bps half duplex\n");
 			break;
 		case SPD_DPX_10_FULL:
-			speed = "10";
-			duplex = "full";
+			VELOCITY_PRT(MSG_LEVEL_INFO, " speed 10M bps full duplex\n");
 			break;
 		default:
-			speed = "unknown";
-			duplex = "unknown";
 			break;
 		}
 	}
-	netdev_notice(vptr->netdev, "Link %s speed %sM bps %s duplex\n",
-		      link, speed, duplex);
 }
 
 /**
@@ -1651,7 +1621,8 @@ static int velocity_init_rd_ring(struct velocity_info *vptr)
 	velocity_init_rx_ring_indexes(vptr);
 
 	if (velocity_rx_refill(vptr) != vptr->options.numrx) {
-		netdev_err(vptr->netdev, "failed to allocate RX buffer\n");
+		VELOCITY_PRT(MSG_LEVEL_ERR, KERN_ERR
+			"%s: failed to allocate RX buffer.\n", vptr->netdev->name);
 		velocity_free_rd_ring(vptr);
 		goto out;
 	}
@@ -1834,8 +1805,7 @@ static void velocity_error(struct velocity_info *vptr, int status)
 	if (status & ISR_TXSTLI) {
 		struct mac_regs __iomem *regs = vptr->mac_regs;
 
-		netdev_err(vptr->netdev, "TD structure error TDindex=%hx\n",
-			   readw(&regs->TDIdx[0]));
+		printk(KERN_ERR "TD structure error TDindex=%hx\n", readw(&regs->TDIdx[0]));
 		BYTE_REG_BITS_ON(TXESR_TDSTR, &regs->TXESR);
 		writew(TRDCSR_RUN, &regs->TDCSRClr);
 		netif_stop_queue(vptr->netdev);
@@ -2066,7 +2036,7 @@ static int velocity_receive_frame(struct velocity_info *vptr, int idx)
 
 	if (unlikely(rd->rdesc0.RSR & (RSR_STP | RSR_EDP | RSR_RL))) {
 		if (rd->rdesc0.RSR & (RSR_STP | RSR_EDP))
-			netdev_err(vptr->netdev, "received frame spans multiple RDs\n");
+			VELOCITY_PRT(MSG_LEVEL_VERBOSE, KERN_ERR " %s : the received frame spans multiple RDs.\n", vptr->netdev->name);
 		stats->rx_length_errors++;
 		return -EINVAL;
 	}
@@ -2751,8 +2721,11 @@ static int velocity_get_platform_info(struct velocity_info *vptr)
  */
 static void velocity_print_info(struct velocity_info *vptr)
 {
-	netdev_info(vptr->netdev, "%s - Ethernet Address: %pM\n",
-		    get_chip_name(vptr->chip_id), vptr->netdev->dev_addr);
+	struct net_device *dev = vptr->netdev;
+
+	printk(KERN_INFO "%s: %s\n", dev->name, get_chip_name(vptr->chip_id));
+	printk(KERN_INFO "%s: Ethernet Address: %pM\n",
+		dev->name, dev->dev_addr);
 }
 
 static u32 velocity_get_link(struct net_device *dev)
@@ -2775,8 +2748,10 @@ static int velocity_probe(struct device *dev, int irq,
 			   const struct velocity_info_tbl *info,
 			   enum velocity_bus_type bustype)
 {
+	static int first = 1;
 	struct net_device *netdev;
 	int i;
+	const char *drv_string;
 	struct velocity_info *vptr;
 	struct mac_regs __iomem *regs;
 	int ret = -ENOMEM;
@@ -2798,9 +2773,13 @@ static int velocity_probe(struct device *dev, int irq,
 	SET_NETDEV_DEV(netdev, dev);
 	vptr = netdev_priv(netdev);
 
-	pr_info_once("%s Ver. %s\n", VELOCITY_FULL_DRV_NAM, VELOCITY_VERSION);
-	pr_info_once("Copyright (c) 2002, 2003 VIA Networking Technologies, Inc.\n");
-	pr_info_once("Copyright (c) 2004 Red Hat Inc.\n");
+	if (first) {
+		printk(KERN_INFO "%s Ver. %s\n",
+			VELOCITY_FULL_DRV_NAM, VELOCITY_VERSION);
+		printk(KERN_INFO "Copyright (c) 2002, 2003 VIA Networking Technologies, Inc.\n");
+		printk(KERN_INFO "Copyright (c) 2004 Red Hat Inc.\n");
+		first = 0;
+	}
 
 	netdev->irq = irq;
 	vptr->netdev = netdev;
@@ -2836,7 +2815,9 @@ static int velocity_probe(struct device *dev, int irq,
 		netdev->dev_addr[i] = readb(&regs->PAR[i]);
 
 
-	velocity_get_options(&vptr->options, velocity_nics);
+	drv_string = dev_driver_string(dev);
+
+	velocity_get_options(&vptr->options, velocity_nics, drv_string);
 
 	/*
 	 *	Mask out the options cannot be set to the chip
@@ -3488,6 +3469,16 @@ static int velocity_ethtool_set_wol(struct net_device *dev, struct ethtool_wolin
 	return 0;
 }
 
+static u32 velocity_get_msglevel(struct net_device *dev)
+{
+	return msglevel;
+}
+
+static void velocity_set_msglevel(struct net_device *dev, u32 value)
+{
+	 msglevel = value;
+}
+
 static int get_pending_timer_val(int val)
 {
 	int mult_bits = val >> 6;
@@ -3662,6 +3653,8 @@ static const struct ethtool_ops velocity_ethtool_ops = {
 	.get_drvinfo		= velocity_get_drvinfo,
 	.get_wol		= velocity_ethtool_get_wol,
 	.set_wol		= velocity_ethtool_set_wol,
+	.get_msglevel		= velocity_get_msglevel,
+	.set_msglevel		= velocity_set_msglevel,
 	.get_link		= velocity_get_link,
 	.get_strings		= velocity_get_strings,
 	.get_sset_count		= velocity_get_sset_count,

@@ -108,6 +108,8 @@ struct mt7603_dev {
 
 	u32 rxfilter;
 
+	u8 vif_mask;
+
 	struct list_head sta_poll_list;
 	spinlock_t sta_poll_lock;
 

@@ -448,17 +448,19 @@ static ssize_t qeth_dev_isolation_store(struct device *dev,
 		rc = -EINVAL;
 		goto out;
 	}
+	rc = count;
 
-	if (qeth_card_hw_is_reachable(card))
-		rc = qeth_setadpparms_set_access_ctrl(card, isolation);
-
-	if (!rc)
-		WRITE_ONCE(card->options.isolation, isolation);
-
+	/* defer IP assist if device is offline (until discipline->set_online)*/
+	card->options.prev_isolation = card->options.isolation;
+	card->options.isolation = isolation;
+	if (qeth_card_hw_is_reachable(card)) {
+		int ipa_rc = qeth_set_access_ctrl_online(card, 1);
+		if (ipa_rc != 0)
+			rc = ipa_rc;
+	}
 out:
 	mutex_unlock(&card->conf_mutex);
-
-	return rc ? rc : count;
+	return rc;
 }
 
 static DEVICE_ATTR(isolation, 0644, qeth_dev_isolation_show,

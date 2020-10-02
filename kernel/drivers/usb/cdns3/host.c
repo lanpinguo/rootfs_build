@@ -19,7 +19,7 @@ static int __cdns3_host_init(struct cdns3 *cdns)
 	struct platform_device *xhci;
 	int ret;
 
-	cdns3_drd_host_on(cdns);
+	cdns3_drd_switch_host(cdns, 1);
 
 	xhci = platform_device_alloc("xhci-hcd", PLATFORM_DEVID_AUTO);
 	if (!xhci) {
@@ -53,7 +53,7 @@ static void cdns3_host_exit(struct cdns3 *cdns)
 {
 	platform_device_unregister(cdns->host_dev);
 	cdns->host_dev = NULL;
-	cdns3_drd_host_off(cdns);
+	cdns3_drd_switch_host(cdns, 0);
 }
 
 int cdns3_host_init(struct cdns3 *cdns)

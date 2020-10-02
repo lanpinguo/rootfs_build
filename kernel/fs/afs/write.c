@@ -609,7 +609,7 @@ no_more:
 
 	default:
 		pr_notice("kAFS: Unexpected error from FS.StoreData %d\n", ret);
-		fallthrough;
+		/* Fall through */
 	case -EACCES:
 	case -EPERM:
 	case -ENOKEY:

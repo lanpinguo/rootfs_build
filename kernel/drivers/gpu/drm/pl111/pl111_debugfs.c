@@ -3,6 +3,7 @@
  *  Copyright © 2017 Broadcom
  */
 
+#include <linux/amba/clcd-regs.h>
 #include <linux/seq_file.h>
 
 #include <drm/drm_debugfs.h>

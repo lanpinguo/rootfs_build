@@ -11,7 +11,7 @@
  *
  * This driver was developed with information provided in FREECOM's USB
  * Programmers Reference Guide.  For further information contact Freecom
- * (https://www.freecom.de/)
+ * (http://www.freecom.de/)
  */
 
 #include <linux/module.h>

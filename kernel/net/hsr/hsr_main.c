@@ -3,8 +3,6 @@
  *
  * Author(s):
  *	2011-2014 Arvid Brodin, arvid.brodin@alten.se
- *
- * Event handling for HSR and PRP devices.
  */
 
 #include <linux/netdevice.h>

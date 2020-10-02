@@ -497,7 +497,7 @@ exit:
  *
  * Invalidate the sleep and wake values in batch_cache.
  */
-void rpmh_invalidate(const struct device *dev)
+int rpmh_invalidate(const struct device *dev)
 {
 	struct rpmh_ctrlr *ctrlr = get_rpmh_ctrlr(dev);
 	struct batch_cache_req *req, *tmp;
@@ -509,5 +509,7 @@ void rpmh_invalidate(const struct device *dev)
 	INIT_LIST_HEAD(&ctrlr->batch_cache);
 	ctrlr->dirty = true;
 	spin_unlock_irqrestore(&ctrlr->cache_lock, flags);
+
+	return 0;
 }
 EXPORT_SYMBOL(rpmh_invalidate);

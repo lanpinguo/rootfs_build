@@ -223,7 +223,7 @@ xpc_disconnect(int ch_number)
 }
 EXPORT_SYMBOL_GPL(xpc_disconnect);
 
-static int __init
+int __init
 xp_init(void)
 {
 	enum xp_retval ret;
@@ -246,7 +246,7 @@ xp_init(void)
 
 module_init(xp_init);
 
-static void __exit
+void __exit
 xp_exit(void)
 {
 	if (is_uv())

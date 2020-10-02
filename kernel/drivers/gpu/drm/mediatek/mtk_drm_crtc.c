@@ -113,15 +113,19 @@ static void mtk_drm_crtc_reset(struct drm_crtc *crtc)
 {
 	struct mtk_crtc_state *state;
 
-	if (crtc->state)
+	if (crtc->state) {
 		__drm_atomic_helper_crtc_destroy_state(crtc->state);
 
-	kfree(to_mtk_crtc_state(crtc->state));
-	crtc->state = NULL;
+		state = to_mtk_crtc_state(crtc->state);
+		memset(state, 0, sizeof(*state));
+	} else {
+		state = kzalloc(sizeof(*state), GFP_KERNEL);
+		if (!state)
+			return;
+		crtc->state = &state->base;
+	}
 
-	state = kzalloc(sizeof(*state), GFP_KERNEL);
-	if (state)
-		__drm_atomic_helper_crtc_reset(crtc, &state->base);
+	state->base.crtc = crtc;
 }
 
 static struct drm_crtc_state *mtk_drm_crtc_duplicate_state(struct drm_crtc *crtc)
@@ -161,7 +165,7 @@ static void mtk_drm_crtc_mode_set_nofb(struct drm_crtc *crtc)
 
 	state->pending_width = crtc->mode.hdisplay;
 	state->pending_height = crtc->mode.vdisplay;
-	state->pending_vrefresh = drm_mode_vrefresh(&crtc->mode);
+	state->pending_vrefresh = crtc->mode.vrefresh;
 	wmb();	/* Make sure the above parameters are set before update */
 	state->pending_config = true;
 }
@@ -257,7 +261,7 @@ static int mtk_crtc_ddp_hw_init(struct mtk_drm_crtc *mtk_crtc)
 
 	width = crtc->state->adjusted_mode.hdisplay;
 	height = crtc->state->adjusted_mode.vdisplay;
-	vrefresh = drm_mode_vrefresh(&crtc->state->adjusted_mode);
+	vrefresh = crtc->state->adjusted_mode.vrefresh;
 
 	drm_for_each_encoder(encoder, crtc->dev) {
 		if (encoder->crtc != crtc)
@@ -483,7 +487,6 @@ static void mtk_drm_crtc_hw_config(struct mtk_drm_crtc *mtk_crtc)
 		cmdq_pkt_clear_event(cmdq_handle, mtk_crtc->cmdq_event);
 		cmdq_pkt_wfe(cmdq_handle, mtk_crtc->cmdq_event);
 		mtk_crtc_ddp_config(crtc, cmdq_handle);
-		cmdq_pkt_finalize(cmdq_handle);
 		cmdq_pkt_flush_async(cmdq_handle, ddp_cmdq_cb, cmdq_handle);
 	}
 #endif
@@ -831,13 +834,19 @@ int mtk_drm_crtc_create(struct drm_device *drm_dev,
 			drm_crtc_index(&mtk_crtc->base));
 		mtk_crtc->cmdq_client = NULL;
 	}
-	ret = of_property_read_u32_index(priv->mutex_node,
-					 "mediatek,gce-events",
-					 drm_crtc_index(&mtk_crtc->base),
-					 &mtk_crtc->cmdq_event);
-	if (ret)
-		dev_dbg(dev, "mtk_crtc %d failed to get mediatek,gce-events property\n",
-			drm_crtc_index(&mtk_crtc->base));
+
+	if (mtk_crtc->cmdq_client) {
+		ret = of_property_read_u32_index(priv->mutex_node,
+						 "mediatek,gce-events",
+						 drm_crtc_index(&mtk_crtc->base),
+						 &mtk_crtc->cmdq_event);
+		if (ret) {
+			dev_dbg(dev, "mtk_crtc %d failed to get mediatek,gce-events property\n",
+				drm_crtc_index(&mtk_crtc->base));
+			cmdq_mbox_destroy(mtk_crtc->cmdq_client);
+			mtk_crtc->cmdq_client = NULL;
+		}
+	}
 #endif
 	return 0;
 }

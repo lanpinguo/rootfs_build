@@ -150,7 +150,60 @@ static int amdgpu_gtt_mgr_fini(struct ttm_mem_type_manager *man)
  */
 bool amdgpu_gtt_mgr_has_gart_addr(struct ttm_mem_reg *mem)
 {
-	return mem->mm_node != NULL;
+	struct amdgpu_gtt_node *node = mem->mm_node;
+
+	return (node->node.start != AMDGPU_BO_INVALID_OFFSET);
+}
+
+/**
+ * amdgpu_gtt_mgr_alloc - allocate new ranges
+ *
+ * @man: TTM memory type manager
+ * @tbo: TTM BO we need this range for
+ * @place: placement flags and restrictions
+ * @mem: the resulting mem object
+ *
+ * Allocate the address space for a node.
+ */
+static int amdgpu_gtt_mgr_alloc(struct ttm_mem_type_manager *man,
+				struct ttm_buffer_object *tbo,
+				const struct ttm_place *place,
+				struct ttm_mem_reg *mem)
+{
+	struct amdgpu_device *adev = amdgpu_ttm_adev(man->bdev);
+	struct amdgpu_gtt_mgr *mgr = man->priv;
+	struct amdgpu_gtt_node *node = mem->mm_node;
+	enum drm_mm_insert_mode mode;
+	unsigned long fpfn, lpfn;
+	int r;
+
+	if (amdgpu_gtt_mgr_has_gart_addr(mem))
+		return 0;
+
+	if (place)
+		fpfn = place->fpfn;
+	else
+		fpfn = 0;
+
+	if (place && place->lpfn)
+		lpfn = place->lpfn;
+	else
+		lpfn = adev->gart.num_cpu_pages;
+
+	mode = DRM_MM_INSERT_BEST;
+	if (place && place->flags & TTM_PL_FLAG_TOPDOWN)
+		mode = DRM_MM_INSERT_HIGH;
+
+	spin_lock(&mgr->lock);
+	r = drm_mm_insert_node_in_range(&mgr->mm, &node->node, mem->num_pages,
+					mem->page_alignment, 0, fpfn, lpfn,
+					mode);
+	spin_unlock(&mgr->lock);
+
+	if (!r)
+		mem->start = node->node.start;
+
+	return r;
 }
 
 /**
@@ -176,16 +229,10 @@ static int amdgpu_gtt_mgr_new(struct ttm_mem_type_manager *man,
 	if ((&tbo->mem == mem || tbo->mem.mem_type != TTM_PL_TT) &&
 	    atomic64_read(&mgr->available) < mem->num_pages) {
 		spin_unlock(&mgr->lock);
-		return -ENOSPC;
+		return 0;
 	}
 	atomic64_sub(mem->num_pages, &mgr->available);
 	spin_unlock(&mgr->lock);
-
-	if (!place->lpfn) {
-		mem->mm_node = NULL;
-		mem->start = AMDGPU_BO_INVALID_OFFSET;
-		return 0;
-	}
 
 	node = kzalloc(sizeof(*node), GFP_KERNEL);
 	if (!node) {
@@ -193,25 +240,24 @@ static int amdgpu_gtt_mgr_new(struct ttm_mem_type_manager *man,
 		goto err_out;
 	}
 
+	node->node.start = AMDGPU_BO_INVALID_OFFSET;
+	node->node.size = mem->num_pages;
 	node->tbo = tbo;
-
-	spin_lock(&mgr->lock);
-	r = drm_mm_insert_node_in_range(&mgr->mm, &node->node, mem->num_pages,
-					mem->page_alignment, 0, place->fpfn,
-					place->lpfn, DRM_MM_INSERT_BEST);
-	spin_unlock(&mgr->lock);
-
-	if (unlikely(r))
-		goto err_free;
-
 	mem->mm_node = node;
-	mem->start = node->node.start;
+
+	if (place->fpfn || place->lpfn || place->flags & TTM_PL_FLAG_TOPDOWN) {
+		r = amdgpu_gtt_mgr_alloc(man, tbo, place, mem);
+		if (unlikely(r)) {
+			kfree(node);
+			mem->mm_node = NULL;
+			r = 0;
+			goto err_out;
+		}
+	} else {
+		mem->start = node->node.start;
+	}
 
 	return 0;
-
-err_free:
-	kfree(node);
-
 err_out:
 	atomic64_add(mem->num_pages, &mgr->available);
 
@@ -222,6 +268,8 @@ err_out:
  * amdgpu_gtt_mgr_del - free ranges
  *
  * @man: TTM memory type manager
+ * @tbo: TTM BO we need this range for
+ * @place: placement flags and restrictions
  * @mem: TTM memory object
  *
  * Free the allocated GTT again.
@@ -232,14 +280,17 @@ static void amdgpu_gtt_mgr_del(struct ttm_mem_type_manager *man,
 	struct amdgpu_gtt_mgr *mgr = man->priv;
 	struct amdgpu_gtt_node *node = mem->mm_node;
 
-	if (node) {
-		spin_lock(&mgr->lock);
-		drm_mm_remove_node(&node->node);
-		spin_unlock(&mgr->lock);
-		kfree(node);
-	}
+	if (!node)
+		return;
 
+	spin_lock(&mgr->lock);
+	if (node->node.start != AMDGPU_BO_INVALID_OFFSET)
+		drm_mm_remove_node(&node->node);
+	spin_unlock(&mgr->lock);
 	atomic64_add(mem->num_pages, &mgr->available);
+
+	kfree(node);
+	mem->mm_node = NULL;
 }
 
 /**

@@ -29,6 +29,7 @@
 #include <linux/slab.h>
 #include <linux/hugetlb.h>
 
+#include <asm/pgalloc.h>
 #include <asm/prom.h>
 #include <asm/io.h>
 #include <asm/mmu.h>

@@ -67,7 +67,7 @@ static struct board_info __initdata board_cvg834g = {
 	.ephy_reset_gpio		= 36,
 	.ephy_reset_gpio_flags		= GPIOF_INIT_HIGH,
 };
-#endif /* CONFIG_BCM63XX_CPU_3368 */
+#endif
 
 /*
  * known 6328 boards
@@ -115,7 +115,7 @@ static struct board_info __initdata board_96328avng = {
 		},
 	},
 };
-#endif /* CONFIG_BCM63XX_CPU_6328 */
+#endif
 
 /*
  * known 6338 boards
@@ -204,7 +204,7 @@ static struct board_info __initdata board_96338w = {
 		},
 	},
 };
-#endif /* CONFIG_BCM63XX_CPU_6338 */
+#endif
 
 /*
  * known 6345 boards
@@ -216,7 +216,7 @@ static struct board_info __initdata board_96345gw2 = {
 
 	.has_uart0			= 1,
 };
-#endif /* CONFIG_BCM63XX_CPU_6345 */
+#endif
 
 /*
  * known 6348 boards
@@ -464,6 +464,7 @@ static struct board_info __initdata board_rta1025w_16 = {
 	},
 };
 
+
 static struct board_info __initdata board_DV201AMR = {
 	.name				= "DV201AMR",
 	.expected_cpu_id		= 0x6348,
@@ -504,7 +505,7 @@ static struct board_info __initdata board_96348gw_a = {
 
 	.has_ohci0 = 1,
 };
-#endif /* CONFIG_BCM63XX_CPU_6348 */
+#endif
 
 /*
  * known 6358 boards
@@ -528,6 +529,7 @@ static struct board_info __initdata board_96358vw = {
 		.force_speed_100	= 1,
 		.force_duplex_full	= 1,
 	},
+
 
 	.has_ohci0 = 1,
 	.has_pccard = 1,
@@ -652,7 +654,7 @@ static struct board_info __initdata board_DWVS0 = {
 
 	.has_ohci0			= 1,
 };
-#endif /* CONFIG_BCM63XX_CPU_6358 */
+#endif
 
 /*
  * all boards
@@ -660,17 +662,17 @@ static struct board_info __initdata board_DWVS0 = {
 static const struct board_info __initconst *bcm963xx_boards[] = {
 #ifdef CONFIG_BCM63XX_CPU_3368
 	&board_cvg834g,
-#endif /* CONFIG_BCM63XX_CPU_3368 */
+#endif
 #ifdef CONFIG_BCM63XX_CPU_6328
 	&board_96328avng,
-#endif /* CONFIG_BCM63XX_CPU_6328 */
+#endif
 #ifdef CONFIG_BCM63XX_CPU_6338
 	&board_96338gw,
 	&board_96338w,
-#endif /* CONFIG_BCM63XX_CPU_6338 */
+#endif
 #ifdef CONFIG_BCM63XX_CPU_6345
 	&board_96345gw2,
-#endif /* CONFIG_BCM63XX_CPU_6345 */
+#endif
 #ifdef CONFIG_BCM63XX_CPU_6348
 	&board_96348r,
 	&board_96348gw,
@@ -680,13 +682,14 @@ static const struct board_info __initconst *bcm963xx_boards[] = {
 	&board_DV201AMR,
 	&board_96348gw_a,
 	&board_rta1025w_16,
-#endif /* CONFIG_BCM63XX_CPU_6348 */
+#endif
+
 #ifdef CONFIG_BCM63XX_CPU_6358
 	&board_96358vw,
 	&board_96358vw2,
 	&board_AGPFS0,
 	&board_DWVS0,
-#endif /* CONFIG_BCM63XX_CPU_6358 */
+#endif
 };
 
 /*
@@ -725,7 +728,7 @@ int bcm63xx_get_fallback_sprom(struct ssb_bus *bus, struct ssb_sprom *out)
 		return -EINVAL;
 	}
 }
-#endif /* CONFIG_SSB_PCIHOST */
+#endif
 
 /*
  * return board name for /proc/cpuinfo
@@ -760,25 +763,11 @@ void __init board_prom_init(void)
 
 	/* dump cfe version */
 	cfe = boot_addr + BCM963XX_CFE_VERSION_OFFSET;
-	if (strstarts(cfe, "cfe-")) {
-		if(cfe[4] == 'v') {
-			if(cfe[5] == 'd')
-				snprintf(cfe_version, 11, "%s",
-					 (char *) &cfe[5]);
-			else if (cfe[10] > 0)
-				snprintf(cfe_version, sizeof(cfe_version),
-					 "%u.%u.%u-%u.%u-%u", cfe[5], cfe[6],
-					 cfe[7], cfe[8], cfe[9], cfe[10]);
-			else
-				snprintf(cfe_version, sizeof(cfe_version),
-					 "%u.%u.%u-%u.%u", cfe[5], cfe[6],
-					 cfe[7], cfe[8], cfe[9]);
-		} else {
-			snprintf(cfe_version, 12, "%s", (char *) &cfe[4]);
-		}
-	} else {
+	if (!memcmp(cfe, "cfe-v", 5))
+		snprintf(cfe_version, sizeof(cfe_version), "%u.%u.%u-%u.%u",
+			 cfe[5], cfe[6], cfe[7], cfe[8], cfe[9]);
+	else
 		strcpy(cfe_version, "unknown");
-	}
 	pr_info("CFE version: %s\n", cfe_version);
 
 	bcm63xx_nvram_init(boot_addr + BCM963XX_NVRAM_OFFSET);
@@ -818,7 +807,7 @@ void __init board_prom_init(void)
 		if (BCMCPU_IS_6348())
 			val |= GPIO_MODE_6348_G2_PCI;
 	}
-#endif /* CONFIG_PCI */
+#endif
 
 	if (board.has_pccard) {
 		if (BCMCPU_IS_6348())
@@ -903,7 +892,7 @@ int __init board_register_devices(void)
 				&bcm63xx_get_fallback_sprom) < 0)
 			pr_err("failed to register fallback SPROM\n");
 	}
-#endif /* CONFIG_SSB_PCIHOST */
+#endif
 
 	bcm63xx_spi_register();
 

@@ -11,13 +11,28 @@
 #include "idxd.h"
 #include "registers.h"
 
-static void idxd_device_reinit(struct work_struct *work)
+void idxd_device_wqs_clear_state(struct idxd_device *idxd)
 {
-	struct idxd_device *idxd = container_of(work, struct idxd_device, work);
-	struct device *dev = &idxd->pdev->dev;
-	int rc, i;
+	int i;
 
-	idxd_device_reset(idxd);
+	lockdep_assert_held(&idxd->dev_lock);
+	for (i = 0; i < idxd->max_wqs; i++) {
+		struct idxd_wq *wq = &idxd->wqs[i];
+
+		wq->state = IDXD_WQ_DISABLED;
+	}
+}
+
+static int idxd_restart(struct idxd_device *idxd)
+{
+	int i, rc;
+
+	lockdep_assert_held(&idxd->dev_lock);
+
+	rc = __idxd_device_reset(idxd);
+	if (rc < 0)
+		goto out;
+
 	rc = idxd_device_config(idxd);
 	if (rc < 0)
 		goto out;
@@ -32,16 +47,19 @@ static void idxd_device_reinit(struct work_struct *work)
 		if (wq->state == IDXD_WQ_ENABLED) {
 			rc = idxd_wq_enable(wq);
 			if (rc < 0) {
-				dev_warn(dev, "Unable to re-enable wq %s\n",
+				dev_warn(&idxd->pdev->dev,
+					 "Unable to re-enable wq %s\n",
 					 dev_name(&wq->conf_dev));
 			}
 		}
 	}
 
-	return;
+	return 0;
 
  out:
 	idxd_device_wqs_clear_state(idxd);
+	idxd->state = IDXD_DEV_HALTED;
+	return rc;
 }
 
 irqreturn_t idxd_irq_handler(int vec, void *data)
@@ -60,7 +78,7 @@ irqreturn_t idxd_misc_thread(int vec, void *data)
 	struct device *dev = &idxd->pdev->dev;
 	union gensts_reg gensts;
 	u32 cause, val = 0;
-	int i;
+	int i, rc;
 	bool err = false;
 
 	cause = ioread32(idxd->reg_base + IDXD_INTCAUSE_OFFSET);
@@ -99,8 +117,8 @@ irqreturn_t idxd_misc_thread(int vec, void *data)
 	}
 
 	if (cause & IDXD_INTC_CMD) {
+		/* Driver does use command interrupts */
 		val |= IDXD_INTC_CMD;
-		complete(idxd->cmd_done);
 	}
 
 	if (cause & IDXD_INTC_OCCUPY) {
@@ -127,24 +145,21 @@ irqreturn_t idxd_misc_thread(int vec, void *data)
 
 	gensts.bits = ioread32(idxd->reg_base + IDXD_GENSTATS_OFFSET);
 	if (gensts.state == IDXD_DEVICE_STATE_HALT) {
-		idxd->state = IDXD_DEV_HALTED;
+		spin_lock_bh(&idxd->dev_lock);
 		if (gensts.reset_type == IDXD_DEVICE_RESET_SOFTWARE) {
-			/*
-			 * If we need a software reset, we will throw the work
-			 * on a system workqueue in order to allow interrupts
-			 * for the device command completions.
-			 */
-			INIT_WORK(&idxd->work, idxd_device_reinit);
-			queue_work(idxd->wq, &idxd->work);
+			rc = idxd_restart(idxd);
+			if (rc < 0)
+				dev_err(&idxd->pdev->dev,
+					"idxd restart failed, device halt.");
 		} else {
-			spin_lock_bh(&idxd->dev_lock);
 			idxd_device_wqs_clear_state(idxd);
+			idxd->state = IDXD_DEV_HALTED;
 			dev_err(&idxd->pdev->dev,
 				"idxd halted, need %s.\n",
 				gensts.reset_type == IDXD_DEVICE_RESET_FLR ?
 				"FLR" : "system reset");
-			spin_unlock_bh(&idxd->dev_lock);
 		}
+		spin_unlock_bh(&idxd->dev_lock);
 	}
 
  out:
@@ -249,6 +264,8 @@ irqreturn_t idxd_wq_thread(int irq, void *data)
 
 	processed = idxd_desc_process(irq_entry);
 	idxd_unmask_msix_vector(irq_entry->idxd, irq_entry->id);
+	/* catch anything unprocessed after unmasking */
+	processed += idxd_desc_process(irq_entry);
 
 	if (processed == 0)
 		return IRQ_NONE;

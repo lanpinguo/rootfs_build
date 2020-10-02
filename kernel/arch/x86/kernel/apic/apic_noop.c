@@ -10,7 +10,6 @@
  * like self-ipi, etc...
  */
 #include <linux/cpumask.h>
-#include <linux/thread_info.h>
 
 #include <asm/apic.h>
 

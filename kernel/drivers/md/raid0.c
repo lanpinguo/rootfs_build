@@ -29,6 +29,21 @@ module_param(default_layout, int, 0644);
 	 (1L << MD_HAS_PPL) |		\
 	 (1L << MD_HAS_MULTIPLE_PPLS))
 
+static int raid0_congested(struct mddev *mddev, int bits)
+{
+	struct r0conf *conf = mddev->private;
+	struct md_rdev **devlist = conf->devlist;
+	int raid_disks = conf->strip_zone[0].nb_dev;
+	int i, ret = 0;
+
+	for (i = 0; i < raid_disks && !ret ; i++) {
+		struct request_queue *q = bdev_get_queue(devlist[i]->bdev);
+
+		ret |= bdi_congested(q->backing_dev_info, bits);
+	}
+	return ret;
+}
+
 /*
  * inform the user of the raid configuration
 */
@@ -480,7 +495,7 @@ static void raid0_handle_discard(struct mddev *mddev, struct bio *bio)
 			zone->zone_end - bio->bi_iter.bi_sector, GFP_NOIO,
 			&mddev->bio_set);
 		bio_chain(split, bio);
-		submit_bio_noacct(bio);
+		generic_make_request(bio);
 		bio = split;
 		end = zone->zone_end;
 	} else
@@ -544,7 +559,7 @@ static void raid0_handle_discard(struct mddev *mddev, struct bio *bio)
 			trace_block_bio_remap(bdev_get_queue(rdev->bdev),
 				discard_bio, disk_devt(mddev->gendisk),
 				bio->bi_iter.bi_sector);
-		submit_bio_noacct(discard_bio);
+		generic_make_request(discard_bio);
 	}
 	bio_endio(bio);
 }
@@ -585,7 +600,7 @@ static bool raid0_make_request(struct mddev *mddev, struct bio *bio)
 		struct bio *split = bio_split(bio, sectors, GFP_NOIO,
 					      &mddev->bio_set);
 		bio_chain(split, bio);
-		submit_bio_noacct(bio);
+		generic_make_request(bio);
 		bio = split;
 	}
 
@@ -618,7 +633,7 @@ static bool raid0_make_request(struct mddev *mddev, struct bio *bio)
 				disk_devt(mddev->gendisk), bio_sector);
 	mddev_check_writesame(mddev, bio);
 	mddev_check_write_zeroes(mddev, bio);
-	submit_bio_noacct(bio);
+	generic_make_request(bio);
 	return true;
 }
 
@@ -803,6 +818,7 @@ static struct md_personality raid0_personality=
 	.size		= raid0_size,
 	.takeover	= raid0_takeover,
 	.quiesce	= raid0_quiesce,
+	.congested	= raid0_congested,
 };
 
 static int __init raid0_init (void)

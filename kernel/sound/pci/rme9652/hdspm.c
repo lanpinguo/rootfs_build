@@ -2169,9 +2169,9 @@ static int snd_hdspm_create_midi(struct snd_card *card,
 }
 
 
-static void hdspm_midi_tasklet(struct tasklet_struct *t)
+static void hdspm_midi_tasklet(unsigned long arg)
 {
-	struct hdspm *hdspm = from_tasklet(hdspm, t, midi_tasklet);
+	struct hdspm *hdspm = (struct hdspm *)arg;
 	int i = 0;
 
 	while (i < hdspm->midiPorts) {
@@ -3027,8 +3027,8 @@ static int hdspm_autosync_ref(struct hdspm *hdspm)
 
 		unsigned int status = hdspm_read(hdspm, HDSPM_statusRegister);
 		unsigned int syncref = (status >> HDSPM_AES32_syncref_bit) & 0xF;
-		/* syncref >= HDSPM_AES32_AUTOSYNC_FROM_WORD is always true */
-		if (syncref <= HDSPM_AES32_AUTOSYNC_FROM_SYNC_IN) {
+		if ((syncref >= HDSPM_AES32_AUTOSYNC_FROM_WORD) &&
+				(syncref <= HDSPM_AES32_AUTOSYNC_FROM_SYNC_IN)) {
 			return syncref;
 		}
 		return HDSPM_AES32_AUTOSYNC_FROM_NONE;
@@ -6836,7 +6836,8 @@ static int snd_hdspm_create(struct snd_card *card,
 
 	}
 
-	tasklet_setup(&hdspm->midi_tasklet, hdspm_midi_tasklet);
+	tasklet_init(&hdspm->midi_tasklet,
+			hdspm_midi_tasklet, (unsigned long) hdspm);
 
 
 	if (hdspm->io_type != MADIface) {

@@ -40,11 +40,11 @@ enum {
 };
 
 /**
- * struct sti_cpufreq_ddata - ST CPUFreq Driver Data
+ * ST CPUFreq Driver Data
  *
- * @cpu:		CPU's OF node
- * @syscfg_eng:		Engineering Syscon register map
- * @syscfg:		Syscon register map
+ * @cpu_node		CPU's OF node
+ * @syscfg_eng		Engineering Syscon register map
+ * @regmap		Syscon register map
  */
 static struct sti_cpufreq_ddata {
 	struct device *cpu;

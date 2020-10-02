@@ -253,11 +253,6 @@ out:
 	spin_unlock(&rtwdev->h2c.lock);
 }
 
-void rtw_fw_h2c_cmd_dbg(struct rtw_dev *rtwdev, u8 *h2c)
-{
-	rtw_fw_send_h2c_command(rtwdev, h2c);
-}
-
 static void rtw_fw_send_h2c_packet(struct rtw_dev *rtwdev, u8 *h2c_pkt)
 {
 	int ret;
@@ -920,14 +915,14 @@ static struct sk_buff *rtw_get_rsvd_page_skb(struct ieee80211_hw *hw,
 	return skb_new;
 }
 
-static void rtw_fill_rsvd_page_desc(struct rtw_dev *rtwdev, struct sk_buff *skb,
-				    enum rtw_rsvd_packet_type type)
+static void rtw_fill_rsvd_page_desc(struct rtw_dev *rtwdev, struct sk_buff *skb)
 {
-	struct rtw_tx_pkt_info pkt_info = {0};
+	struct rtw_tx_pkt_info pkt_info;
 	struct rtw_chip_info *chip = rtwdev->chip;
 	u8 *pkt_desc;
 
-	rtw_tx_rsvd_page_pkt_info_update(rtwdev, &pkt_info, skb, type);
+	memset(&pkt_info, 0, sizeof(pkt_info));
+	rtw_rsvd_page_pkt_info_update(rtwdev, &pkt_info, skb);
 	pkt_desc = skb_push(skb, chip->tx_pkt_desc_sz);
 	memset(pkt_desc, 0, chip->tx_pkt_desc_sz);
 	rtw_tx_fill_tx_desc(&pkt_info, skb);
@@ -1266,7 +1261,7 @@ static u8 *rtw_build_rsvd_page(struct rtw_dev *rtwdev, u32 *size)
 		 * And iter->len will be added with size of tx_desc_sz.
 		 */
 		if (rsvd_pkt->add_txdesc)
-			rtw_fill_rsvd_page_desc(rtwdev, iter, rsvd_pkt->type);
+			rtw_fill_rsvd_page_desc(rtwdev, iter);
 
 		rsvd_pkt->skb = iter;
 		rsvd_pkt->page = total_page;

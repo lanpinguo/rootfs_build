@@ -11,7 +11,6 @@
 
 /**
  * scif_recv_mark: Handle SCIF_MARK request
- * @scifdev:	SCIF device
  * @msg:	Interrupt message
  *
  * The peer has requested a mark.
@@ -34,7 +33,6 @@ void scif_recv_mark(struct scif_dev *scifdev, struct scifmsg *msg)
 
 /**
  * scif_recv_mark_resp: Handle SCIF_MARK_(N)ACK messages.
- * @scifdev:	SCIF device
  * @msg:	Interrupt message
  *
  * The peer has responded to a SCIF_MARK message.
@@ -58,7 +56,6 @@ void scif_recv_mark_resp(struct scif_dev *scifdev, struct scifmsg *msg)
 
 /**
  * scif_recv_wait: Handle SCIF_WAIT request
- * @scifdev:	SCIF device
  * @msg:	Interrupt message
  *
  * The peer has requested waiting on a fence.
@@ -96,7 +93,6 @@ void scif_recv_wait(struct scif_dev *scifdev, struct scifmsg *msg)
 
 /**
  * scif_recv_wait_resp: Handle SCIF_WAIT_(N)ACK messages.
- * @scifdev:	SCIF device
  * @msg:	Interrupt message
  *
  * The peer has responded to a SCIF_WAIT message.
@@ -118,7 +114,6 @@ void scif_recv_wait_resp(struct scif_dev *scifdev, struct scifmsg *msg)
 
 /**
  * scif_recv_sig_local: Handle SCIF_SIG_LOCAL request
- * @scifdev:	SCIF device
  * @msg:	Interrupt message
  *
  * The peer has requested a signal on a local offset.
@@ -140,7 +135,6 @@ void scif_recv_sig_local(struct scif_dev *scifdev, struct scifmsg *msg)
 
 /**
  * scif_recv_sig_remote: Handle SCIF_SIGNAL_REMOTE request
- * @scifdev:	SCIF device
  * @msg:	Interrupt message
  *
  * The peer has requested a signal on a remote offset.
@@ -162,7 +156,6 @@ void scif_recv_sig_remote(struct scif_dev *scifdev, struct scifmsg *msg)
 
 /**
  * scif_recv_sig_resp: Handle SCIF_SIG_(N)ACK messages.
- * @scifdev:	SCIF device
  * @msg:	Interrupt message
  *
  * The peer has responded to a signal request.
@@ -287,12 +280,12 @@ alloc_fail:
 	return err;
 }
 
-/**
+/*
  * scif_prog_signal:
- * @epd: Endpoint Descriptor
- * @offset: registered address to write @val to
- * @val: Value to be written at @offset
- * @type: Type of the window.
+ * @epd - Endpoint Descriptor
+ * @offset - registered address to write @val to
+ * @val - Value to be written at @offset
+ * @type - Type of the window.
  *
  * Arrange to write a value to the registered offset after ensuring that the
  * offset provided is indeed valid.
@@ -508,12 +501,12 @@ retry:
 
 /**
  * scif_send_fence_signal:
- * @epd: endpoint descriptor
- * @loff: local offset
- * @lval: local value to write to loffset
- * @roff: remote offset
- * @rval: remote value to write to roffset
- * @flags: flags
+ * @epd - endpoint descriptor
+ * @loff - local offset
+ * @lval - local value to write to loffset
+ * @roff - remote offset
+ * @rval - remote value to write to roffset
+ * @flags - flags
  *
  * Sends a remote fence signal request
  */
@@ -584,11 +577,10 @@ static void scif_fence_mark_cb(void *arg)
 	atomic_dec(&ep->rma_info.fence_refcount);
 }
 
-/**
+/*
  * _scif_fence_mark:
- * @epd: endpoint descriptor
- * @mark: DMA mark to set-up
  *
+ * @epd - endpoint descriptor
  * Set up a mark for this endpoint and return the value of the mark.
  */
 int _scif_fence_mark(scif_epd_t epd, int *mark)

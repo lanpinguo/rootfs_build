@@ -242,8 +242,7 @@ static int sun4i_csi_release(struct file *file)
 
 	mutex_lock(&csi->lock);
 
-	_vb2_fop_release(file, NULL);
-
+	v4l2_fh_release(file);
 	v4l2_pipeline_pm_put(&csi->vdev.entity);
 	pm_runtime_put(csi->dev);
 
@@ -257,6 +256,8 @@ static const struct v4l2_file_operations sun4i_csi_fops = {
 	.open		= sun4i_csi_open,
 	.release	= sun4i_csi_release,
 	.unlocked_ioctl	= video_ioctl2,
+	.read		= vb2_fop_read,
+	.write		= vb2_fop_write,
 	.poll		= vb2_fop_poll,
 	.mmap		= vb2_fop_mmap,
 };

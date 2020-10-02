@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: GPL-2.0
-userprogs-always-y += hpet_example
+userprogs := hpet_example
+always-y := $(userprogs)
 
 userccflags += -I usr/include

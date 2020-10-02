@@ -274,7 +274,7 @@ static int cpcap_battery_cc_to_ua(struct cpcap_battery_ddata *ddata,
 /**
  * cpcap_battery_read_accumulated - reads cpcap coulomb counter
  * @ddata: device driver data
- * @ccd: coulomb counter values
+ * @regs: coulomb counter values
  *
  * Based on Motorola mapphone kernel function data_read_regs().
  * Looking at the registers, the coulomb counter seems similar to

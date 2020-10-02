@@ -1274,10 +1274,6 @@ PAGE_SIZE multiple when read back.
 		Amount of memory used for storing in-kernel data
 		structures.
 
-	  percpu
-		Amount of memory used for storing per-cpu kernel
-		data structures.
-
 	  sock
 		Amount of memory used in network transmission buffers
 
@@ -1487,7 +1483,8 @@ IO Interface Files
 ~~~~~~~~~~~~~~~~~~
 
   io.stat
-	A read-only nested-keyed file.
+	A read-only nested-keyed file which exists on non-root
+	cgroups.
 
 	Lines are keyed by $MAJ:$MIN device numbers and not ordered.
 	The following nested keys are defined.
@@ -1687,9 +1684,9 @@ per-cgroup dirty memory states are examined and the more restrictive
 of the two is enforced.
 
 cgroup writeback requires explicit support from the underlying
-filesystem.  Currently, cgroup writeback is implemented on ext2, ext4,
-btrfs, f2fs, and xfs.  On other filesystems, all writeback IOs are 
-attributed to the root cgroup.
+filesystem.  Currently, cgroup writeback is implemented on ext2, ext4
+and btrfs.  On other filesystems, all writeback IOs are attributed to
+the root cgroup.
 
 There are inherent differences in memory and writeback management
 which affects how cgroup ownership is tracked.  Memory is tracked per
@@ -2046,7 +2043,7 @@ RDMA
 ----
 
 The "rdma" controller regulates the distribution and accounting of
-RDMA resources.
+of RDMA resources.
 
 RDMA Interface Files
 ~~~~~~~~~~~~~~~~~~~~

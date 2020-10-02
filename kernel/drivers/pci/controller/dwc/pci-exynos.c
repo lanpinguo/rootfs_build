@@ -3,7 +3,7 @@
  * PCIe host controller driver for Samsung Exynos SoCs
  *
  * Copyright (C) 2013 Samsung Electronics Co., Ltd.
- *		https://www.samsung.com
+ *		http://www.samsung.com
  *
  * Author: Jingoo Han <jg1.han@samsung.com>
  */
@@ -84,12 +84,14 @@ static int exynos5440_pcie_get_mem_resources(struct platform_device *pdev,
 {
 	struct dw_pcie *pci = ep->pci;
 	struct device *dev = pci->dev;
+	struct resource *res;
 
 	ep->mem_res = devm_kzalloc(dev, sizeof(*ep->mem_res), GFP_KERNEL);
 	if (!ep->mem_res)
 		return -ENOMEM;
 
-	ep->mem_res->elbi_base = devm_platform_ioremap_resource(pdev, 0);
+	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+	ep->mem_res->elbi_base = devm_ioremap_resource(dev, res);
 	if (IS_ERR(ep->mem_res->elbi_base))
 		return PTR_ERR(ep->mem_res->elbi_base);
 
@@ -400,9 +402,10 @@ static int __init exynos_add_pcie_port(struct exynos_pcie *ep,
 	int ret;
 
 	pp->irq = platform_get_irq(pdev, 1);
-	if (pp->irq < 0)
+	if (pp->irq < 0) {
+		dev_err(dev, "failed to get irq\n");
 		return pp->irq;
-
+	}
 	ret = devm_request_irq(dev, pp->irq, exynos_pcie_irq_handler,
 				IRQF_SHARED, "exynos-pcie", ep);
 	if (ret) {
@@ -412,8 +415,10 @@ static int __init exynos_add_pcie_port(struct exynos_pcie *ep,
 
 	if (IS_ENABLED(CONFIG_PCI_MSI)) {
 		pp->msi_irq = platform_get_irq(pdev, 0);
-		if (pp->msi_irq < 0)
+		if (pp->msi_irq < 0) {
+			dev_err(dev, "failed to get msi irq\n");
 			return pp->msi_irq;
+		}
 	}
 
 	pp->ops = &exynos_pcie_host_ops;

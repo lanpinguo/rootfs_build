@@ -616,11 +616,12 @@ static const char *soc_dapm_prefix(struct snd_soc_dapm_context *dapm)
 	return dapm->component->name_prefix;
 }
 
-static unsigned int soc_dapm_read(struct snd_soc_dapm_context *dapm, int reg)
+static int soc_dapm_read(struct snd_soc_dapm_context *dapm, int reg,
+	unsigned int *value)
 {
 	if (!dapm->component)
 		return -EIO;
-	return  snd_soc_component_read(dapm->component, reg);
+	return snd_soc_component_read(dapm->component, reg, value);
 }
 
 static int soc_dapm_update_bits(struct snd_soc_dapm_context *dapm,
@@ -752,7 +753,7 @@ static int dapm_connect_mux(struct snd_soc_dapm_context *dapm,
 	int i;
 
 	if (e->reg != SND_SOC_NOPM) {
-		val = soc_dapm_read(dapm, e->reg);
+		soc_dapm_read(dapm, e->reg, &val);
 		val = (val >> e->shift_l) & e->mask;
 		item = snd_soc_enum_val_to_item(e, val);
 	} else {
@@ -789,7 +790,7 @@ static void dapm_set_mixer_path_status(struct snd_soc_dapm_path *p, int i,
 	unsigned int val;
 
 	if (reg != SND_SOC_NOPM) {
-		val = soc_dapm_read(p->sink->dapm, reg);
+		soc_dapm_read(p->sink->dapm, reg, &val);
 		/*
 		 * The nth_path argument allows this function to know
 		 * which path of a kcontrol it is setting the initial
@@ -804,7 +805,7 @@ static void dapm_set_mixer_path_status(struct snd_soc_dapm_path *p, int i,
 		 */
 		if (snd_soc_volsw_is_stereo(mc) && nth_path > 0) {
 			if (reg != mc->rreg)
-				val = soc_dapm_read(p->sink->dapm, mc->rreg);
+				soc_dapm_read(p->sink->dapm, mc->rreg, &val);
 			val = (val >> mc->rshift) & mask;
 		} else {
 			val = (val >> shift) & mask;
@@ -1798,7 +1799,7 @@ static void dapm_pre_sequence_async(void *data, async_cookie_t cookie)
 	/* If we're off and we're not supposed to go into STANDBY */
 	if (d->bias_level == SND_SOC_BIAS_OFF &&
 	    d->target_bias_level != SND_SOC_BIAS_OFF) {
-		if (d->dev && cookie)
+		if (d->dev)
 			pm_runtime_get_sync(d->dev);
 
 		ret = snd_soc_dapm_set_bias_level(d, SND_SOC_BIAS_STANDBY);
@@ -1845,7 +1846,7 @@ static void dapm_post_sequence_async(void *data, async_cookie_t cookie)
 			dev_err(d->dev, "ASoC: Failed to turn off bias: %d\n",
 				ret);
 
-		if (d->dev && cookie)
+		if (d->dev)
 			pm_runtime_put(d->dev);
 	}
 
@@ -2673,7 +2674,7 @@ int snd_soc_dapm_update_dai(struct snd_pcm_substream *substream,
 			    struct snd_pcm_hw_params *params,
 			    struct snd_soc_dai *dai)
 {
-	struct snd_soc_pcm_runtime *rtd = asoc_substream_to_rtd(substream);
+	struct snd_soc_pcm_runtime *rtd = substream->private_data;
 	int ret;
 
 	mutex_lock_nested(&rtd->card->dapm_mutex, SND_SOC_DAPM_CLASS_RUNTIME);
@@ -3245,7 +3246,7 @@ int snd_soc_dapm_new_widgets(struct snd_soc_card *card)
 
 		/* Read the initial power state from the device */
 		if (w->reg >= 0) {
-			val = soc_dapm_read(w->dapm, w->reg);
+			soc_dapm_read(w->dapm, w->reg, &val);
 			val = val >> w->shift;
 			val &= w->mask;
 			if (val == w->on_val)
@@ -3287,14 +3288,15 @@ int snd_soc_dapm_get_volsw(struct snd_kcontrol *kcontrol,
 	unsigned int mask = (1 << fls(max)) - 1;
 	unsigned int invert = mc->invert;
 	unsigned int reg_val, val, rval = 0;
+	int ret = 0;
 
 	mutex_lock_nested(&card->dapm_mutex, SND_SOC_DAPM_CLASS_RUNTIME);
 	if (dapm_kcontrol_is_powered(kcontrol) && reg != SND_SOC_NOPM) {
-		reg_val = soc_dapm_read(dapm, reg);
+		ret = soc_dapm_read(dapm, reg, &reg_val);
 		val = (reg_val >> shift) & mask;
 
-		if (reg != mc->rreg)
-			reg_val = soc_dapm_read(dapm, mc->rreg);
+		if (ret == 0 && reg != mc->rreg)
+			ret = soc_dapm_read(dapm, mc->rreg, &reg_val);
 
 		if (snd_soc_volsw_is_stereo(mc))
 			rval = (reg_val >> mc->rshift) & mask;
@@ -3306,6 +3308,9 @@ int snd_soc_dapm_get_volsw(struct snd_kcontrol *kcontrol,
 			rval = (reg_val >> width) & mask;
 	}
 	mutex_unlock(&card->dapm_mutex);
+
+	if (ret)
+		return ret;
 
 	if (invert)
 		ucontrol->value.integer.value[0] = max - val;
@@ -3319,7 +3324,7 @@ int snd_soc_dapm_get_volsw(struct snd_kcontrol *kcontrol,
 			ucontrol->value.integer.value[1] = rval;
 	}
 
-	return 0;
+	return ret;
 }
 EXPORT_SYMBOL_GPL(snd_soc_dapm_get_volsw);
 
@@ -3434,7 +3439,11 @@ int snd_soc_dapm_get_enum_double(struct snd_kcontrol *kcontrol,
 
 	mutex_lock_nested(&card->dapm_mutex, SND_SOC_DAPM_CLASS_RUNTIME);
 	if (e->reg != SND_SOC_NOPM && dapm_kcontrol_is_powered(kcontrol)) {
-		reg_val = soc_dapm_read(dapm, e->reg);
+		int ret = soc_dapm_read(dapm, e->reg, &reg_val);
+		if (ret) {
+			mutex_unlock(&card->dapm_mutex);
+			return ret;
+		}
 	} else {
 		reg_val = dapm_kcontrol_get_value(kcontrol);
 	}
@@ -3795,7 +3804,7 @@ snd_soc_dai_link_event_pre_pmu(struct snd_soc_dapm_widget *w,
 {
 	struct snd_soc_dapm_path *path;
 	struct snd_soc_dai *source, *sink;
-	struct snd_soc_pcm_runtime *rtd = asoc_substream_to_rtd(substream);
+	struct snd_soc_pcm_runtime *rtd = substream->private_data;
 	struct snd_pcm_hw_params *params = NULL;
 	const struct snd_soc_pcm_stream *config = NULL;
 	struct snd_pcm_runtime *runtime = NULL;
@@ -4117,7 +4126,7 @@ snd_soc_dapm_new_dai(struct snd_soc_card *card,
 		     struct snd_pcm_substream *substream,
 		     char *id)
 {
-	struct snd_soc_pcm_runtime *rtd = asoc_substream_to_rtd(substream);
+	struct snd_soc_pcm_runtime *rtd = substream->private_data;
 	struct snd_soc_dapm_widget template;
 	struct snd_soc_dapm_widget *w;
 	const char **w_param_text;

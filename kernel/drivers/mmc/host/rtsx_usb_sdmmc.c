@@ -654,11 +654,12 @@ static u8 sd_search_final_phase(struct rtsx_usb_sdmmc *host, u32 phase_map)
 
 static void sd_wait_data_idle(struct rtsx_usb_sdmmc *host)
 {
-	int i;
+	int err, i;
 	u8 val = 0;
 
 	for (i = 0; i < 100; i++) {
-		rtsx_usb_ep0_read_register(host->ucr, SD_DATA_STATE, &val);
+		err = rtsx_usb_ep0_read_register(host->ucr,
+				SD_DATA_STATE, &val);
 		if (val & SD_DATA_IDLE)
 			return;
 

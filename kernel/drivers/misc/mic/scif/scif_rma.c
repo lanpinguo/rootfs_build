@@ -458,7 +458,7 @@ static void scif_destroy_remote_lookup(struct scif_dev *remote_dev,
 
 /**
  * scif_create_remote_window:
- * @scifdev:  SCIF device
+ * @ep: end point
  * @nr_pages: number of pages in window
  *
  * Allocate and prepare a remote registration window.
@@ -500,6 +500,7 @@ error_ret:
 
 /**
  * scif_destroy_remote_window:
+ * @ep: end point
  * @window: remote registration window
  *
  * Deallocate resources for remote window.
@@ -657,7 +658,7 @@ int scif_unregister_window(struct scif_window *window)
 		window->unreg_state = OP_IN_PROGRESS;
 		send_msg = true;
 	}
-		fallthrough;
+		/* fall through */
 	case OP_IN_PROGRESS:
 	{
 		scif_get_window(window, 1);
@@ -1036,7 +1037,6 @@ void scif_free_window_offset(struct scif_endpt *ep,
 
 /**
  * scif_alloc_req: Respond to SCIF_ALLOC_REQ interrupt message
- * @scifdev:    SCIF device
  * @msg:        Interrupt message
  *
  * Remote side is requesting a memory allocation.
@@ -1072,7 +1072,6 @@ error:
 
 /**
  * scif_alloc_gnt_rej: Respond to SCIF_ALLOC_GNT/REJ interrupt message
- * @scifdev:    SCIF device
  * @msg:        Interrupt message
  *
  * Remote side responded to a memory allocation.
@@ -1097,7 +1096,6 @@ void scif_alloc_gnt_rej(struct scif_dev *scifdev, struct scifmsg *msg)
 
 /**
  * scif_free_virt: Respond to SCIF_FREE_VIRT interrupt message
- * @scifdev:    SCIF device
  * @msg:        Interrupt message
  *
  * Free up memory kmalloc'd earlier.
@@ -1136,7 +1134,6 @@ scif_fixup_aper_base(struct scif_dev *dev, struct scif_window *window)
 
 /**
  * scif_recv_reg: Respond to SCIF_REGISTER interrupt message
- * @scifdev:    SCIF device
  * @msg:        Interrupt message
  *
  * Update remote window list with a new registered window.
@@ -1173,7 +1170,6 @@ void scif_recv_reg(struct scif_dev *scifdev, struct scifmsg *msg)
 
 /**
  * scif_recv_unreg: Respond to SCIF_UNREGISTER interrupt message
- * @scifdev:    SCIF device
  * @msg:        Interrupt message
  *
  * Remove window from remote registration list;
@@ -1239,7 +1235,6 @@ error:
 
 /**
  * scif_recv_reg_ack: Respond to SCIF_REGISTER_ACK interrupt message
- * @scifdev:    SCIF device
  * @msg:        Interrupt message
  *
  * Wake up the window waiting to complete registration.
@@ -1258,7 +1253,6 @@ void scif_recv_reg_ack(struct scif_dev *scifdev, struct scifmsg *msg)
 
 /**
  * scif_recv_reg_nack: Respond to SCIF_REGISTER_NACK interrupt message
- * @scifdev:    SCIF device
  * @msg:        Interrupt message
  *
  * Wake up the window waiting to inform it that registration
@@ -1278,7 +1272,6 @@ void scif_recv_reg_nack(struct scif_dev *scifdev, struct scifmsg *msg)
 
 /**
  * scif_recv_unreg_ack: Respond to SCIF_UNREGISTER_ACK interrupt message
- * @scifdev:    SCIF device
  * @msg:        Interrupt message
  *
  * Wake up the window waiting to complete unregistration.
@@ -1297,7 +1290,6 @@ void scif_recv_unreg_ack(struct scif_dev *scifdev, struct scifmsg *msg)
 
 /**
  * scif_recv_unreg_nack: Respond to SCIF_UNREGISTER_NACK interrupt message
- * @scifdev:    SCIF device
  * @msg:        Interrupt message
  *
  * Wake up the window waiting to inform it that unregistration

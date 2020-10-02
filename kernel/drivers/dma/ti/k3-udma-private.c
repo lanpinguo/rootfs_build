@@ -121,17 +121,13 @@ XUDMA_GET_RESOURCE_ID(rflow);
 #define XUDMA_RT_IO_FUNCTIONS(res)					\
 u32 xudma_##res##rt_read(struct udma_##res *p, int reg)			\
 {									\
-	if (!p)								\
-		return 0;						\
-	return udma_read(p->reg_rt, reg);				\
+	return udma_##res##rt_read(p, reg);				\
 }									\
 EXPORT_SYMBOL(xudma_##res##rt_read);					\
 									\
 void xudma_##res##rt_write(struct udma_##res *p, int reg, u32 val)	\
 {									\
-	if (!p)								\
-		return;							\
-	udma_write(p->reg_rt, reg, val);				\
+	udma_##res##rt_write(p, reg, val);				\
 }									\
 EXPORT_SYMBOL(xudma_##res##rt_write)
 XUDMA_RT_IO_FUNCTIONS(tchan);

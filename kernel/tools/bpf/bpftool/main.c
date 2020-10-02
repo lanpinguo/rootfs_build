@@ -31,7 +31,6 @@ bool relaxed_maps;
 struct pinned_obj_table prog_table;
 struct pinned_obj_table map_table;
 struct pinned_obj_table link_table;
-struct obj_refs_table refs_table;
 
 static void __noreturn clean_and_exit(int i)
 {
@@ -93,16 +92,9 @@ int cmd_select(const struct cmd *cmds, int argc, char **argv,
 	if (argc < 1 && cmds[0].func)
 		return cmds[0].func(argc, argv);
 
-	for (i = 0; cmds[i].cmd; i++) {
-		if (is_prefix(*argv, cmds[i].cmd)) {
-			if (!cmds[i].func) {
-				p_err("command '%s' is not supported in bootstrap mode",
-				      cmds[i].cmd);
-				return -1;
-			}
+	for (i = 0; cmds[i].func; i++)
+		if (is_prefix(*argv, cmds[i].cmd))
 			return cmds[i].func(argc - 1, argv + 1);
-		}
-	}
 
 	help(argc - 1, argv + 1);
 

@@ -389,11 +389,6 @@ struct fwnode_handle *
 fwnode_graph_get_remote_node(const struct fwnode_handle *fwnode, u32 port,
 			     u32 endpoint);
 
-static inline bool fwnode_graph_is_endpoint(struct fwnode_handle *fwnode)
-{
-	return fwnode_property_present(fwnode, "remote-endpoint");
-}
-
 /*
  * Fwnode lookup flags
  *

@@ -454,7 +454,7 @@ static int radeon_uvd_validate_codec(struct radeon_cs_parser *p,
 		if (p->rdev->family >= CHIP_PALM)
 			return 0;
 
-		fallthrough;
+		/* fall through */
 	default:
 		DRM_ERROR("UVD codec not supported by hardware %d!\n",
 			  stream_type);

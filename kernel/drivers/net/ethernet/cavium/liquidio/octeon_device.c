@@ -1056,7 +1056,7 @@ void octeon_delete_dispatch_list(struct octeon_device *oct)
 
 	list_for_each_safe(temp, tmp2, &freelist) {
 		list_del(temp);
-		kfree(temp);
+		vfree(temp);
 	}
 }
 
@@ -1152,10 +1152,13 @@ octeon_register_dispatch_fn(struct octeon_device *oct,
 
 		dev_dbg(&oct->pci_dev->dev,
 			"Adding opcode to dispatch list linked list\n");
-		dispatch = kmalloc(sizeof(*dispatch), GFP_KERNEL);
-		if (!dispatch)
+		dispatch = (struct octeon_dispatch *)
+			   vmalloc(sizeof(struct octeon_dispatch));
+		if (!dispatch) {
+			dev_err(&oct->pci_dev->dev,
+				"No memory to add dispatch function\n");
 			return 1;
-
+		}
 		dispatch->opcode = combined_opcode;
 		dispatch->dispatch_fn = fn;
 		dispatch->arg = fn_arg;

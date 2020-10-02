@@ -303,8 +303,7 @@ put_node:
 
 static int panel_probe(struct platform_device *pdev)
 {
-	struct device_node *node = pdev->dev.of_node;
-	struct backlight_device *backlight;
+	struct device_node *bl_node, *node = pdev->dev.of_node;
 	struct panel_module *panel_mod;
 	struct tilcdc_module *mod;
 	struct pinctrl *pinctrl;
@@ -320,10 +319,16 @@ static int panel_probe(struct platform_device *pdev)
 	if (!panel_mod)
 		return -ENOMEM;
 
-	backlight = devm_of_find_backlight(&pdev->dev);
-	if (IS_ERR(backlight))
-		return PTR_ERR(backlight);
-	panel_mod->backlight = backlight;
+	bl_node = of_parse_phandle(node, "backlight", 0);
+	if (bl_node) {
+		panel_mod->backlight = of_find_backlight_by_node(bl_node);
+		of_node_put(bl_node);
+
+		if (!panel_mod->backlight)
+			return -EPROBE_DEFER;
+
+		dev_info(&pdev->dev, "found backlight\n");
+	}
 
 	panel_mod->enable_gpio = devm_gpiod_get_optional(&pdev->dev, "enable",
 							 GPIOD_OUT_LOW);
@@ -395,7 +400,7 @@ static const struct of_device_id panel_of_match[] = {
 		{ },
 };
 
-static struct platform_driver panel_driver = {
+struct platform_driver panel_driver = {
 	.probe = panel_probe,
 	.remove = panel_remove,
 	.driver = {

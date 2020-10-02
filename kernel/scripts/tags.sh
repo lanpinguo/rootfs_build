@@ -91,10 +91,20 @@ all_sources()
 
 all_compiled_sources()
 {
-	realpath -es $([ -z "$KBUILD_ABS_SRCTREE" ] && echo --relative-to=.) \
-		include/generated/autoconf.h $(find -name "*.cmd" -exec \
-		grep -Poh '(?(?=^source_.* \K).*|(?=^  \K\S).*(?= \\))' {} \+ |
-		awk '!a[$0]++') | sort -u
+	for i in $(all_sources); do
+		case "$i" in
+			*.[cS])
+				j=${i/\.[cS]/\.o}
+				j="${j#$tree}"
+				if [ -e $j ]; then
+					echo $i
+				fi
+				;;
+			*)
+				echo $i
+				;;
+		esac
+	done
 }
 
 all_target_sources()

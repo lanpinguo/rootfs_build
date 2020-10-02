@@ -312,7 +312,7 @@ nonblock:
 	case STATE_EP_READY:			/* not configured yet */
 		if (is_write)
 			return 0;
-		fallthrough;
+		// FALLTHRU
 	case STATE_EP_UNBOUND:			/* clean disconnect */
 		break;
 	// case STATE_EP_DISABLED:		/* "can't happen" */
@@ -1084,7 +1084,7 @@ next_event (struct dev_data *dev, enum usb_gadgetfs_event_type type)
 	case GADGETFS_DISCONNECT:
 		if (dev->state == STATE_DEV_SETUP)
 			dev->setup_abort = 1;
-		fallthrough;
+		// FALL THROUGH
 	case GADGETFS_CONNECT:
 		dev->ev_next = 0;
 		break;
@@ -1381,6 +1381,7 @@ gadgetfs_setup (struct usb_gadget *gadget, const struct usb_ctrlrequest *ctrl)
 			make_qualifier (dev);
 			break;
 		case USB_DT_OTHER_SPEED_CONFIG:
+			// FALLTHROUGH
 		case USB_DT_CONFIG:
 			value = config_buf (dev,
 					w_value >> 8,
@@ -1717,7 +1718,7 @@ gadgetfs_suspend (struct usb_gadget *gadget)
 	case STATE_DEV_UNCONNECTED:
 		next_event (dev, GADGETFS_SUSPEND);
 		ep0_readable (dev);
-		fallthrough;
+		/* FALLTHROUGH */
 	default:
 		break;
 	}

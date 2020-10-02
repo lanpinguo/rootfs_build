@@ -125,14 +125,11 @@ goku_ep_enable(struct usb_ep *_ep, const struct usb_endpoint_descriptor *desc)
 	max = get_unaligned_le16(&desc->wMaxPacketSize);
 	switch (max) {
 	case 64:
-		mode++;
-		fallthrough;
+		mode++; /* fall through */
 	case 32:
-		mode++;
-		fallthrough;
+		mode++; /* fall through */
 	case 16:
-		mode++;
-		fallthrough;
+		mode++; /* fall through */
 	case 8:
 		mode <<= 3;
 		break;
