@@ -107,6 +107,8 @@ pe_header:
 	 *  x24        __primary_switch() .. relocate_kernel()  current RELR displacement
 	 */
 SYM_CODE_START(primary_entry)
+	mov w1, #0x61
+	bl uart_putc
 	bl	preserve_boot_args
 	bl	el2_setup			// Drop to EL1, w0=cpu_boot_mode
 	adrp	x23, __PHYS_OFFSET
@@ -122,6 +124,17 @@ SYM_CODE_START(primary_entry)
 	bl	__cpu_setup			// initialise processor
 	b	__primary_switch
 SYM_CODE_END(primary_entry)
+
+
+SYM_FUNC_START_LOCAL(uart_putc)
+	mov x0, #0x8000
+	movk x0, #0x01c2, lsl #16			// UART tx reg addr: 0x01c28000
+	//mov	w1, #0x61
+	str w1, [x0] 
+	ret
+SYM_FUNC_END(uart_putc)
+
+
 
 /*
  * Preserve the arguments passed by the bootloader in x0 .. x3
@@ -960,10 +973,14 @@ SYM_FUNC_END(__relocate_kernel)
 #endif
 
 SYM_FUNC_START_LOCAL(__primary_switch)
+	mov w1, #0x62
+	bl uart_putc
+
 #ifdef CONFIG_RANDOMIZE_BASE
 	mov	x19, x0				// preserve new SCTLR_EL1 value
 	mrs	x20, sctlr_el1			// preserve old SCTLR_EL1 value
 #endif
+
 
 	adrp	x1, init_pg_dir
 	bl	__enable_mmu
@@ -999,6 +1016,9 @@ SYM_FUNC_START_LOCAL(__primary_switch)
 	bl	__relocate_kernel
 #endif
 #endif
+	mov w1, #0x64
+	ldr x8 , =uart_putc
+	blr x8
 	ldr	x8, =__primary_switched
 	adrp	x0, __PHYS_OFFSET
 	br	x8

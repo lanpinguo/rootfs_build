@@ -833,7 +833,12 @@ asmlinkage __visible void __init start_kernel(void)
 {
 	char *command_line;
 	char *after_dashes;
+	unsigned int * uart_tx_reg;
 
+	uart_tx_reg = phys_to_virt(0x01c28000);
+
+	*uart_tx_reg = 0x68;
+	
 	set_task_stack_end_magic(&init_task);
 	smp_setup_processor_id();
 	debug_objects_early_init();
