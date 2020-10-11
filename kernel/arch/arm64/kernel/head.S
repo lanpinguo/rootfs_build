@@ -107,7 +107,7 @@ pe_header:
 	 *  x24        __primary_switch() .. relocate_kernel()  current RELR displacement
 	 */
 SYM_CODE_START(primary_entry)
-	mov w21, #0x61
+	mov w15, #0x61
 	bl uart_putc
 	bl	preserve_boot_args
 	bl	el2_setup			// Drop to EL1, w0=cpu_boot_mode
@@ -129,64 +129,57 @@ SYM_CODE_END(primary_entry)
 
 
 SYM_FUNC_START_LOCAL(uart_print_val)
-	mov x28,lr
-	mov x19, #0
+	mov x13,lr
+	mov x17, #0
 111:
-	mov x21, x18, lsr #60
-	cmp x21,#10
+	mov x15, x18, lsr #60
+	cmp w15,#10
 	b.lo 222f
-	add w21, w21, #(0x41 - 10)
+	add w15, w15, #(0x41 - 10)
 	b 333f
 222:
-	add w21, w21, #0x30
+	add w15, w15, #0x30
 333:
 	bl uart_putc
 	
 	mov x18, x18, lsl #4
-	add x19, x19, #1
-	cmp x19, #16
+	add x17, x17, #1
+	cmp x17, #16
 	b.lo 111b
-	ret x28
+	ret x13
 SYM_FUNC_END(uart_print_val)
 
 SYM_FUNC_START_LOCAL(uart_print_str)
-	mov x28,lr
-	mov x19, #0
+	mov x13,lr
+	mov x17, #0
 111:
-	mov x21, x18, lsr #56
-	cmp x21,#0
+	mov x15, x18, lsr #56
+	cmp x15,#0
 	b.ls 333f
 	bl uart_putc
 333:
 	mov x18, x18, lsl #8
-	add x19, x19, #1
-	cmp x19, #8
+	add x17, x17, #1
+	cmp x17, #8
 	b.lo 111b
-	ret x28
+	ret x13
 SYM_FUNC_END(uart_print_str)
 
 
 
 SYM_FUNC_START_LOCAL(uart_putc)
-	mov x23,#0
+	mov x16,#0
 1:
 	nop
-	add x23, x23, #1
-	cmp x23, #2000
+	add x16, x16, #1
+	cmp x16, #2000
 	b.lo 1b 
 	
-	mov x20, #0x8000
-	movk x20, #0x01c2, lsl #16			// UART tx reg addr: 0x01c28000
-	str w21, [x20] 
+	mov x14, #0x8000
+	movk x14, #0x01c2, lsl #16			// UART tx reg addr: 0x01c28000
+	str w15, [x14] 
 	ret
 SYM_FUNC_END(uart_putc)
-
-
-SYM_FUNC_START_LOCAL(v_uart_putc)
-	mov_q x20, 0xffffffe020000000
-	str w21, [x20] 
-	ret
-SYM_FUNC_END(v_uart_putc)
 
 
 /*
@@ -477,7 +470,7 @@ SYM_FUNC_START_LOCAL(__create_page_tables)
 	/*
 	 * Map the uart reg  (starting with 0x01c28000).
 	 */
-	mov w21,0x68
+	mov w15,0x68
 	bl uart_putc
 	adrp	x0, init_pg_dir
 	mov_q	x5, 0xffffffe020000000
@@ -965,7 +958,7 @@ SYM_FUNC_START_LOCAL(__no_granule_support)
 	update_early_cpu_boot_status \
 		CPU_STUCK_IN_KERNEL | CPU_STUCK_REASON_NO_GRAN, x1, x2
 1:
-	mov w21, 0x68
+	mov w15, 0x68
 	bl uart_putc
 	wfe
 	wfi
@@ -1079,7 +1072,7 @@ SYM_FUNC_END(__relocate_kernel)
 #endif
 
 SYM_FUNC_START_LOCAL(__primary_switch)
-	mov w21, #0x62
+	mov w15, #0x62
 	bl uart_putc
 
 
@@ -1109,7 +1102,7 @@ SYM_FUNC_START_LOCAL(__primary_switch)
 	adrp	x1, init_pg_dir
 	bl	__enable_mmu
 	
-	mov w21, #0x66
+	mov w15, #0x66
 	//bl v_uart_putc
 	ldr x8 , =uart_putc
 	blr x8
