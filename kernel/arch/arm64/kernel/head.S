@@ -107,7 +107,7 @@ pe_header:
 	 *  x24        __primary_switch() .. relocate_kernel()  current RELR displacement
 	 */
 SYM_CODE_START(primary_entry)
-	mov w1, #0x61
+	mov w21, #0x61
 	bl uart_putc
 	bl	preserve_boot_args
 	bl	el2_setup			// Drop to EL1, w0=cpu_boot_mode
@@ -125,15 +125,61 @@ SYM_CODE_START(primary_entry)
 	b	__primary_switch
 SYM_CODE_END(primary_entry)
 
+#define str_LFCR	0x0a0d // LF CR 
+
+
+SYM_FUNC_START_LOCAL(uart_print_val)
+	mov x28,lr
+	mov x19, #0
+111:
+	mov x21, x18, lsr #60
+	cmp x21,#10
+	b.lo 222f
+	add w21, w21, #(0x41 - 10)
+	b 333f
+222:
+	add w21, w21, #0x30
+333:
+	bl uart_putc
+	
+	mov x18, x18, lsl #4
+	add x19, x19, #1
+	cmp x19, #16
+	b.lo 111b
+	ret x28
+SYM_FUNC_END(uart_print_val)
+
+SYM_FUNC_START_LOCAL(uart_print_str)
+	mov x28,lr
+	mov x19, #0
+111:
+	mov x21, x18, lsr #56
+	cmp x21,#0
+	b.ls 333f
+	bl uart_putc
+333:
+	mov x18, x18, lsl #8
+	add x19, x19, #1
+	cmp x19, #8
+	b.lo 111b
+	ret x28
+SYM_FUNC_END(uart_print_str)
+
+
 
 SYM_FUNC_START_LOCAL(uart_putc)
-	mov x0, #0x8000
-	movk x0, #0x01c2, lsl #16			// UART tx reg addr: 0x01c28000
-	//mov	w1, #0x61
-	str w1, [x0] 
+	mov x20, #0x8000
+	movk x20, #0x01c2, lsl #16			// UART tx reg addr: 0x01c28000
+	str w21, [x20] 
 	ret
 SYM_FUNC_END(uart_putc)
 
+
+SYM_FUNC_START_LOCAL(v_uart_putc)
+	mov_q x20, 0xffffffe020000000
+	str w21, [x20] 
+	ret
+SYM_FUNC_END(v_uart_putc)
 
 
 /*
@@ -256,7 +302,7 @@ SYM_CODE_END(preserve_boot_args)
  * Corrupts:	tbl, rtbl, istart, iend, tmp, count, sv
  */
 	.macro map_memory, tbl, rtbl, vstart, vend, flags, phys, pgds, istart, iend, tmp, count, sv
-	add \rtbl, \tbl, #PAGE_SIZE
+	//add \rtbl, \tbl, #PAGE_SIZE
 	mov \sv, \rtbl
 	mov \count, #0
 	compute_indices \vstart, \vend, #PGDIR_SHIFT, \pgds, \istart, \iend, \count
@@ -278,8 +324,8 @@ SYM_CODE_END(preserve_boot_args)
 #endif
 
 	compute_indices \vstart, \vend, #SWAPPER_BLOCK_SHIFT, #PTRS_PER_PTE, \istart, \iend, \count
-	bic \count, \phys, #SWAPPER_BLOCK_SIZE - 1
-	populate_entries \tbl, \count, \istart, \iend, \flags, #SWAPPER_BLOCK_SIZE, \tmp
+	bic \rtbl, \phys, #SWAPPER_BLOCK_SIZE - 1
+	populate_entries \tbl, \rtbl, \istart, \iend, \flags, #SWAPPER_BLOCK_SIZE, \tmp
 	.endm
 
 /*
@@ -322,8 +368,8 @@ SYM_FUNC_START_LOCAL(__create_page_tables)
 	 * Create the identity mapping.
 	 */
 	adrp	x0, idmap_pg_dir
-	adrp	x3, __idmap_text_start		// __pa(__idmap_text_start)
-
+	//adrp	x3, __idmap_text_start		// __pa(__idmap_text_start)
+	mov_q 	x3, 0x01c28000
 #ifdef CONFIG_ARM64_VA_BITS_52
 	mrs_s	x6, SYS_ID_AA64MMFR2_EL1
 	and	x6, x6, #(0xf << ID_AA64MMFR2_LVA_SHIFT)
@@ -388,9 +434,25 @@ SYM_FUNC_START_LOCAL(__create_page_tables)
 	ldr_l	x4, idmap_ptrs_per_pgd
 	mov	x5, x3				// __pa(__idmap_text_start)
 	adr_l	x6, __idmap_text_end		// __pa(__idmap_text_end)
-
+	add x1, x0, #PAGE_SIZE
 	map_memory x0, x1, x3, x6, x7, x3, x4, x10, x11, x12, x13, x14
 
+
+	/*
+	 * Map the uart reg  (starting with 0x01c28000).
+	 */
+#if 0
+	adrp	x0, idmap_pg_dir
+	mov_q	x5, 0x01c28000
+	mov_q	x6, 0x01c29000
+	mov_q	x3, 0x01c28000
+	ldr_l	x4, idmap_ptrs_per_pgd
+	mov	x7, SWAPPER_MM_MMUFLAGS
+
+	map_memory x0, x1, x5, x6, x7, x3, x4, x10, x11, x12, x13, x14
+#endif
+
+#if 1
 	/*
 	 * Map the kernel image (starting with PHYS_OFFSET).
 	 */
@@ -402,8 +464,28 @@ SYM_FUNC_START_LOCAL(__create_page_tables)
 	adrp	x3, _text			// runtime __pa(_text)
 	sub	x6, x6, x3			// _end - _text
 	add	x6, x6, x5			// runtime __va(_end)
-
+	add x1, x0, #PAGE_SIZE
 	map_memory x0, x1, x5, x6, x7, x3, x4, x10, x11, x12, x13, x14
+#endif
+
+#if 0
+	/*
+	 * Map the uart reg  (starting with 0x01c28000).
+	 */
+	mov w21,0x68
+	bl uart_putc
+	adrp	x0, init_pg_dir
+	mov_q	x5, 0xffffffe020000000
+	mov_q	x6, 0xffffffe020002000
+	mov_q	x3, 0x01c28000
+	mov	x4, PTRS_PER_PGD
+	mov	x7, SWAPPER_MM_MMUFLAGS
+	mov x13, #2
+	mov x14, #PAGE_SIZE
+	mul x13, x13, x14
+	add x1, x0, x13
+	map_memory x0, x1, x5, x6, x7, x3, x4, x10, x11, x12, x13, x14
+#endif
 
 	/*
 	 * Since the page tables have been populated with non-cacheable
@@ -431,6 +513,8 @@ SYM_FUNC_END(__create_page_tables)
  *   x0 = __PHYS_OFFSET
  */
 SYM_FUNC_START_LOCAL(__primary_switched)
+	mov w21, 0x60
+	bl uart_putc
 	adrp	x4, init_thread_union
 	add	sp, x4, #THREAD_SIZE
 	adr_l	x5, init_task
@@ -822,6 +906,20 @@ SYM_FUNC_START(__enable_mmu)
 	msr	ttbr0_el1, x2			// load TTBR0
 	offset_ttbr1 x1, x3
 	msr	ttbr1_el1, x1			// load TTBR1
+	
+	mov x18, x1
+	bl uart_print_val
+	
+	mov x18, str_LFCR
+	bl uart_print_str
+
+	mov x18, x2
+	bl uart_print_val
+
+	mov x18, str_LFCR
+	bl uart_print_str
+
+
 	isb
 	msr	sctlr_el1, x0
 	isb
@@ -861,6 +959,8 @@ SYM_FUNC_START_LOCAL(__no_granule_support)
 	update_early_cpu_boot_status \
 		CPU_STUCK_IN_KERNEL | CPU_STUCK_REASON_NO_GRAN, x1, x2
 1:
+	mov w21, 0x68
+	bl uart_putc
 	wfe
 	wfi
 	b	1b
@@ -973,8 +1073,19 @@ SYM_FUNC_END(__relocate_kernel)
 #endif
 
 SYM_FUNC_START_LOCAL(__primary_switch)
-	mov w1, #0x62
+	mov w21, #0x62
 	bl uart_putc
+
+
+	mov_q x18, str_LFCR
+	bl uart_print_str
+
+	mov x18, x0
+	bl uart_print_val
+
+	mov x18, str_LFCR
+	bl uart_print_str
+
 
 #ifdef CONFIG_RANDOMIZE_BASE
 	mov	x19, x0				// preserve new SCTLR_EL1 value
@@ -984,6 +1095,12 @@ SYM_FUNC_START_LOCAL(__primary_switch)
 
 	adrp	x1, init_pg_dir
 	bl	__enable_mmu
+	
+	mov w21, #0x66
+	//bl v_uart_putc
+	ldr x8 , =uart_putc
+	blr x8
+
 #ifdef CONFIG_RELOCATABLE
 #ifdef CONFIG_RELR
 	mov	x24, #0				// no RELR displacement yet
@@ -1016,9 +1133,6 @@ SYM_FUNC_START_LOCAL(__primary_switch)
 	bl	__relocate_kernel
 #endif
 #endif
-	mov w1, #0x64
-	ldr x8 , =uart_putc
-	blr x8
 	ldr	x8, =__primary_switched
 	adrp	x0, __PHYS_OFFSET
 	br	x8
