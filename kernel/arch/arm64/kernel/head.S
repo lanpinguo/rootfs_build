@@ -168,6 +168,13 @@ SYM_FUNC_END(uart_print_str)
 
 
 SYM_FUNC_START_LOCAL(uart_putc)
+	mov x23,#0
+1:
+	nop
+	add x23, x23, #1
+	cmp x23, #2000
+	b.lo 1b 
+	
 	mov x20, #0x8000
 	movk x20, #0x01c2, lsl #16			// UART tx reg addr: 0x01c28000
 	str w21, [x20] 
@@ -369,7 +376,7 @@ SYM_FUNC_START_LOCAL(__create_page_tables)
 	 */
 	adrp	x0, idmap_pg_dir
 	//adrp	x3, __idmap_text_start		// __pa(__idmap_text_start)
-	mov_q 	x3, 0x01c28000
+	mov_q 	x3, 0x01000000
 #ifdef CONFIG_ARM64_VA_BITS_52
 	mrs_s	x6, SYS_ID_AA64MMFR2_EL1
 	and	x6, x6, #(0xf << ID_AA64MMFR2_LVA_SHIFT)
@@ -452,7 +459,6 @@ SYM_FUNC_START_LOCAL(__create_page_tables)
 	map_memory x0, x1, x5, x6, x7, x3, x4, x10, x11, x12, x13, x14
 #endif
 
-#if 1
 	/*
 	 * Map the kernel image (starting with PHYS_OFFSET).
 	 */
@@ -466,7 +472,6 @@ SYM_FUNC_START_LOCAL(__create_page_tables)
 	add	x6, x6, x5			// runtime __va(_end)
 	add x1, x0, #PAGE_SIZE
 	map_memory x0, x1, x5, x6, x7, x3, x4, x10, x11, x12, x13, x14
-#endif
 
 #if 0
 	/*
@@ -513,8 +518,6 @@ SYM_FUNC_END(__create_page_tables)
  *   x0 = __PHYS_OFFSET
  */
 SYM_FUNC_START_LOCAL(__primary_switched)
-	mov w21, 0x60
-	bl uart_putc
 	adrp	x4, init_thread_union
 	add	sp, x4, #THREAD_SIZE
 	adr_l	x5, init_task
@@ -895,6 +898,7 @@ SYM_FUNC_END(__secondary_too_slow)
  * If it isn't, park the CPU
  */
 SYM_FUNC_START(__enable_mmu)
+	mov x22, lr
 	mrs	x2, ID_AA64MMFR0_EL1
 	ubfx	x2, x2, #ID_AA64MMFR0_TGRAN_SHIFT, 4
 	cmp	x2, #ID_AA64MMFR0_TGRAN_SUPPORTED
@@ -907,19 +911,21 @@ SYM_FUNC_START(__enable_mmu)
 	offset_ttbr1 x1, x3
 	msr	ttbr1_el1, x1			// load TTBR1
 	
-	mov x18, x1
+	mov x18,x1
 	bl uart_print_val
-	
-	mov x18, str_LFCR
+	mov x18,str_LFCR
 	bl uart_print_str
 
 	mov x18, x2
 	bl uart_print_val
-
-	mov x18, str_LFCR
+	mov x18,str_LFCR
 	bl uart_print_str
 
-
+	mov_q x18, 0x0123456789abcdef
+	bl uart_print_val
+	mov x18,str_LFCR
+	bl uart_print_str
+	
 	isb
 	msr	sctlr_el1, x0
 	isb
@@ -931,7 +937,7 @@ SYM_FUNC_START(__enable_mmu)
 	ic	iallu
 	dsb	nsh
 	isb
-	ret
+	ret x22
 SYM_FUNC_END(__enable_mmu)
 
 SYM_FUNC_START(__cpu_secondary_check52bitva)
@@ -1081,6 +1087,13 @@ SYM_FUNC_START_LOCAL(__primary_switch)
 	bl uart_print_str
 
 	mov x18, x0
+	bl uart_print_val
+
+	mov x18, str_LFCR
+	bl uart_print_str
+
+
+	mov x18, x10
 	bl uart_print_val
 
 	mov x18, str_LFCR
