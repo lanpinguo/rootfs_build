@@ -121,12 +121,83 @@ SYM_CODE_START(primary_entry)
 	 * On return, the CPU will be ready for the MMU to be turned on and
 	 * the TCR will have been set.
 	 */
+
 	bl	__cpu_setup			// initialise processor
 	b	__primary_switch
 SYM_CODE_END(primary_entry)
 
 #define str_LFCR	0x0a0d // LF CR 
 
+	.align	3
+	.type	__regs_save, %object
+__regs_save:
+	.quad	0			// lr
+	.quad	0			// x6
+	.quad	0			// x7
+	.quad	0			// x4
+	.quad	0			// x5
+	.quad	0			// x6
+	.quad	0			// 
+	.quad	0			// 
+	.quad	0			// 
+	.quad	0			// 
+	.quad	0			// 
+	.quad	0			// 
+	.quad	0			// 
+	.quad	0			// 
+
+/**
+* x12 for input base address 
+* x11 for length
+**/
+SYM_CODE_START(tlb_dump)
+	adrp x10, __regs_save
+	stp lr, x11, [x10], #16
+	stp x12, x13, [x10], #16
+#if 0
+	stp x14, x15, [x10], #16
+	stp x16, x17, [x10], #16
+	stp x18, x19, [x10], #16
+#endif
+
+	mov x18, str_LFCR
+	bl uart_print_str
+	
+	mov x10,#0
+2:
+	add x10,x10,#1
+	cmp x10,x11
+	b.ge 4f
+
+	ldr x18,[x12]
+	add x12, x12, #8
+
+	tbz x18, #0, 2b
+
+3:
+	bl uart_print_val
+
+	mov x18, #'-'
+	bl uart_print_str
+	
+	sub x18, x12, #8
+	bl uart_print_val
+
+	mov x18, str_LFCR
+	bl uart_print_str
+	b 2b
+	
+4:
+	adrp x10, __regs_save
+	ldp lr, x11, [x10], #16
+	ldp x12, x13, [x10], #16
+#if 0
+	ldp x14, x15, [x10], #16
+	ldp x16, x17, [x10], #16
+	ldp x18, x19, [x10], #16
+#endif
+	ret
+SYM_CODE_END(tlb_dump)
 
 SYM_FUNC_START_LOCAL(uart_print_val)
 	mov x13,lr
@@ -368,8 +439,7 @@ SYM_FUNC_START_LOCAL(__create_page_tables)
 	 * Create the identity mapping.
 	 */
 	adrp	x0, idmap_pg_dir
-	//adrp	x3, __idmap_text_start		// __pa(__idmap_text_start)
-	mov_q 	x3, 0x01000000
+	adrp	x3, __idmap_text_start		// __pa(__idmap_text_start)
 #ifdef CONFIG_ARM64_VA_BITS_52
 	mrs_s	x6, SYS_ID_AA64MMFR2_EL1
 	and	x6, x6, #(0xf << ID_AA64MMFR2_LVA_SHIFT)
@@ -437,19 +507,16 @@ SYM_FUNC_START_LOCAL(__create_page_tables)
 	add x1, x0, #PAGE_SIZE
 	map_memory x0, x1, x3, x6, x7, x3, x4, x10, x11, x12, x13, x14
 
+#if 1
 
-	/*
-	 * Map the uart reg  (starting with 0x01c28000).
-	 */
-#if 0
-	adrp	x0, idmap_pg_dir
-	mov_q	x5, 0x01c28000
-	mov_q	x6, 0x01c29000
-	mov_q	x3, 0x01c28000
-	ldr_l	x4, idmap_ptrs_per_pgd
-	mov	x7, SWAPPER_MM_MMUFLAGS
-
-	map_memory x0, x1, x5, x6, x7, x3, x4, x10, x11, x12, x13, x14
+	/* dump tlb for debug*/
+	adrp x12, idmap_pg_dir
+	adrp x11, idmap_pg_end		// __pa(__idmap_text_end)
+	sub x11, x11, x12
+	lsr x11, x11, #3
+	bl tlb_dump
+	mov_q x18, (('+'<< 16) | ('\r' << 8) | ('\n'))
+	bl uart_print_str
 #endif
 
 	/*
@@ -466,12 +533,22 @@ SYM_FUNC_START_LOCAL(__create_page_tables)
 	add x1, x0, #PAGE_SIZE
 	map_memory x0, x1, x5, x6, x7, x3, x4, x10, x11, x12, x13, x14
 
+#if 1
+	/* dump tlb for debug*/
+	adrp x12, init_pg_dir
+	adrp x11, init_pg_end		// __pa(init_pg_end)
+	sub x11, x11, x12
+	lsr x11, x11, #3
+	bl tlb_dump
+
+	mov_q x18, (('*'<< 16) | ('\r' << 8) | ('\n'))
+	bl uart_print_str
+#endif
+
 #if 0
 	/*
 	 * Map the uart reg  (starting with 0x01c28000).
 	 */
-	mov w15,0x68
-	bl uart_putc
 	adrp	x0, init_pg_dir
 	mov_q	x5, 0xffffffe020000000
 	mov_q	x6, 0xffffffe020002000
@@ -501,6 +578,7 @@ SYM_FUNC_START_LOCAL(__create_page_tables)
 	adrp	x1, init_pg_end
 	sub	x1, x1, x0
 	bl	__inval_dcache_area
+
 
 	ret	x28
 SYM_FUNC_END(__create_page_tables)
@@ -891,7 +969,7 @@ SYM_FUNC_END(__secondary_too_slow)
  * If it isn't, park the CPU
  */
 SYM_FUNC_START(__enable_mmu)
-	mov x22, lr
+	mov x28, lr
 	mrs	x2, ID_AA64MMFR0_EL1
 	ubfx	x2, x2, #ID_AA64MMFR0_TGRAN_SHIFT, 4
 	cmp	x2, #ID_AA64MMFR0_TGRAN_SUPPORTED
@@ -914,7 +992,7 @@ SYM_FUNC_START(__enable_mmu)
 	mov x18,str_LFCR
 	bl uart_print_str
 
-	mov_q x18, 0x0123456789abcdef
+	mov x18, x10
 	bl uart_print_val
 	mov x18,str_LFCR
 	bl uart_print_str
@@ -930,7 +1008,7 @@ SYM_FUNC_START(__enable_mmu)
 	ic	iallu
 	dsb	nsh
 	isb
-	ret x22
+	ret x28
 SYM_FUNC_END(__enable_mmu)
 
 SYM_FUNC_START(__cpu_secondary_check52bitva)
@@ -958,8 +1036,6 @@ SYM_FUNC_START_LOCAL(__no_granule_support)
 	update_early_cpu_boot_status \
 		CPU_STUCK_IN_KERNEL | CPU_STUCK_REASON_NO_GRAN, x1, x2
 1:
-	mov w15, 0x68
-	bl uart_putc
 	wfe
 	wfi
 	b	1b
@@ -1075,6 +1151,7 @@ SYM_FUNC_START_LOCAL(__primary_switch)
 	mov w15, #0x62
 	bl uart_putc
 
+	mov_q x0,0x34c5d83d
 
 	mov_q x18, str_LFCR
 	bl uart_print_str
@@ -1098,12 +1175,10 @@ SYM_FUNC_START_LOCAL(__primary_switch)
 	mrs	x20, sctlr_el1			// preserve old SCTLR_EL1 value
 #endif
 
-
 	adrp	x1, init_pg_dir
 	bl	__enable_mmu
 	
 	mov w15, #0x66
-	//bl v_uart_putc
 	ldr x8 , =uart_putc
 	blr x8
 
