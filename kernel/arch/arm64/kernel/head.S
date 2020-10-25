@@ -107,8 +107,13 @@ pe_header:
 	 *  x24        __primary_switch() .. relocate_kernel()  current RELR displacement
 	 */
 SYM_CODE_START(primary_entry)
-	mov w15, #0x61
-	bl uart_putc
+	//mov w15, #0x61
+	//bl uart_putc
+	adrp x18, _head
+	bl uart_print_val
+	mov_q x18,('\r' | '\n')
+	bl uart_print_str
+	
 	bl	preserve_boot_args
 	bl	el2_setup			// Drop to EL1, w0=cpu_boot_mode
 	adrp	x23, __PHYS_OFFSET
@@ -125,132 +130,6 @@ SYM_CODE_START(primary_entry)
 	bl	__cpu_setup			// initialise processor
 	b	__primary_switch
 SYM_CODE_END(primary_entry)
-
-#define str_LFCR	0x0a0d // LF CR 
-
-	.align	3
-	.type	__regs_save, %object
-__regs_save:
-	.quad	0			// lr
-	.quad	0			// x6
-	.quad	0			// x7
-	.quad	0			// x4
-	.quad	0			// x5
-	.quad	0			// x6
-	.quad	0			// 
-	.quad	0			// 
-	.quad	0			// 
-	.quad	0			// 
-	.quad	0			// 
-	.quad	0			// 
-	.quad	0			// 
-	.quad	0			// 
-
-/**
-* x12 for input base address 
-* x11 for length
-**/
-SYM_CODE_START(tlb_dump)
-	adrp x10, __regs_save
-	stp lr, x11, [x10], #16
-	stp x12, x13, [x10], #16
-#if 0
-	stp x14, x15, [x10], #16
-	stp x16, x17, [x10], #16
-	stp x18, x19, [x10], #16
-#endif
-
-	mov x18, str_LFCR
-	bl uart_print_str
-	
-	mov x10,#0
-2:
-	add x10,x10,#1
-	cmp x10,x11
-	b.ge 4f
-
-	ldr x18,[x12]
-	add x12, x12, #8
-
-	tbz x18, #0, 2b
-
-3:
-	bl uart_print_val
-
-	mov x18, #'-'
-	bl uart_print_str
-	
-	sub x18, x12, #8
-	bl uart_print_val
-
-	mov x18, str_LFCR
-	bl uart_print_str
-	b 2b
-	
-4:
-	adrp x10, __regs_save
-	ldp lr, x11, [x10], #16
-	ldp x12, x13, [x10], #16
-#if 0
-	ldp x14, x15, [x10], #16
-	ldp x16, x17, [x10], #16
-	ldp x18, x19, [x10], #16
-#endif
-	ret
-SYM_CODE_END(tlb_dump)
-
-SYM_FUNC_START_LOCAL(uart_print_val)
-	mov x13,lr
-	mov x17, #0
-111:
-	mov x15, x18, lsr #60
-	cmp w15,#10
-	b.lo 222f
-	add w15, w15, #(0x41 - 10)
-	b 333f
-222:
-	add w15, w15, #0x30
-333:
-	bl uart_putc
-	
-	mov x18, x18, lsl #4
-	add x17, x17, #1
-	cmp x17, #16
-	b.lo 111b
-	ret x13
-SYM_FUNC_END(uart_print_val)
-
-SYM_FUNC_START_LOCAL(uart_print_str)
-	mov x13,lr
-	mov x17, #0
-111:
-	mov x15, x18, lsr #56
-	cmp x15,#0
-	b.ls 333f
-	bl uart_putc
-333:
-	mov x18, x18, lsl #8
-	add x17, x17, #1
-	cmp x17, #8
-	b.lo 111b
-	ret x13
-SYM_FUNC_END(uart_print_str)
-
-
-
-SYM_FUNC_START_LOCAL(uart_putc)
-	mov x16,#0
-1:
-	nop
-	add x16, x16, #1
-	cmp x16, #2000
-	b.lo 1b 
-	
-	mov x14, #0x8000
-	movk x14, #0x01c2, lsl #16			// UART tx reg addr: 0x01c28000
-	str w15, [x14] 
-	ret
-SYM_FUNC_END(uart_putc)
 
 
 /*
@@ -507,6 +386,17 @@ SYM_FUNC_START_LOCAL(__create_page_tables)
 	add x1, x0, #PAGE_SIZE
 	map_memory x0, x1, x3, x6, x7, x3, x4, x10, x11, x12, x13, x14
 
+     /*
+      * Map the uart reg  (starting with 0x01c28000).
+      */
+     adrp    x0, idmap_pg_dir
+     mov_q x3, 0x01c28000
+     ldr_l   x4, idmap_ptrs_per_pgd
+     mov     x5, x3                          // __pa(__idmap_text_start)
+     mov_q x6, 0x01c29000
+     add x1, x0, #PAGE_SIZE
+     map_memory x0, x1, x3, x6, x7, x3, x4, x10, x11, x12, x13, x14
+
 #if 1
 
 	/* dump tlb for debug*/
@@ -517,6 +407,27 @@ SYM_FUNC_START_LOCAL(__create_page_tables)
 	bl tlb_dump
 	mov_q x18, (('+'<< 16) | ('\r' << 8) | ('\n'))
 	bl uart_print_str
+	
+	mov x18, PTRS_PER_PGD
+	bl uart_print_val
+	mov_q x18, (('\r' << 8) | ('\n') | ('#'<< 16))
+	bl uart_print_str
+	
+	mov x18, #PAGE_SIZE
+	bl uart_print_val
+	mov_q x18, (('\r' << 8) | ('\n') | ('#'<< 16))
+	bl uart_print_str
+
+	mov_q x18, KIMAGE_VADDR + TEXT_OFFSET	// compile time __va(_text)
+	bl uart_print_val
+	mov_q x18, (('\r' << 8) | ('\n') | ('#'<< 16))
+	bl uart_print_str
+
+	adrp x18, _text			// runtime __pa(_text)
+	bl uart_print_val
+	mov_q x18, (('\r' << 8) | ('\n') | ('#'<< 16))
+	bl uart_print_str
+	
 #endif
 
 	/*
@@ -543,6 +454,13 @@ SYM_FUNC_START_LOCAL(__create_page_tables)
 
 	mov_q x18, (('*'<< 16) | ('\r' << 8) | ('\n'))
 	bl uart_print_str
+	
+	mov x18, x5
+	bl uart_print_val
+	mov_q x18, (('\r' << 8) | ('\n') | ('#'<< 16))
+	bl uart_print_str
+
+	
 #endif
 
 #if 0
@@ -655,6 +573,136 @@ EXPORT_SYMBOL(kimage_vaddr)
  * hotplug and needs to have the same protections as the text region
  */
 	.section ".idmap.text","awx"
+
+#define str_LFCR	0x0a0d // LF CR 
+
+	.align	3
+	.type	__regs_save, %object
+__regs_save:
+	.quad	0			// lr
+	.quad	0			// x6
+	.quad	0			// x7
+	.quad	0			// x4
+	.quad	0			// x5
+	.quad	0			// x6
+	.quad	0			// 
+	.quad	0			// 
+	.quad	0			// 
+	.quad	0			// 
+	.quad	0			// 
+	.quad	0			// 
+	.quad	0			// 
+	.quad	0			// 
+
+/**
+* x12 for input base address 
+* x11 for length
+**/
+SYM_CODE_START(tlb_dump)
+	adrp x10, __regs_save
+	stp lr, x11, [x10], #16
+	stp x12, x13, [x10], #16
+#if 0
+	stp x14, x15, [x10], #16
+	stp x16, x17, [x10], #16
+	stp x18, x19, [x10], #16
+#endif
+
+	mov x18, str_LFCR
+	bl uart_print_str
+	
+	mov x10,#0
+2:
+	add x10,x10,#1
+	cmp x10,x11
+	b.ge 4f
+
+	ldr x18,[x12]
+	add x12, x12, #8
+
+	tbz x18, #0, 2b
+
+3:
+	bl uart_print_val
+
+	mov x18, #'-'
+	bl uart_print_str
+	
+	sub x18, x12, #8
+	bl uart_print_val
+
+	mov x18, str_LFCR
+	bl uart_print_str
+	b 2b
+	
+4:
+	adrp x10, __regs_save
+	ldp lr, x11, [x10], #16
+	ldp x12, x13, [x10], #16
+#if 0
+	ldp x14, x15, [x10], #16
+	ldp x16, x17, [x10], #16
+	ldp x18, x19, [x10], #16
+#endif
+	ret
+SYM_CODE_END(tlb_dump)
+
+SYM_FUNC_START_LOCAL(uart_print_val)
+	mov x13,lr
+	mov x17, #0
+111:
+	mov x15, x18, lsr #60
+	cmp w15,#10
+	b.lo 222f
+	add w15, w15, #(0x41 - 10)
+	b 333f
+222:
+	add w15, w15, #0x30
+333:
+	bl uart_putc
+	
+	mov x18, x18, lsl #4
+	add x17, x17, #1
+	cmp x17, #16
+	b.lo 111b
+	ret x13
+SYM_FUNC_END(uart_print_val)
+
+SYM_FUNC_START_LOCAL(uart_print_str)
+	mov x13,lr
+	mov x17, #0
+111:
+	mov x15, x18, lsr #56
+	cmp x15,#0
+	b.ls 333f
+	bl uart_putc
+333:
+	mov x18, x18, lsl #8
+	add x17, x17, #1
+	cmp x17, #8
+	b.lo 111b
+	ret x13
+SYM_FUNC_END(uart_print_str)
+
+
+
+SYM_FUNC_START_LOCAL(uart_putc)
+	mov x16,#0
+1:
+	nop
+	add x16, x16, #1
+	cmp x16, #2000
+	b.lo 1b 
+	
+	mov x14, #0x8000
+	movk x14, #0x01c2, lsl #16			// UART tx reg addr: 0x01c28000
+	str w15, [x14] 
+	ret
+SYM_FUNC_END(uart_putc)
+
+
+
+
 
 /*
  * If we're fortunate enough to boot at EL2, ensure that the world is
@@ -969,7 +1017,6 @@ SYM_FUNC_END(__secondary_too_slow)
  * If it isn't, park the CPU
  */
 SYM_FUNC_START(__enable_mmu)
-	mov x28, lr
 	mrs	x2, ID_AA64MMFR0_EL1
 	ubfx	x2, x2, #ID_AA64MMFR0_TGRAN_SHIFT, 4
 	cmp	x2, #ID_AA64MMFR0_TGRAN_SUPPORTED
@@ -982,20 +1029,6 @@ SYM_FUNC_START(__enable_mmu)
 	offset_ttbr1 x1, x3
 	msr	ttbr1_el1, x1			// load TTBR1
 	
-	mov x18,x1
-	bl uart_print_val
-	mov x18,str_LFCR
-	bl uart_print_str
-
-	mov x18, x2
-	bl uart_print_val
-	mov x18,str_LFCR
-	bl uart_print_str
-
-	mov x18, x10
-	bl uart_print_val
-	mov x18,str_LFCR
-	bl uart_print_str
 	
 	isb
 	msr	sctlr_el1, x0
@@ -1008,7 +1041,8 @@ SYM_FUNC_START(__enable_mmu)
 	ic	iallu
 	dsb	nsh
 	isb
-	ret x28
+	
+	ret 
 SYM_FUNC_END(__enable_mmu)
 
 SYM_FUNC_START(__cpu_secondary_check52bitva)
@@ -1151,36 +1185,59 @@ SYM_FUNC_START_LOCAL(__primary_switch)
 	mov w15, #0x62
 	bl uart_putc
 
-	mov_q x0,0x34c5d83d
 
-	mov_q x18, str_LFCR
-	bl uart_print_str
-
-	mov x18, x0
+	mov x18,x0
 	bl uart_print_val
-
-	mov x18, str_LFCR
+	mov x18,str_LFCR
 	bl uart_print_str
 
+	mov x18,x1
+	bl uart_print_val
+	mov x18,str_LFCR
+	bl uart_print_str
+
+	mov x18, x2
+	bl uart_print_val
+	mov x18,str_LFCR
+	bl uart_print_str
 
 	mov x18, x10
 	bl uart_print_val
-
-	mov x18, str_LFCR
+	mov x18,str_LFCR
 	bl uart_print_str
+
+#if 0
+	ldr x18, =uart_putc
+	bl uart_print_val
+	mov x18,str_LFCR
+	bl uart_print_str
+
+	adr x18, uart_putc
+	bl uart_print_val
+	mov x18,str_LFCR
+	bl uart_print_str
+#endif
+
+
 
 
 #ifdef CONFIG_RANDOMIZE_BASE
 	mov	x19, x0				// preserve new SCTLR_EL1 value
 	mrs	x20, sctlr_el1			// preserve old SCTLR_EL1 value
 #endif
-
+	
 	adrp	x1, init_pg_dir
 	bl	__enable_mmu
-	
-	mov w15, #0x66
+
+#if 1	
+	mov w15, #0x63
 	ldr x8 , =uart_putc
 	blr x8
+
+	mov w15, #0x67
+	ldr x8 , =uart_putc
+	blr x8
+#endif
 
 #ifdef CONFIG_RELOCATABLE
 #ifdef CONFIG_RELR
