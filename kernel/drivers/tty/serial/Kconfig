@@ -1586,6 +1586,7 @@ config SERIAL_SUNXI_CONSOLE
 	bool "Console on SUNXI UART port"
 	depends on SERIAL_SUNXI=y
 	select SERIAL_CORE_CONSOLE
+	select SERIAL_EARLYCON
 	default SERIAL_SUNXI
 	help
 	  Enable a built-in UART port of the Allinner SOC to be the system console.

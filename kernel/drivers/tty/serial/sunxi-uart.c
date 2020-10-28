@@ -1556,7 +1556,58 @@ static int __init sunxi_uart_init(void)
 }
 
 #ifdef CONFIG_SERIAL_SUNXI_CONSOLE
-console_initcall(sunxi_uart_init);
+//console_initcall(sunxi_uart_init);
+
+static void 
+sunxi_early_write(
+		struct console *con,
+		const char *s,
+		unsigned n)
+{
+	struct earlycon_device *dev = con->data;
+
+	uart_console_write(&dev->port, s, n, sw_console_putchar);
+}
+
+static int __init sunxi_early_console_setup(struct earlycon_device *device,
+					   const char *opt)
+{
+	struct uart_port *port = &device->port;
+
+	if (!port->membase)
+		return -ENODEV;
+
+	/* initialise control register */
+
+	/* only set baud if specified on command line - otherwise
+	 * assume it has been initialized by a boot loader.
+	 */
+	if (port->uartclk && device->baud) {
+#if 0
+		u32 cd = 0, bdiv = 0;
+		u32 mr;
+		int div8;
+
+		cdns_uart_calc_baud_divs(port->uartclk, device->baud,
+					 &bdiv, &cd, &div8);
+		mr = CDNS_UART_MR_PARITY_NONE;
+		if (div8)
+			mr |= CDNS_UART_MR_CLKSEL;
+
+		writel(mr,   port->membase + CDNS_UART_MR);
+		writel(cd,   port->membase + CDNS_UART_BAUDGEN);
+		writel(bdiv, port->membase + CDNS_UART_BAUDDIV);
+#endif		
+	}
+
+	device->con->write = sunxi_early_write;
+
+	return 0;
+}
+
+OF_EARLYCON_DECLARE(uart, "allwinner,sun50i-uart", sunxi_early_console_setup);
+
+
 #endif
 
 static void __exit sunxi_uart_exit(void)
