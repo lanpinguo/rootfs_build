@@ -831,37 +831,27 @@ void __init __weak arch_call_rest_init(void)
 
 #define DELAY_COUNT		5000
 
-void  early_print(	unsigned int * uart_tx_reg, char* output)
+void  early_print(char* output)
 {
-	//int i = 0;
+#ifdef DEBUG_EARLYPRINT
+	unsigned int * uart_tx_reg;
 	int delay;
 
+	uart_tx_reg = phys_to_virt(0x01c28000);
 
 	*uart_tx_reg = output[0];
 	__iowmb();
 
 	for(delay = DELAY_COUNT; delay > 0; delay-- );
-
-#if 0	
-	while(output[i] != '\0'){
-		*uart_tx_reg = output[i++];
-		for(delay = 2000; i > 0 ; i--);
-	}
-#endif	
+#endif
 }
 asmlinkage __visible void __init start_kernel(void)
 {
 	char *command_line;
 	char *after_dashes;
-	unsigned int * uart_tx_reg;
-	int delay;
 
 	
-	uart_tx_reg = phys_to_virt(0x01c28000);
 
-	*uart_tx_reg = 0x68;
-	for(delay= DELAY_COUNT; delay > 0; delay-- );
-	
 	set_task_stack_end_magic(&init_task);
 	smp_setup_processor_id();
 	debug_objects_early_init();
@@ -872,7 +862,7 @@ asmlinkage __visible void __init start_kernel(void)
 	local_irq_disable();
 	early_boot_irqs_disabled = true;
 
-	early_print(uart_tx_reg,"3");
+	early_print("3");
 
 
 	
@@ -883,9 +873,9 @@ asmlinkage __visible void __init start_kernel(void)
 	boot_cpu_init();
 	page_address_init();
 	pr_notice("%s", linux_banner);
-	early_print(uart_tx_reg,"*");
+	early_print("*");
 	early_security_init();
-	early_print(uart_tx_reg,"-");
+	early_print("-");
 	setup_arch(&command_line);
 	setup_boot_config(command_line);
 	setup_command_line(command_line);

@@ -107,12 +107,14 @@ pe_header:
 	 *  x24        __primary_switch() .. relocate_kernel()  current RELR displacement
 	 */
 SYM_CODE_START(primary_entry)
-	//mov w15, #0x61
-	//bl uart_putc
+#ifdef DEBUG_EARLYPRINT
+	mov w15, #0x61
+	bl uart_putc
 	adrp x18, _head
 	bl uart_print_val
 	mov_q x18,('\r' | '\n')
 	bl uart_print_str
+#endif
 	
 	bl	preserve_boot_args
 	bl	el2_setup			// Drop to EL1, w0=cpu_boot_mode
@@ -386,6 +388,7 @@ SYM_FUNC_START_LOCAL(__create_page_tables)
 	add x1, x0, #PAGE_SIZE
 	map_memory x0, x1, x3, x6, x7, x3, x4, x10, x11, x12, x13, x14
 
+#ifdef DEBUG_EARLYPRINT
      /*
       * Map the uart reg  (starting with 0x01c28000).
       */
@@ -396,9 +399,9 @@ SYM_FUNC_START_LOCAL(__create_page_tables)
      mov_q x6, 0x01c29000
      add x1, x0, #PAGE_SIZE
      map_memory x0, x1, x3, x6, x7, x3, x4, x10, x11, x12, x13, x14
+#endif
 
-#if 1
-
+#ifdef DEBUG_EARLYPRINT
 	/* dump tlb for debug*/
 	adrp x12, idmap_pg_dir
 	adrp x11, idmap_pg_end		// __pa(__idmap_text_end)
@@ -444,7 +447,7 @@ SYM_FUNC_START_LOCAL(__create_page_tables)
 	add x1, x0, #PAGE_SIZE
 	map_memory x0, x1, x5, x6, x7, x3, x4, x10, x11, x12, x13, x14
 
-#if 1
+#ifdef DEBUG_EARLYPRINT
 	/* dump tlb for debug*/
 	adrp x12, init_pg_dir
 	adrp x11, init_pg_end		// __pa(init_pg_end)
@@ -459,26 +462,8 @@ SYM_FUNC_START_LOCAL(__create_page_tables)
 	bl uart_print_val
 	mov_q x18, (('\r' << 8) | ('\n') | ('#'<< 16))
 	bl uart_print_str
-
-	
 #endif
 
-#if 0
-	/*
-	 * Map the uart reg  (starting with 0x01c28000).
-	 */
-	adrp	x0, init_pg_dir
-	mov_q	x5, 0xffffffe020000000
-	mov_q	x6, 0xffffffe020002000
-	mov_q	x3, 0x01c28000
-	mov	x4, PTRS_PER_PGD
-	mov	x7, SWAPPER_MM_MMUFLAGS
-	mov x13, #2
-	mov x14, #PAGE_SIZE
-	mul x13, x13, x14
-	add x1, x0, x13
-	map_memory x0, x1, x5, x6, x7, x3, x4, x10, x11, x12, x13, x14
-#endif
 
 	/*
 	 * Since the page tables have been populated with non-cacheable
@@ -573,6 +558,8 @@ EXPORT_SYMBOL(kimage_vaddr)
  * hotplug and needs to have the same protections as the text region
  */
 	.section ".idmap.text","awx"
+
+#ifdef DEBUG_EARLYPRINT
 
 #define str_LFCR	0x0a0d // LF CR 
 
@@ -700,7 +687,7 @@ SYM_FUNC_START_LOCAL(uart_putc)
 	ret
 SYM_FUNC_END(uart_putc)
 
-
+#endif
 
 
 
@@ -1182,9 +1169,10 @@ SYM_FUNC_END(__relocate_kernel)
 #endif
 
 SYM_FUNC_START_LOCAL(__primary_switch)
+
+#ifdef DEBUG_EARLYPRINT
 	mov w15, #0x62
 	bl uart_putc
-
 
 	mov x18,x0
 	bl uart_print_val
@@ -1206,7 +1194,6 @@ SYM_FUNC_START_LOCAL(__primary_switch)
 	mov x18,str_LFCR
 	bl uart_print_str
 
-#if 0
 	ldr x18, =uart_putc
 	bl uart_print_val
 	mov x18,str_LFCR
@@ -1229,14 +1216,11 @@ SYM_FUNC_START_LOCAL(__primary_switch)
 	adrp	x1, init_pg_dir
 	bl	__enable_mmu
 
-#if 1	
+#ifdef DEBUG_EARLYPRINT
 	mov w15, #0x63
 	ldr x8 , =uart_putc
 	blr x8
-
-	mov w15, #0x67
-	ldr x8 , =uart_putc
-	blr x8
+	isb
 #endif
 
 #ifdef CONFIG_RELOCATABLE
